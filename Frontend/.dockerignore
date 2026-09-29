@@ -1,0 +1,18 @@
+# Dependencias y artefactos de build
+node_modules
+dist
+coverage
+test-results
+playwright-report
+*.tsbuildinfo
+
+# Configuracion local y secretos
+.env
+.env.*
+!.env.example
+
+# Control de versiones y herramientas
+.git
+.gitignore
+Dockerfile
+.dockerignore

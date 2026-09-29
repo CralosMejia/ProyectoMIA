@@ -1,0 +1,15 @@
+@import 'tailwindcss';
+
+/* Tokens de diseno: unico punto de declaracion. Se consumen por nombre (bg-ok, text-degraded, font-sans, rounded-card). */
+@theme {
+  --color-ok: #16a34a;
+  --color-degraded: #d97706;
+  --color-surface: #ffffff;
+  --color-ink: #111827;
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --radius-card: 0.75rem;
+  --radius-pill: 9999px;
+}

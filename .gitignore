@@ -1,0 +1,37 @@
+# Entornos y secretos
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+secrets/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Node / Vite
+node_modules/
+dist/
+*.tsbuildinfo
+playwright-report/
+test-results/
+
+# Caches de herramientas
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.import_linter_cache/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+
+# Estado local del harness de agentes
+.harness/
+
+# Configuracion local de Claude Code
+.claude/settings.local.json

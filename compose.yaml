@@ -1,0 +1,56 @@
+# Entorno local: PostgreSQL 16 + Backend (FastAPI) + Frontend (nginx con proxy /api).
+# Uso: cp .env.example .env  (rellenar valores locales)  &&  docker compose up -d --build
+# Ningun secreto vive aqui: todo entra desde .env (no versionado). Las variables
+# obligatorias usan ${VAR:?} para que compose falle rapido si faltan.
+# Los puertos se publican solo en 127.0.0.1 (no expuestos a la red local).
+
+name: proyectofinal
+
+services:
+  db:
+    image: postgres:16.15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?defina POSTGRES_USER en .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD en .env}
+      POSTGRES_DB: ${POSTGRES_DB:?defina POSTGRES_DB en .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      # $$ evita la interpolacion de compose: se expande dentro del contenedor.
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  backend:
+    build:
+      context: ./Backend
+    image: backend:dev
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?defina DATABASE_URL en .env}
+      CORS_ORIGINS: ${CORS_ORIGINS:?defina CORS_ORIGINS en .env}
+      APP_ENV: ${APP_ENV:?defina APP_ENV en .env}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  frontend:
+    build:
+      context: ./Frontend
+    image: frontend:dev
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+
+volumes:
+  pgdata:
