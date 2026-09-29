@@ -5,7 +5,10 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
-  { ignores: ['dist', 'node_modules', 'playwright-report', 'test-results'] },
+  {
+    // public/mockServiceWorker.js lo genera `msw init`: no se edita ni se lintea.
+    ignores: ['dist', 'node_modules', 'playwright-report', 'test-results', 'public/mockServiceWorker.js'],
+  },
   {
     files: ['**/*.{ts,tsx}'],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],

@@ -16,14 +16,14 @@ describe('healthRoutes', () => {
     vi.unstubAllGlobals()
   })
 
-  it('ruta "/" → renderiza HealthPage (lazy) y muestra el estado del API', async () => {
+  it('ruta "/salud" → renderiza HealthPage (lazy) y muestra el estado del API', async () => {
     fetchMock.mockResolvedValue(
       new Response(JSON.stringify({ status: 'ok', database: 'up', checked_at: '2026-01-01T00:00:00Z' }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       }),
     )
-    const router = createMemoryRouter(healthRoutes, { initialEntries: ['/'] })
+    const router = createMemoryRouter(healthRoutes, { initialEntries: ['/salud'] })
 
     render(<RouterProvider router={router} />)
 
@@ -31,9 +31,9 @@ describe('healthRoutes', () => {
     expect(await screen.findByText('Sistema operativo')).toBeInTheDocument()
   })
 
-  it('ruta "/" antes de resolver chunk o API → hay un indicador role="status"', () => {
+  it('ruta "/salud" antes de resolver chunk o API → hay un indicador role="status"', () => {
     fetchMock.mockReturnValue(new Promise<Response>(() => {}))
-    const router = createMemoryRouter(healthRoutes, { initialEntries: ['/'] })
+    const router = createMemoryRouter(healthRoutes, { initialEntries: ['/salud'] })
 
     render(<RouterProvider router={router} />)
 

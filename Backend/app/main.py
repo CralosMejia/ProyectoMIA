@@ -14,7 +14,7 @@ from pydantic import ValidationError
 from sqlalchemy.exc import ArgumentError
 
 from app.api.errors import register_exception_handlers
-from app.api.routers import health
+from app.api.routers import campanias, cargas, dashboard, gestiones, health, listas, sistema
 from app.core.config import Settings
 from app.infrastructure.persistence.database import create_database_engine
 
@@ -61,7 +61,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type"],
     )
-    app.include_router(health.router, prefix=API_V1_PREFIX)
+    for router in (
+        health.router,
+        sistema.router,
+        cargas.router,
+        listas.router,
+        campanias.router,
+        gestiones.router,
+        dashboard.router,
+    ):
+        app.include_router(router, prefix=API_V1_PREFIX)
     return app
 
 

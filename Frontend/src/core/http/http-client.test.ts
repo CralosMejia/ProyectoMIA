@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from './api-error'
-import { httpGet } from './http-client'
+import { httpGet, httpGetBlob, httpPost, httpPostForm, httpPut } from './http-client'
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -117,5 +117,126 @@ describe('httpGet', () => {
     logSpy.mockRestore()
     getItemSpy.mockRestore()
     setItemSpy.mockRestore()
+  })
+})
+
+function abortableFetch(fetchMock: ReturnType<typeof vi.fn<typeof fetch>>) {
+  fetchMock.mockImplementation((_input, init) => {
+    return new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal
+      const abort = () => reject(new DOMException('The operation was aborted.', 'AbortError'))
+      if (signal?.aborted) abort()
+      signal?.addEventListener('abort', abort)
+    })
+  })
+}
+
+describe('httpPost / httpPut / httpPostForm / httpGetBlob', () => {
+  const fetchMock = vi.fn<typeof fetch>()
+
+  beforeEach(() => {
+    fetchMock.mockReset()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('httpPost sends JSON with Content-Type application/json and resolves the body on 201', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(201, { id: 7 }))
+
+    await expect(httpPost<{ id: number }>('/api/items', { name: 'a' })).resolves.toEqual({ id: 7 })
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    expect(String(url)).toBe('/api/items')
+    expect(init?.method).toBe('POST')
+    expect(new Headers(init?.headers).get('Content-Type')).toBe('application/json')
+    expect(init?.body).toBe(JSON.stringify({ name: 'a' }))
+  })
+
+  it('httpPost maps a structured 501 to ApiError with the backend message', async () => {
+    const body = {
+      error: { code: 'not_implemented', message: 'Esta funcion aun no esta disponible.' },
+    }
+    fetchMock.mockResolvedValue(jsonResponse(501, body))
+
+    const error = await httpPost('/api/items', {}).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({ status: 501, message: 'Esta funcion aun no esta disponible.' })
+  })
+
+  it('httpPut sends JSON with method PUT and resolves the body', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { ok: true }))
+
+    await expect(httpPut<{ ok: boolean }>('/api/items/1', { name: 'b' })).resolves.toEqual({
+      ok: true,
+    })
+    const [, init] = fetchMock.mock.calls[0] ?? []
+    expect(init?.method).toBe('PUT')
+    expect(new Headers(init?.headers).get('Content-Type')).toBe('application/json')
+    expect(init?.body).toBe(JSON.stringify({ name: 'b' }))
+  })
+
+  it('httpPostForm sends the FormData with the file and does not set Content-Type', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(201, { uploaded: true }))
+    const form = new FormData()
+    const file = new File(['a,b;1,2'], 'datos.csv', { type: 'text/csv' })
+    form.append('file', file)
+
+    await expect(httpPostForm<{ uploaded: boolean }>('/api/upload', form)).resolves.toEqual({
+      uploaded: true,
+    })
+    const [, init] = fetchMock.mock.calls[0] ?? []
+    expect(init?.method).toBe('POST')
+    expect(init?.body).toBe(form)
+    expect((init?.body as FormData).get('file')).toBeInstanceOf(File)
+    expect(new Headers(init?.headers).has('Content-Type')).toBe(false)
+  })
+
+  it('httpGetBlob resolves a Blob with the response type', async () => {
+    fetchMock.mockResolvedValue(
+      new Response('col;1', { status: 200, headers: { 'Content-Type': 'text/csv' } }),
+    )
+
+    const blob = await httpGetBlob('/api/export')
+    // Blob de la realm de fetch (Node), no la de jsdom: se compara por etiqueta.
+    expect(Object.prototype.toString.call(blob)).toBe('[object Blob]')
+    expect(blob.type).toBe('text/csv')
+    expect(await blob.text()).toBe('col;1')
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe('GET')
+  })
+
+  it('httpGetBlob throws ApiError with the structured message on error', async () => {
+    const body = { error: { code: 'not_found', message: 'No existe' } }
+    fetchMock.mockResolvedValue(jsonResponse(404, body))
+
+    const error = await httpGetBlob('/api/export').catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({ status: 404, message: 'No existe', body })
+  })
+
+  it.each([
+    ['httpPost', (signal: AbortSignal) => httpPost('/api/x', {}, { signal })],
+    ['httpPut', (signal: AbortSignal) => httpPut('/api/x', {}, { signal })],
+    ['httpPostForm', (signal: AbortSignal) => httpPostForm('/api/x', new FormData(), { signal })],
+    ['httpGetBlob', (signal: AbortSignal) => httpGetBlob('/api/x', { signal })],
+  ])('%s rejects with AbortError (not ApiError) when aborted', async (_name, call) => {
+    abortableFetch(fetchMock)
+    const controller = new AbortController()
+
+    const promise = call(controller.signal)
+    controller.abort()
+
+    const error = await promise.catch((e: unknown) => e)
+    expect(error).not.toBeInstanceOf(ApiError)
+    expect((error as Error).name).toBe('AbortError')
+  })
+
+  it('httpPost maps a network error to ApiError with status 0', async () => {
+    fetchMock.mockRejectedValue(new TypeError('Failed to fetch'))
+
+    const error = await httpPost('/api/x', {}).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(ApiError)
+    expect((error as ApiError).status).toBe(0)
   })
 })

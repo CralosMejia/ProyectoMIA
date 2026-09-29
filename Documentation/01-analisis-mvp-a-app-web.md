@@ -1,8 +1,10 @@
 # 01 · Análisis: del notebook MVP a una aplicación web
 
 **Fecha:** 28 de septiembre de 2026
-**Fuente analizada:** `MVP.ipynb` (informe técnico del MVP de Mtabolic, 196 celdas)
-**Estado:** análisis previo al desarrollo; no se ha escrito código.
+**Fuente analizada:** `Notebookes/MVP.ipynb` (informe técnico del MVP de Mtabolic, 196 celdas)
+**Estado:** análisis inicial. Su alcance fue **ampliado y reemplazado** por [03 · Casos de uso](03-casos-de-uso.md); se conserva como registro de cómo evolucionó la decisión.
+
+> **Nota de alineación (28-09-2026).** Este documento describe una app de tres funciones (cargar, generar lista, exportar), sin base de datos. La versión vigente del alcance es la de `03`: sistema de apoyo a la retención con base de datos acumulativa, migración única del histórico (CU-03), carga paulatina por plantilla (CU-01), reentrenamiento semestral (CU-02), campañas, seguimiento y dashboard. Donde este documento y `03` difieren, manda `03`. Las decisiones que cierran las preguntas de la §8 están anotadas en la propia tabla; las que siguen abiertas se consolidan en [04 · Pendientes para iniciar el desarrollo](04-pendientes-para-iniciar-desarrollo.md).
 
 ---
 
@@ -125,6 +127,8 @@ Flujo de pantalla propuesto (Streamlit):
 
 ## 7. Conclusión
 
+> **Nota:** esta estimación corresponde al alcance original. Con FastAPI + React + PostgreSQL ([ADR-001](adr/ADR-001-fastapi-react-postgresql.md)) y los casos de uso de `03`, el esfuerzo pasa a **medio – alto**.
+
 La migración es **viable y de esfuerzo bajo a medio**. El trabajo real está en:
 
 1. convertir el notebook en funciones reutilizables;
@@ -139,15 +143,15 @@ Antes de empezar a programar hay que responder los puntos abiertos de la secció
 
 | ID | Pregunta | Opciones | Recomendación | Estado |
 |---|---|---|---|---|
-| P-01 | ¿Qué formato tendrá el archivo de entrada? | (a) Varios libros por año, con el año en el nombre del archivo, como hoy. (b) Un solo libro con hojas `ENERO 2025`, `ENERO 2026`… (c) Un solo libro y el usuario indica el año. | (a): no obliga a cambiar la forma en que Mtabolic lleva sus Excel. | Abierta |
-| P-02 | ¿La lista exportada incluye datos de contacto (nombre, celular, correo)? | Sí / solo código anónimo `MTB-XXXXXXXX` | Sí: sin contacto la lista no sirve para operar, pero obliga a resolver P-03. | Abierta |
-| P-03 | ¿Dónde se ejecutará la aplicación? | Nube con acceso restringido / equipo local de Mtabolic / servidor propio | Depende de P-02 y de la autorización de Mtabolic sobre los datos. | Abierta |
-| P-04 | ¿Qué fecha se usa para generar la lista? | Último día del último mes cargado (como hoy) / fecha real del día / elegida por el usuario | Elegida por el usuario, con el último día cargado como valor por defecto. | Abierta |
-| P-05 | ¿`TOP_K` y el horizonte de días son fijos o configurables? | Fijos (25 socios, 30 días) / configurables en pantalla | Configurables, con esos valores por defecto. | Abierta |
-| P-06 | ¿Se reentrena el modelo en cada carga o se usa uno ya entrenado? | Reentrenar / modelo fijo `.joblib` | Reentrenar (sección 3.2). | Abierta |
+| P-01 | ¿Qué formato tendrá el archivo de entrada? | (a) Varios libros por año, con el año en el nombre del archivo, como hoy. (b) Un solo libro con hojas `ENERO 2025`, `ENERO 2026`… (c) Un solo libro y el usuario indica el año. | (a): no obliga a cambiar la forma en que Mtabolic lleva sus Excel. | **Cerrada** (28-09-2026): dos formatos. El histórico 2025–2026 (libros mensuales de `plantillas/`) se migra **una sola vez** al generar la base (CU-03). Desde entonces, la carga paulatina usa solo la plantilla `Plantilla_Carga_Datos_Mtabolic.xlsx` (CU-01). |
+| P-02 | ¿La lista exportada incluye datos de contacto (nombre, celular, correo)? | Sí / solo código anónimo `MTB-XXXXXXXX` | Sí: sin contacto la lista no sirve para operar, pero obliga a resolver P-03. | **Cerrada** (28-09-2026): sí; nombre, celular y correo (CU-04 y CU-12 de `03`). |
+| P-03 | ¿Dónde se ejecutará la aplicación? | Nube con acceso restringido / equipo local de Mtabolic / servidor propio | Depende de P-02 y de la autorización de Mtabolic sobre los datos. | **Cerrada** (28-09-2026): en un solo PC de Mtabolic, con Docker Compose. Ver `04` §3. |
+| P-04 | ¿Qué fecha se usa para generar la lista? | Último día del último mes cargado (como hoy) / fecha real del día / elegida por el usuario | Elegida por el usuario, con el último día cargado como valor por defecto. | **Abierta.** `03` (CU-04) propone la fecha de corte de los últimos datos; falta confirmar frente al uso del reloj del sistema. Ver `04`. |
+| P-05 | ¿`TOP_K` y el horizonte de días son fijos o configurables? | Fijos (25 socios, 30 días) / configurables en pantalla | Configurables, con esos valores por defecto. | **Cerrada** (28-09-2026): configurables; 25 socios y 30 días por defecto (CU-04). |
+| P-06 | ¿Se reentrena el modelo en cada carga o se usa uno ya entrenado? | Reentrenar / modelo fijo `.joblib` | Reentrenar (sección 3.2). | **Cerrada** (28-09-2026), con otra solución: la carga no reentrena. El primer modelo se entrena en la migración del histórico (CU-03) y después una tarea semestral reentrena solo si hay datos suficientes (CU-02). |
 | P-07 | ¿Qué tecnología se usa? | Streamlit / Gradio / FastAPI + React (plantilla actual del repositorio) | Streamlit. La plantilla en `.claude/` asume FastAPI + React + PostgreSQL, un tamaño desproporcionado para este alcance; hay que decidir si se adapta o se ignora. | **Cerrada** (2026-09-28): FastAPI + React + PostgreSQL, decisión del usuario en R-001. Ver [ADR-001](adr/ADR-001-fastapi-react-postgresql.md). |
-| P-08 | ¿Quién usará la aplicación y cuántas personas? | Solo la asesora / varias personas de Mtabolic / el equipo académico | Define si basta una contraseña compartida o hacen falta usuarios. | Abierta |
-| P-09 | ¿La aplicación muestra algún indicador de calidad del modelo? | Ninguno / métrica simple (p. ej. PR-AUC del último período conocido) / advertencias de datos (porcentaje de filas sin fecha de fin, hojas no leídas) | Advertencias de calidad de datos; son baratas y útiles. | Abierta |
-| P-10 | ¿Se corrige `mes_vencimiento` antes de pasar a producción? | Mantener igual que el notebook / reemplazar por mes del año (1-12) / eliminar | Mantener igual para no desalinearse del informe académico; registrar como mejora futura. | Abierta |
-| P-11 | ¿Qué columnas lleva el Excel exportado y en qué orden? | Las de `lista_operativa()` del notebook / formato acordado con la asesora | Validar con la asesora antes de programar la exportación. | Abierta |
-| P-12 | ¿Se conserva algún historial de listas generadas? | No (todo en memoria) / sí (requiere almacenamiento) | No: simplifica el despliegue y reduce el riesgo sobre los datos. | Abierta |
+| P-08 | ¿Quién usará la aplicación y cuántas personas? | Solo la asesora / varias personas de Mtabolic / el equipo académico | Define si basta una contraseña compartida o hacen falta usuarios. | **Cerrada** (28-09-2026): personal interno de Mtabolic, sin cuentas de usuario; acceso restringido por IP (CU-00). |
+| P-09 | ¿La aplicación muestra algún indicador de calidad del modelo? | Ninguno / métrica simple (p. ej. PR-AUC del último período conocido) / advertencias de datos (porcentaje de filas sin fecha de fin, hojas no leídas) | Advertencias de calidad de datos; son baratas y útiles. | **Parcial.** `03` define advertencias de datos en CU-01/CU-03 y el bloque "Estado del modelo" del dashboard (CU-11). Falta decidir la métrica de control del reentrenamiento. Ver `04`. |
+| P-10 | ¿Se corrige `mes_vencimiento` antes de pasar a producción? | Mantener igual que el notebook / reemplazar por mes del año (1-12) / eliminar | Mantener igual para no desalinearse del informe académico; registrar como mejora futura. | **Abierta.** Se suma a la de `inicio_aproximado` (ver `04`). |
+| P-11 | ¿Qué columnas lleva el Excel exportado y en qué orden? | Las de `lista_operativa()` del notebook / formato acordado con la asesora | Validar con la asesora antes de programar la exportación. | **Cerrada** (28-09-2026): columnas propuestas en CU-12 de `03`; pendiente la validación final con la asesora. |
+| P-12 | ¿Se conserva algún historial de listas generadas? | No (todo en memoria) / sí (requiere almacenamiento) | No: simplifica el despliegue y reduce el riesgo sobre los datos. | **Cerrada** (28-09-2026): sí. Las listas se guardan con la versión del modelo (CU-04); el Excel de descarga se genera en memoria (CU-12). |

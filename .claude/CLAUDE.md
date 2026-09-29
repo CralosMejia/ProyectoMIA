@@ -1,7 +1,6 @@
-# {{PROYECTO}}
+# Mtabolic — apoyo a la retención
 
-<!-- Una línea de qué es el proyecto. -->
-{{DESCRIPCION_UNA_LINEA}}
+Aplicación web local que migra el histórico de membresías de Mtabolic, predice el riesgo de no renovación con el modelo del notebook y apoya la gestión de campañas de retención y su seguimiento. Alcance: `Documentation/DEVELOPMENT_GUIDELINES.md`.
 
 Superproyecto con dos submódulos: `Backend/` y `Frontend/`. `Documentation/` es la fuente de verdad compartida.
 
@@ -48,14 +47,14 @@ Estados y contratos de cada agente: `HARNESS.md` (léelo solo cuando orquestes, 
      Las de abajo son las que aplican a casi cualquier aplicación multiusuario: consérvalas si
      encajan, bórralas si no, y añade las propias del dominio. -->
 
-- El identificador del propietario del dato sale del token de sesión, nunca del body. Toda consulta y comando filtra por él.
+- Sin login: el acceso se restringe por IP (CU-00). La regla "propietario desde el token" y el `user_id` de `.claude/rules/database.md` **no aplican**; no se exigen ni se prueban.
 - Las escrituras que deben ser consistentes entre sí ocurren en la misma transacción.
 - Nada crítico del negocio se borra físicamente: borrado lógico (`deleted_at`) o cambio de estado.
 - Los valores exactos (dinero, cantidades, medidas) usan tipo decimal, nunca coma flotante.
 - Fecha y hora vía una abstracción de reloj inyectable, nunca la del sistema directamente.
 - Ningún secreto en el código, en archivos de configuración versionados ni en logs.
-- No se implementa nada fuera del alcance de la versión actual (`Documentation/DEVELOPMENT_GUIDELINES.md` §fuera de alcance).
-- {{INVARIANTE_PROPIA_DEL_DOMINIO}}
+- No se implementa nada fuera del alcance de la versión actual ([`Documentation/DEVELOPMENT_GUIDELINES.md`](../Documentation/DEVELOPMENT_GUIDELINES.md) §Fuera de alcance; excepciones a estas invariantes en §Excepciones).
+- El esquema lo migra solo el servicio `migrate`; la única migración de datos al arrancar es CU-03 (`Documentation/adr/ADR-004-migracion-datos-al-arrancar.md`).
 
 ## Herramientas opcionales
 

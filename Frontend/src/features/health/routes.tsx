@@ -20,7 +20,7 @@ function lazyElement(load: () => Promise<{ default: ComponentType }>) {
 
 export const healthRoutes: RouteObject[] = [
   {
-    path: '/',
+    path: '/salud',
     element: lazyElement(() => import('./pages/HealthPage')),
   },
 ]

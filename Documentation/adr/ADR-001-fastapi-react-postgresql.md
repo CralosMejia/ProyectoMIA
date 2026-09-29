@@ -24,5 +24,5 @@ El análisis 01 (§5 y P-07) recomendaba Streamlit por esfuerzo bajo y considera
 
 - Más código y más infraestructura que Streamlit: el esfuerzo de migración pasa de "bajo – medio" a "medio – alto" (§7 de 01).
 - La lógica del notebook deberá vivir en `domain`/`application` del Backend y exponerse por la API; la carga y descarga de Excel pasan a ser endpoints.
-- PostgreSQL queda disponible aunque P-12 (historial) siga abierta; no se crean tablas hasta que un requerimiento las necesite.
-- Las decisiones de despliegue (P-03) deben considerar un stack de tres contenedores en lugar de `streamlit run`.
+- PostgreSQL queda disponible; no se crean tablas hasta que un requerimiento las necesite. *(Actualización 28-09-2026: P-12 se cerró. Los casos de uso de [03](../03-casos-de-uso.md) exigen persistencia: historial acumulativo, listas, modelos versionados, campañas y seguimientos. Con eso la elección de PostgreSQL queda justificada.)*
+- Las decisiones de despliegue (P-03) deben considerar un stack de tres contenedores en lugar de `streamlit run`. El despliegue sigue sin confirmarse; ver [04 §3](../04-pendientes-para-iniciar-desarrollo.md).

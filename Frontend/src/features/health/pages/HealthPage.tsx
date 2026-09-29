@@ -6,8 +6,11 @@ export default function HealthPage() {
   const { data, error, isLoading, refetch } = useHealth()
 
   return (
-    <main className="min-h-screen bg-surface p-8 font-sans text-ink">
-      <h1 className="mb-6 text-2xl font-semibold">Estado del sistema</h1>
+    // AppLayout aporta el <main> y el fondo: aqui solo una region etiquetada.
+    <section aria-labelledby="health-title">
+      <h1 id="health-title" className="mb-6 text-2xl font-semibold">
+        Estado del sistema
+      </h1>
 
       {isLoading && (
         <p role="status" className="text-ink/70">
@@ -34,6 +37,6 @@ export default function HealthPage() {
       {!isLoading && !error && data && (
         <HealthStatusCard status={data.status} database={data.database} checkedAt={data.checkedAt} />
       )}
-    </main>
+    </section>
   )
 }

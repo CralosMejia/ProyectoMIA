@@ -12,6 +12,7 @@ Node 22 LTS. Para ver datos reales, el Backend en `http://localhost:8000` (el se
 |---|---|
 | Instalar | `npm install` |
 | Desarrollo | `npm run dev` (http://localhost:5173) |
+| Desarrollo con API simulada (MSW, sin backend) | `VITE_API_MOCKS=true npm run dev` |
 | Build (incluye `tsc`) | `npm run build` |
 | Lint | `npm run lint` |
 | Pruebas | `npm test` |
@@ -21,7 +22,7 @@ La primera vez que se ejecute Playwright: `npx playwright install chromium`.
 
 ## Variables
 
-`VITE_API_BASE_URL` (opcional, por defecto vacío = mismo origen). Las variables `VITE_*` son públicas: nunca contienen secretos.
+`VITE_API_BASE_URL` (opcional, por defecto vacío = mismo origen). `VITE_API_MOCKS` (opcional; solo el valor exacto `true` activa MSW en el navegador, y solo en desarrollo). Las variables `VITE_*` son públicas: nunca contienen secretos.
 
 ## Docker
 

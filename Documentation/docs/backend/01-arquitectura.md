@@ -14,7 +14,7 @@ Backend/app/
   main.py          create_app(): composition root
 ```
 
-Dependencias hacia dentro: `api → infrastructure → application → domain`. Se verifica con `import-linter` (`pyproject.toml`, 6 contratos):
+Dependencias hacia dentro: `api → infrastructure → application → domain`. Se verifica con `import-linter` (`pyproject.toml`, 7 contratos):
 
 | Contrato | Regla |
 |---|---|
@@ -24,6 +24,11 @@ Dependencias hacia dentro: `api → infrastructure → application → domain`. 
 | forbidden `application` | no importa `api`, `infrastructure` ni `app.main` |
 | forbidden `infrastructure` | no importa `api` ni `app.main` |
 | forbidden `api` | no importa `infrastructure`, salvo `app.api.dependencies` (ignore explícito, alerta si deja de usarse) |
+| forbidden ML (R-002, [ADR-002](../../adr/ADR-002-ml-en-infraestructura.md)) | `domain` y `application` no importan `pandas`, `numpy` ni `sklearn` |
+
+**Dominio común (R-002):** `domain/common/enums.py` define los 12 catálogos como `StrEnum` (`Plan`, `FormaPago`, `EstadoCiclo`, `NivelRiesgo`, `EstadoGestion`, `OrigenMembresia`, `EstadoRegistro`, `TipoCarga`, `EstadoMigracion`, `DisparadorReentrenamiento`, `ResultadoReentrenamiento`, `Respuesta`) y los subconjuntos `PLANES_CAMPANIA` (sin `DIARIO`) y `RESPUESTAS_OFRECIMIENTO`/`_ACEPTACION`/`_RENOVACION`; conversión estricta (`Plan("mensual")` → `ValueError`). Son la única fuente de los `CHECK` de la BD y de los catálogos de los DTOs. `domain/common/predictor.py` declara el puerto `PredictorModel` (`Protocol` `runtime_checkable`: `train(features, labels) -> TrainedModel`, `predict(artefacto, features) -> list[Prediction]`); `float` se admite ahí solo por ser probabilidades del modelo. La implementación con scikit-learn irá en `infrastructure` (día 3).
+
+**Contrato de la API (R-002):** `api/openapi.py` concentra `error_responses(...)`, `success_response(...)` y `raise_not_implemented()`; los routers `sistema`, `cargas`, `listas`, `campanias`, `gestiones` y `dashboard` publican las 18 operaciones con DTOs en `application/{modulo}/dtos.py` y responden `501` hasta tener su caso de uso ([API_CONTRACT](../API_CONTRACT.md)).
 
 **Composition root:** `app/main.py` (crea el engine en el `lifespan`, registra handlers de error y CORS, monta routers bajo `/api/v1`) y `app/api/dependencies.py` (enlaza puertos con implementaciones vía `Depends`). Ningún otro módulo instancia infraestructura. La app **no** crea tablas ni ejecuta migraciones al arrancar.
 

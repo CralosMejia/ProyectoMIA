@@ -21,16 +21,21 @@ VALIDATION_ERROR_MESSAGE = "La solicitud contiene datos invalidos o incompletos.
 INTERNAL_ERROR_MESSAGE = "Ocurrio un error inesperado. Intentalo de nuevo mas tarde."
 DOMAIN_ERROR_MESSAGE = "La operacion viola una regla de negocio."
 
-_HTTP_ERRORS: dict[int, tuple[str, str]] = {
+PAYLOAD_TOO_LARGE_MESSAGE = "El archivo supera el tamano maximo permitido."
+NOT_IMPLEMENTED_MESSAGE = "Esta funcion aun no esta disponible."
+
+HTTP_ERRORS: dict[int, tuple[str, str]] = {
     status.HTTP_400_BAD_REQUEST: ("bad_request", "La solicitud no es valida."),
     status.HTTP_401_UNAUTHORIZED: ("unauthorized", "Debes iniciar sesion para continuar."),
-    status.HTTP_403_FORBIDDEN: ("forbidden", "No tienes permiso para acceder a este recurso."),
+    status.HTTP_403_FORBIDDEN: ("forbidden", "El acceso no esta permitido desde este equipo."),
     status.HTTP_404_NOT_FOUND: ("not_found", "El recurso solicitado no existe."),
     status.HTTP_405_METHOD_NOT_ALLOWED: (
         "method_not_allowed",
         "El metodo HTTP no esta permitido para este recurso.",
     ),
     status.HTTP_409_CONFLICT: ("conflict", "La operacion entra en conflicto con el estado actual."),
+    status.HTTP_413_CONTENT_TOO_LARGE: ("payload_too_large", PAYLOAD_TOO_LARGE_MESSAGE),
+    status.HTTP_501_NOT_IMPLEMENTED: ("not_implemented", NOT_IMPLEMENTED_MESSAGE),
 }
 
 
@@ -40,7 +45,7 @@ def error_body(code: str, message: str) -> dict[str, dict[str, str]]:
 
 
 def _http_error_code_and_message(exc: StarletteHTTPException) -> tuple[str, str]:
-    known = _HTTP_ERRORS.get(exc.status_code)
+    known = HTTP_ERRORS.get(exc.status_code)
     try:
         phrase = HTTPStatus(exc.status_code).phrase
     except ValueError:

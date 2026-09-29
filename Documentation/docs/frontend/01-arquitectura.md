@@ -6,11 +6,14 @@ React 19 · TypeScript estricto · Vite 8 · Tailwind CSS 4 · React Router 7 ·
 
 ```
 Frontend/src/
-  main.tsx               arranque
+  main.tsx               arranque (MSW en navegador solo con DEV y VITE_API_MOCKS=true)
   index.css              Tailwind + tokens de diseño (@theme): único archivo de estilos
-  app/router.tsx         createBrowserRouter; monta las rutas de cada feature
-  core/config.ts         VITE_API_BASE_URL (fallback "": mismo origen)
-  core/http/             cliente HTTP único: http-client.ts (httpGet), api-error.ts (ApiError)
+  app/router.tsx         createBrowserRouter; ruta raíz con AppLayout y rutas hijas de cada feature
+  core/config.ts         VITE_API_BASE_URL (fallback "": mismo origen), apiMocks
+  core/http/             cliente HTTP único: http-client.ts, api-error.ts (ApiError)
+  core/layout/AppLayout  header + nav (5 enlaces) + <main> con Suspense y <Outlet/>
+  shared/ui/             componentes base sin lógica de negocio (no importan features/)
+  mocks/                 MSW: handlers.ts (autodescubrimiento), server.ts (pruebas), browser.ts (dev)
   features/{feature}/
     routes.tsx           rutas lazy (React.lazy + Suspense)
     pages/               componen y conectan con hooks
@@ -26,6 +29,7 @@ Flujo en una sola dirección: `pages → hooks → api → core/http`. `componen
 ## `core/http`
 
 - `httpGet<T>(path, { signal })` antepone la base URL y parsea JSON.
+- `httpPost<T>` y `httpPut<T>` envían JSON (`Content-Type: application/json`); `httpPostForm<T>(path, FormData)` envía multipart sin fijar `Content-Type`; `httpGetBlob(path)` devuelve un `Blob` (descarga del Excel).
 - Respuesta no 2xx → `ApiError { status, message, body }`; `message` sale de `error.message` del formato único del backend.
 - Error de red → `ApiError` con `status: 0` y mensaje genérico.
 - Petición abortada → se propaga el `AbortError` original (no se envuelve).
@@ -41,16 +45,47 @@ Flujo en una sola dirección: `pages → hooks → api → core/http`. `componen
 | hooks | `hooks/useHealth.ts` | `{ data, error, isLoading, refetch }`; `AbortController` al desmontar; expone solo `error.message` |
 | pages | `pages/HealthPage.tsx` | estados: cargando (`role="status"`), ok, degradado, error (`role="alert"` + "Reintentar") |
 | components | `components/HealthStatusCard.tsx` | tarjeta presentacional |
-| routes | `routes.tsx` | ruta `/`, lazy |
+| routes | `routes.tsx` | ruta `/salud`, lazy (antes `/`; movida en R-002) |
+
+## Navegación (R-002)
+
+| Ruta | Feature | Página |
+|---|---|---|
+| `/` (index) | `inicio` | "Inicio" |
+| `/carga` | `carga` | "Carga de datos" |
+| `/lista` | `lista` | "Lista priorizada" |
+| `/campanias` | `campanias` | "Campañas" |
+| `/dashboard` | `dashboard` | "Dashboard" |
+| `/salud` | `health` | `HealthPage` (fuera del menú) |
+| `*` | — | "Página no encontrada" |
+
+Las cinco páginas de negocio son placeholders con `<h1>` hasta sus días del cronograma. Cada feature expone ya su capa `api/` (`types.ts`, `api/<feature>-api.ts`, `api/<feature>-api.handlers.ts`) según el [contrato](../API_CONTRACT.md): `inicio` (estado del sistema, alertas), `carga` (vista previa y confirmación con `FormData` campo `archivo`), `lista` (generar, última, por id, Excel, sugerencias, gestiones), `campanias` (listar, crear, editar, inactivar; el tipo de `planes` excluye `"DIARIO"`) y `dashboard` (`?mes=YYYY-MM` opcional). Los decimales (`score`, `tasaRenovacion`) se mantienen como `string`; `modeloVigente.version` es `string` (`"v1"`).
+
+## `shared/ui`
+
+| Componente | Contrato |
+|---|---|
+| `DataTable<T>` | `columns: {key, header, render?}[]`, `rows`, `getRowKey`, `emptyMessage`, `caption` |
+| `RiskBadge` | `nivel: "ALTO" \| "MEDIO" \| "BAJO"` → "Alto"/"Medio"/"Bajo" con los tokens `risk-high`/`risk-medium`/`risk-low` |
+| `LoadingIndicator` | `role="status"`, texto accesible configurable |
+| `ErrorAlert` | `role="alert"`, `message`, `onRetry?` → botón "Reintentar" |
+| `Modal` | `open`, `title`, `onClose`; `role="dialog"`, `aria-modal`, `aria-labelledby`; cierra con `Escape` y "Cerrar"; foco al abrir |
 
 ## Estilos
 
-Tokens (colores `ok`/`degraded`, tipografía, radios) declarados una sola vez en `src/index.css` dentro de `@theme` y consumidos por nombre en clases Tailwind. No hay CSS fuera de `index.css`. Aún no existe `shared/ui/` ni `06-estilos-y-design-system.md`.
+Tokens (colores `ok`/`degraded`, `risk-high`/`risk-medium`/`risk-low`, tipografía, radios) declarados una sola vez en `src/index.css` dentro de `@theme` y consumidos por nombre en clases Tailwind. No hay CSS fuera de `index.css`. Aún no existe `06-estilos-y-design-system.md`.
+
+## MSW (datos simulados)
+
+- `mocks/handlers.ts` reúne con `import.meta.glob("../features/*/api/*.handlers.ts", { eager: true })` los `handlers` exportados por cada feature: un feature nuevo solo añade su archivo.
+- Pruebas: `mocks/server.ts` (`setupServer`), iniciado en `src/test/setup.ts` con `onUnhandledRequest: "error"` (una petición sin handler hace fallar el test).
+- Navegador: `mocks/browser.ts` (`setupWorker`), importado dinámicamente en `main.tsx` solo si `import.meta.env.DEV && config.apiMocks` (`VITE_API_MOCKS=true`), antes de montar. El build de producción no incluye el worker y la imagen Docker borra `dist/mockServiceWorker.js`.
+- Los datos simulados son ficticios (sin cédulas reales). Limitación conocida: el handler de `GET /gestiones` devuelve `[]` sin filtro, mientras el backend responde `400`; solo afecta a los datos simulados.
 
 ## Desarrollo local
 
-`npm run dev` sirve en `http://localhost:5173` con proxy de Vite `/api` → `http://localhost:8000`. En Docker, nginx hace el mismo proxy (ver [10-docker.md](../backend/10-docker.md)).
+`npm run dev` sirve en `http://localhost:5173` con proxy de Vite `/api` → `http://localhost:8000`. Con `VITE_API_MOCKS=true npm run dev` la API se simula con MSW (sin backend). En Docker, nginx hace el mismo proxy (ver [10-docker.md](../backend/10-docker.md)).
 
 ## Pruebas
 
-96 pruebas Vitest (unitarias de `core/http`, `api`, hooks, páginas y componentes, con red mockeada) y 1 E2E Playwright (`e2e/health.spec.ts`, `E2E_BASE_URL`, por defecto `http://localhost:8080`, requiere el stack levantado). Comandos en `Frontend/README.md`.
+242 pruebas Vitest (unitarias de `core/http`, `api` de cada feature contra MSW, hooks, layout, router, `shared/ui`, páginas y componentes) y 1 E2E Playwright (`e2e/health.spec.ts` sobre `/salud`, `E2E_BASE_URL`, por defecto `http://localhost:8080`, requiere el stack levantado). Comandos en `Frontend/README.md`.

@@ -35,3 +35,7 @@ htmlcov/
 
 # Configuracion local de Claude Code
 .claude/settings.local.json
+/plantillas
+
+# Libros historicos con datos personales (no versionar nunca, aunque se quite /plantillas)
+plantillas/Control Gym*.xlsx

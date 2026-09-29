@@ -11,7 +11,8 @@ COPY . .
 # Las variables VITE_* se incrustan en el bundle: nunca deben contener secretos.
 ARG VITE_API_BASE_URL=""
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
-RUN npm run build
+# El service worker de MSW (public/) solo sirve para los mocks de desarrollo: no se publica.
+RUN npm run build && rm -f dist/mockServiceWorker.js
 
 # ---- Etapa de runtime: solo estaticos servidos por nginx no root ----
 FROM nginxinc/nginx-unprivileged:1.29.1-alpine AS runtime

@@ -38,6 +38,9 @@ RUN python -m pip uninstall -y pip setuptools wheel \
 COPY --from=build /opt/venv /opt/venv
 
 WORKDIR /srv
+# Migraciones: las ejecuta solo el servicio "migrate" (alembic upgrade head), nunca la app.
+COPY alembic.ini ./
+COPY alembic ./alembic
 USER app:app
 
 EXPOSE 8000

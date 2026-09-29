@@ -26,6 +26,21 @@ services:
       retries: 10
       start_period: 10s
 
+  # Aplica las migraciones y termina. Es el unico que cambia el esquema; el backend
+  # arranca solo si este sale con codigo 0. Usa la imagen que construye "backend".
+  migrate:
+    image: backend:dev
+    pull_policy: never
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?defina DATABASE_URL en .env}
+    healthcheck:
+      disable: true
+    depends_on:
+      db:
+        condition: service_healthy
+
   backend:
     build:
       context: ./Backend
@@ -35,9 +50,14 @@ services:
       DATABASE_URL: ${DATABASE_URL:?defina DATABASE_URL en .env}
       CORS_ORIGINS: ${CORS_ORIGINS:?defina CORS_ORIGINS en .env}
       APP_ENV: ${APP_ENV:?defina APP_ENV en .env}
+    volumes:
+      # Libros historicos para la migracion inicial (CU-03), solo lectura.
+      - ${HISTORICO_DIR:?defina HISTORICO_DIR en .env}:/data/historico:ro
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:8000:8000"
 

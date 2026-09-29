@@ -38,6 +38,16 @@ describe('HealthPage', () => {
     expect(screen.getByRole('status')).toBeInTheDocument()
   })
 
+  it('renders a labelled region instead of its own main landmark (AppLayout owns <main>)', () => {
+    fetchMock.mockReturnValue(new Promise<Response>(() => {}))
+
+    render(<HealthPage />)
+
+    expect(screen.queryByRole('main')).not.toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Estado del sistema' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Estado del sistema' })).toBeInTheDocument()
+  })
+
   it('shows operational state and connected database on 200 ok', async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, OK_BODY))
 

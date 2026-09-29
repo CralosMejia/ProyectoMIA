@@ -4,4 +4,6 @@
  */
 export const config = {
   apiBaseUrl: import.meta.env.VITE_API_BASE_URL ?? '',
+  /** Activa los mocks de red (MSW) en desarrollo. Sin efecto en el build de produccion. */
+  apiMocks: import.meta.env.VITE_API_MOCKS === 'true',
 } as const

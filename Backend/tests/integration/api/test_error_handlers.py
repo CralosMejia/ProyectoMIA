@@ -9,11 +9,12 @@ import traceback
 from collections.abc import Iterator
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, Field, SecretStr
 from sqlalchemy.engine import URL
 
+from app.api.openapi import error_responses, raise_not_implemented
 from app.core.config import Settings
 from app.domain.common.exceptions import DomainError
 from app.main import create_app
@@ -25,6 +26,8 @@ OTHER_ORIGIN = "http://evil.example"
 BOOM_PATH = "/api/v1/_test/boom"
 DOMAIN_PATH = "/api/v1/_test/domain"
 VALIDATION_PATH = "/api/v1/_test/validation"
+NOT_IMPLEMENTED_PATH = "/api/v1/_test/not-implemented"
+FORBIDDEN_PATH = "/api/v1/_test/forbidden"
 INTERNAL_DETAIL = "detalle interno SELECT * FROM secret_table en /srv/app/main.py"
 
 
@@ -52,6 +55,14 @@ def app(test_database_url: URL) -> FastAPI:
     @application.get(DOMAIN_PATH)
     def domain_rule() -> None:
         raise _SampleDomainError("La cantidad supera el limite permitido.")
+
+    @application.get(NOT_IMPLEMENTED_PATH)
+    def not_implemented() -> None:
+        raise_not_implemented()
+
+    @application.get(FORBIDDEN_PATH)
+    def forbidden() -> None:
+        raise HTTPException(status_code=403)
 
     @application.post(VALIDATION_PATH)
     def validation(payload: _Payload) -> _Payload:
@@ -255,3 +266,57 @@ def test_startup_with_malformed_database_url_raises_without_exposing_password(
     assert known_credential not in rendered
     assert exc_info.value.__cause__ is None
     assert exc_info.value.__suppress_context__ is True
+
+
+def test_raise_not_implemented_returns_501_with_unique_error_format(client: TestClient) -> None:
+    response = client.get(NOT_IMPLEMENTED_PATH)
+
+    assert response.status_code == 501
+    assert response.json() == {
+        "error": {
+            "code": "not_implemented",
+            "message": "Esta funcion aun no esta disponible.",
+        }
+    }
+
+
+def test_forbidden_message_does_not_mention_session(client: TestClient) -> None:
+    response = client.get(FORBIDDEN_PATH)
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "error": {
+            "code": "forbidden",
+            "message": "El acceso no esta permitido desde este equipo.",
+        }
+    }
+
+
+def test_error_responses_builds_example_in_unique_error_format_per_code() -> None:
+    responses = error_responses(400, 501)
+
+    assert set(responses) == {400, 501}
+    bad_request = responses[400]["content"]["application/json"]["example"]
+    assert bad_request["error"]["code"] == "validation_error"
+    not_implemented = responses[501]["content"]["application/json"]["example"]
+    assert not_implemented == {
+        "error": {
+            "code": "not_implemented",
+            "message": "Esta funcion aun no esta disponible.",
+        }
+    }
+    for entry in responses.values():
+        assert entry["description"]
+        assert entry["model"].__name__ == "ErrorResponseDTO"
+
+
+@pytest.mark.parametrize("code", [400, 403, 404, 409, 413, 422, 501])
+def test_error_responses_supports_every_catalog_code(code: int) -> None:
+    example = error_responses(code)[code]["content"]["application/json"]["example"]
+
+    _assert_error_shape(example, example["error"]["code"])
+
+
+def test_error_responses_unknown_code_raises_value_error() -> None:
+    with pytest.raises(ValueError, match="418"):
+        error_responses(418)
