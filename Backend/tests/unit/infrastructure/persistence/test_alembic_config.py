@@ -64,11 +64,12 @@ def test_alembic_ini_contains_no_url_or_credentials() -> None:
 
 
 # ------------------------------------------------------------------ T7/T8: cadena de revisiones
-def test_revision_chain_is_0001_then_0002_with_single_head() -> None:
+def test_revision_chain_is_0001_0002_0003_with_single_head() -> None:
     script = ScriptDirectory.from_config(Config(str(ALEMBIC_INI)))
-    assert script.get_heads() == ["0002"]
+    assert script.get_heads() == ["0003"]
     assert script.get_revision("0001").down_revision is None
     assert script.get_revision("0002").down_revision == "0001"
+    assert script.get_revision("0003").down_revision == "0002"
 
 
 # ------------------------------------------------------------------ ADR-002

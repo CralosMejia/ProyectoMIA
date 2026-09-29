@@ -94,7 +94,7 @@
 - `health` pasó de `/` a `/salud`; `/` es ahora Inicio.
 
 **Pendientes que pasan a los días siguientes**
-- **Día 2:** decidir si `membresias.socio_id` pasa a `NOT NULL`; vigilar diferencias de comportamiento de pandas 3.x al portar el notebook (D2-BE-01 a D2-BE-05).
+- **Día 2:** decidir si `membresias.socio_id` pasa a `NOT NULL`; vigilar diferencias de comportamiento de pandas 3.x al portar el notebook (D2-BE-01 a D2-BE-05). *Resuelto en R-003: `NOT NULL` y pandas 3 se mantiene.*
 - **Día 7:** S23 (rol de BD sin superusuario y rol de migraciones) dentro de D7-OP-02; revisión de seguridad de todo lo del día 1.
 - Menores: verificar a mano el mensaje "[MSW] Mocking enabled" en el navegador; el handler MSW de `GET /gestiones` devuelve `[]` sin filtro (el backend responde `400`), a alinear al usar ese handler en pantallas; errores de `mypy` previos a R-002 en `tests/integration/api/test_error_handlers.py`.
 
@@ -104,27 +104,54 @@
 
 **Base de datos**
 
-| ID | Tarea | Resp. | Depende de | Hecho cuando |
-|---|---|---|---|---|
-| D2-BD-01 | Repositorios de `socio`, `membresia` y `carga` con inserción masiva dentro de una transacción recibida desde fuera (unit of work). | A | D1-BD-02 | Prueba de integración: insertar 3.000 filas y hacer rollback deja la base vacía. |
+| ID | Tarea | Resp. | Depende de | Hecho cuando | Estado |
+|---|---|---|---|---|---|
+| D2-BD-01 | Repositorios de `socio`, `membresia` y `carga` con inserción masiva dentro de una transacción recibida desde fuera (unit of work). | A | D1-BD-02 | Prueba de integración: insertar 3.000 filas y hacer rollback deja la base vacía. | Hecho (R-003 T6–T7); además `membresias.socio_id NOT NULL` (T1, migración `0003`) |
 
 **Backend**
 
-| ID | Tarea | Resp. | Depende de | Hecho cuando |
-|---|---|---|---|---|
-| D2-BE-01 | Lector de libros históricos (infraestructura): año desde el nombre del archivo, hojas mensuales, detección del encabezado y columnas por nombres equivalentes. Adapta las secciones 2.4 a 3.4 del notebook. | A | D1-BE-01 | Lee los libros sintéticos de D2-OP-01. |
-| D2-BE-02 | **TDD** · Limpieza y normalización (dominio puro): filas no útiles, fechas, montos, nombre, cédula, plan (6 categorías) y forma de pago. Adapta las secciones 3.5 a 4.6. | A | D1-BE-03 | Pruebas con los casos del notebook ("39,50 USD", fecha numérica de Excel, "PROMO 3 MESES", plan con una forma de pago dentro…). |
-| D2-BE-03 | **TDD** · Identidad del socio: cédula de al menos 9 dígitos o nombre normalizado; `inicio_aproximado`. | A | D2-BE-02 | Pruebas unitarias. |
-| D2-BE-04 | **TDD** · Ciclos y etiqueta (dominio puro): estado del ciclo (reglas de la Sección 5.3, fecha de corte), ventana T a T+30 y detección de renovación. | A | D2-BE-03 | Pruebas, incluido el caso del tutor (vence el 20-08 → pendiente). |
-| D2-BE-05 | Verificación local fuera de la suite versionada: script que corre D2-BE-01 a D2-BE-04 con los libros reales e imprime los conteos. | A | D2-BE-04 | Da 2.771 / 2.748 / 1.410 y los ciclos evaluables del notebook. Las diferencias quedan documentadas. |
+| ID | Tarea | Resp. | Depende de | Hecho cuando | Estado |
+|---|---|---|---|---|---|
+| D2-BE-01 | Lector de libros históricos (infraestructura): año desde el nombre del archivo, hojas mensuales, detección del encabezado y columnas por nombres equivalentes. Adapta las secciones 2.4 a 3.4 del notebook. | A | D1-BE-01 | Lee los libros sintéticos de D2-OP-01. | Hecho (R-003 T9) |
+| D2-BE-02 | **TDD** · Limpieza y normalización (dominio puro): filas no útiles, fechas, montos, nombre, cédula, plan (6 categorías) y forma de pago. Adapta las secciones 3.5 a 4.6. | A | D1-BE-03 | Pruebas con los casos del notebook ("39,50 USD", fecha numérica de Excel, "PROMO 3 MESES", plan con una forma de pago dentro…). | Hecho (R-003 T2–T3) |
+| D2-BE-03 | **TDD** · Identidad del socio: cédula de al menos 9 dígitos o nombre normalizado; `inicio_aproximado`. | A | D2-BE-02 | Pruebas unitarias. | Hecho (R-003 T4) |
+| D2-BE-04 | **TDD** · Ciclos y etiqueta (dominio puro): estado del ciclo (reglas de la Sección 5.3, fecha de corte), ventana T a T+30 y detección de renovación. | A | D2-BE-03 | Pruebas, incluido el caso del tutor (vence el 20-08 → pendiente). | Hecho (R-003 T5, T10) |
+| D2-BE-05 | Verificación local fuera de la suite versionada: script que corre D2-BE-01 a D2-BE-04 con los libros reales e imprime los conteos. | A | D2-BE-04 | Da 2.771 / 2.748 / 1.410 y los ciclos evaluables del notebook. Las diferencias quedan documentadas. | Hecho (R-003 T11): 2.771 / 2.748 / 1.410 / 1.564; 2 diferencias conocidas documentadas |
 
 **Frontend y apoyo**
 
-| ID | Tarea | Resp. | Depende de | Hecho cuando |
-|---|---|---|---|---|
-| D2-OP-01 | **Datos sintéticos**: dos libros con la estructura del histórico (hojas mensuales y auxiliares, encabezado en filas distintas, nombres de columna cambiantes, totales, filas vacías, socios sin cédula) y 5 plantillas (1 válida y 4 con errores: cédula, catálogo, fechas y 501 filas). Sin datos reales. | B | — | Archivos en `Backend/tests/fixtures/`. |
-| D2-FE-01 | Página Inicio: estado del sistema (Inicializando / Faltan datos históricos / Listo), con datos simulados. | B | D1-FE-03 | Pruebas de los tres estados. |
-| D2-FE-02 | Página Carga: selección de archivo, vista previa con conteos, tabla de errores por fila y botón Confirmar, deshabilitado si hay errores. | B | D1-FE-03 | Pruebas con vista previa válida y con errores (simuladas). |
+| ID | Tarea | Resp. | Depende de | Hecho cuando | Estado |
+|---|---|---|---|---|---|
+| D2-OP-01 | **Datos sintéticos**: dos libros con la estructura del histórico (hojas mensuales y auxiliares, encabezado en filas distintas, nombres de columna cambiantes, totales, filas vacías, socios sin cédula) y 5 plantillas (1 válida y 4 con errores: cédula, catálogo, fechas y 501 filas). Sin datos reales. | B | — | Archivos en `Backend/tests/fixtures/`. | Hecho (R-003 T8) |
+| D2-FE-01 | Página Inicio: estado del sistema (Inicializando / Faltan datos históricos / Listo), con datos simulados. | B | D1-FE-03 | Pruebas de los tres estados. | Hecho (R-003 T12) |
+| D2-FE-02 | Página Carga: selección de archivo, vista previa con conteos, tabla de errores por fila y botón Confirmar, deshabilitado si hay errores. | B | D1-FE-03 | Pruebas con vista previa válida y con errores (simuladas). | Hecho (R-003 T13) |
+
+#### Avance y resumen del Día 2
+
+**Estado:** cerrado · 9 de 9 tareas hechas en un solo requerimiento (R-003, `DONE`, 13 tareas de desarrollo + documentación). Hito verificado: con los libros reales, la lógica portada da **2.771 / 2.748 / 1.410** y **1.564 evaluables** (1.098 no renovó / 466 renovó), iguales al notebook.
+
+**Realizado**
+- Base de datos: `membresias.socio_id` pasa a `NOT NULL` (migración `0003`; falla si hubiera membresías sin socio; `downgrade` vuelve a `NULL`). Repositorios de socios, membresías y cargas con inserción masiva sin `commit` propio: 1 carga + 1.000 socios + 3.000 membresías y `rollback` deja la base vacía en < 5 s. Detalle: [09-esquema-base-de-datos](docs/backend/09-esquema-base-de-datos.md).
+- Backend: dominio `historico` sin pandas (conversiones de fecha y monto con `Decimal`, normalización, identidad, registro y limpieza con conteos, ciclos y etiqueta T..T+30 con el caso del tutor), puertos y servicio `ProcesarHistorico` con informe solo de conteos, lector de libros con pandas y script de verificación local. Detalle: [11-historico](docs/backend/11-historico.md).
+- Datos sintéticos: generador determinista, 2 libros y 5 plantillas en `Backend/tests/fixtures/`, validados ejecutando el código del notebook (39 leídas, 25 útiles, 14 socios, 15 evaluables, prevalencia 0,6).
+- Frontend: páginas Inicio (tres estados del sistema) y Carga (selección, vista previa, errores, confirmación sin doble envío) con MSW ([frontend/01-arquitectura](docs/frontend/01-arquitectura.md)).
+- Pruebas: Backend 729 pytest, `ruff`, `format`, `mypy app` (67 archivos), `lint-imports` (7 contratos); Frontend 270 Vitest, `lint` 0 avisos, `build`.
+
+**Conciliación con el notebook (libros reales)**
+- Iguales: útiles 2.771, con identidad 2.748, socios 1.410, corte 2026-08-31, evaluables 1.564, no renovó 1.098, renovó 466, vencimiento posterior al corte 160, ventana incompleta 96, duración implausible 49, pase diario 16.
+- Diferencias conocidas: `SIN_VENCIMIENTO` 857 frente a 855 y `FECHA_FUERA_DE_RANGO` 6 frente a 8. Causa: 2 celdas basura en la fecha de vencimiento que pandas 3 convierte en los años 1114 y 1; la app no las toma como fecha. Ambos ciclos quedan excluidos igual: sin efecto en evaluables ni etiquetas.
+- Corregido durante la conciliación: fechas con separador doble (`dd//mm/aaaa`) que se perdían (evaluables de 1.562 a 1.564).
+
+**Desviaciones**
+- No se replica la conversión de pandas de las 2 celdas basura (podría convertir basura como `2026` en una fecha válida).
+- Montos negativos se guardan como `None` y se cuentan (la BD exige `>= 0`); el notebook los conserva.
+- Se mantiene **pandas 3.0.6**: el notebook corrió con pandas 3 (con 2.x su propia lógica no da 855/8); no hizo falta el plan B de fijar pandas 2.x.
+- Revisión de seguridad no ejecutada: diferida a la revisión única del día 7 (§1).
+
+**Pendientes que pasan a los días siguientes**
+- **Día 3:** conectar `ProcesarHistorico` con los repositorios en la migración atómica al arrancar (D3-BE-04).
+- **Día 7:** S23 y revisión de seguridad de lo hecho el día 2 (D7-OP-02).
+- Menores: `mypy` sobre `tests/` (stubs de `openpyxl`, `generar_fixtures.py:836`, `type: ignore` sin uso en `test_procesar_historico.py:33`); el resumen de carga no muestra `filasLeidas` ni `fechaCarga` (no lo exige el criterio).
 
 ---
 

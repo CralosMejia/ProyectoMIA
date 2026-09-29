@@ -1,4 +1,5 @@
-"""Migraciones ``0001`` (esquema) y ``0002`` (fila de ``estado_sistema``) contra PostgreSQL 16.
+"""Migraciones ``0001`` (esquema), ``0002`` (fila de ``estado_sistema``) y ``0003``
+(``membresias.socio_id NOT NULL``) contra PostgreSQL 16.
 
 Sin login (RT-12): no hay ``user_id``; las pruebas de aislamiento entre usuarios no aplican.
 Cada prueba deja la base como la encontro: transaccion con rollback, o ciclo de migraciones
@@ -95,7 +96,9 @@ def carga(conn: Connection, **values: object) -> int:
 
 
 def membresia(conn: Connection, **values: object) -> int:
+    """Membresia valida; crea un socio por defecto salvo que se pase ``socio_id``."""
     base = {
+        "socio_id": values["socio_id"] if "socio_id" in values else socio(conn),
         "carga_id": carga(conn),
         "plan": "MENSUAL",
         "forma_pago": "EFECTIVO",
@@ -306,6 +309,102 @@ def test_estado_sistema_second_row_is_rejected(conn: Connection) -> None:
             ),
             {"now": NOW},
         )
+
+
+# ------------------------------------------------------------------ 0003: socio_id NOT NULL
+def _is_nullable(engine: Engine, table: str, column: str) -> bool:
+    columns = {c["name"]: c for c in inspect(engine).get_columns(table)}
+    return bool(columns[column]["nullable"])
+
+
+def test_membresia_without_socio_is_rejected(conn: Connection) -> None:
+    with pytest.raises(IntegrityError, match="socio_id"):
+        membresia(conn, socio_id=None)
+
+
+def test_membresia_with_valid_socio_is_accepted(conn: Connection) -> None:
+    socio_id = socio(conn)
+    membresia_id = membresia(conn, socio_id=socio_id)
+    stored = conn.execute(
+        text("SELECT socio_id FROM membresias WHERE id = :id"), {"id": membresia_id}
+    ).scalar_one()
+    assert stored == socio_id
+
+
+def test_0003_leaves_predicciones_socio_id_nullable(migrated_engine: Engine) -> None:
+    assert _is_nullable(migrated_engine, "membresias", "socio_id") is False
+    assert _is_nullable(migrated_engine, "predicciones", "socio_id") is True
+
+
+def test_0003_downgrade_accepts_null_socio_and_upgrade_again_works(
+    migrated_engine: Engine, alembic_config: Config
+) -> None:
+    command.downgrade(alembic_config, "0002")
+    try:
+        assert _is_nullable(migrated_engine, "membresias", "socio_id") is True
+        with migrated_engine.connect() as connection:
+            transaction = connection.begin()
+            try:
+                assert membresia(connection, socio_id=None) > 0
+            finally:
+                transaction.rollback()
+    finally:
+        command.upgrade(alembic_config, "head")
+    assert _is_nullable(migrated_engine, "membresias", "socio_id") is False
+    assert _is_nullable(migrated_engine, "predicciones", "socio_id") is True
+
+
+def _vaciar_historial(engine: Engine) -> None:
+    """Limpieza de la base de pruebas tras datos confirmados (orden de las FK)."""
+    with engine.begin() as connection:
+        for tabla in ("membresias", "cargas", "socios"):
+            connection.execute(text(f"DELETE FROM {tabla}"))  # noqa: S608 - nombres fijos
+
+
+def _revision_actual(engine: Engine) -> str:
+    with engine.connect() as connection:
+        return str(connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one())
+
+
+def test_0003_upgrade_over_existing_membresias_with_socio_keeps_rows(
+    migrated_engine: Engine, alembic_config: Config
+) -> None:
+    command.downgrade(alembic_config, "0002")
+    try:
+        with migrated_engine.begin() as connection:
+            socio_id = socio(connection)
+            membresia_id = membresia(connection, socio_id=socio_id)
+        command.upgrade(alembic_config, "head")
+
+        assert _revision_actual(migrated_engine) == "0003"
+        assert _is_nullable(migrated_engine, "membresias", "socio_id") is False
+        with migrated_engine.connect() as connection:
+            stored = connection.execute(
+                text("SELECT socio_id FROM membresias WHERE id = :id"), {"id": membresia_id}
+            ).scalar_one()
+        assert stored == socio_id
+    finally:
+        command.upgrade(alembic_config, "head")
+        _vaciar_historial(migrated_engine)
+
+
+def test_0003_upgrade_with_membresia_without_socio_fails_and_stays_at_0002(
+    migrated_engine: Engine, alembic_config: Config
+) -> None:
+    command.downgrade(alembic_config, "0002")
+    try:
+        with migrated_engine.begin() as connection:
+            membresia(connection, socio_id=None)
+
+        with pytest.raises(IntegrityError):
+            command.upgrade(alembic_config, "head")
+
+        assert _revision_actual(migrated_engine) == "0002"
+        assert _is_nullable(migrated_engine, "membresias", "socio_id") is True
+    finally:
+        _vaciar_historial(migrated_engine)
+        command.upgrade(alembic_config, "head")
+    assert _revision_actual(migrated_engine) == "0003"
 
 
 # ------------------------------------------------------------------ ciclos de migracion

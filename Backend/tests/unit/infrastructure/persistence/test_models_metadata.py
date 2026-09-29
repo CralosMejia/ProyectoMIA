@@ -290,7 +290,7 @@ def test_cargas_single_active_historical_migration() -> None:
 
 # ------------------------------------------------------------------ membresias
 def test_membresias_foreign_keys() -> None:
-    assert col("membresias", "socio_id").nullable is True
+    assert col("membresias", "socio_id").nullable is False
     assert col("membresias", "carga_id").nullable is False
     assert fk("membresias", "socio_id").referred_table.name == "socios"
     assert fk("membresias", "carga_id").referred_table.name == "cargas"

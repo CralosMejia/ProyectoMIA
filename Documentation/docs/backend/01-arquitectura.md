@@ -30,6 +30,8 @@ Dependencias hacia dentro: `api → infrastructure → application → domain`. 
 
 **Contrato de la API (R-002):** `api/openapi.py` concentra `error_responses(...)`, `success_response(...)` y `raise_not_implemented()`; los routers `sistema`, `cargas`, `listas`, `campanias`, `gestiones` y `dashboard` publican las 18 operaciones con DTOs en `application/{modulo}/dtos.py` y responden `501` hasta tener su caso de uso ([API_CONTRACT](../API_CONTRACT.md)).
 
+**Histórico (R-003):** paquetes nuevos `domain/historico/` (conversiones, normalización, identidad, registro, ciclos y etiqueta; solo librería estándar), `application/historial/` (puertos `LectorHistorico`, `SocioRepository`, `MembresiaRepository`, `CargaRepository` y servicio `ProcesarHistorico`), `infrastructure/historico/` (lector de libros con pandas) e `infrastructure/persistence/repositories/historial.py` (inserción masiva sin `commit`/`rollback`: la transacción es de quien llama). Detalle en [11-historico.md](11-historico.md). Aún no están enlazados en el composition root (día 3, D3-BE-04).
+
 **Composition root:** `app/main.py` (crea el engine en el `lifespan`, registra handlers de error y CORS, monta routers bajo `/api/v1`) y `app/api/dependencies.py` (enlaza puertos con implementaciones vía `Depends`). Ningún otro módulo instancia infraestructura. La app **no** crea tablas ni ejecuta migraciones al arrancar.
 
 ## Patrón de un caso de uso (ejemplo `health`)
@@ -67,7 +69,7 @@ Handlers globales en `api/errors.py` con formato único `{"error":{"code","messa
 
 ## Pruebas
 
-`Backend/tests/{unit,integration}` espejando `app/`. Unit: dominio y aplicación con dobles, sin FastAPI ni BD. Integration: infraestructura y API contra PostgreSQL real (`TEST_DATABASE_URL` obligatoria; sin ella fallan, no se saltan). 132 pruebas al cierre de R-001. Comandos en `Backend/README.md`.
+`Backend/tests/{unit,integration}` espejando `app/`. Unit: dominio y aplicación con dobles, sin FastAPI ni BD. Integration: infraestructura y API contra PostgreSQL real (`TEST_DATABASE_URL` obligatoria; sin ella fallan, no se saltan). 132 pruebas al cierre de R-001; 729 al cierre de R-003 (`mypy app`: 67 archivos). `mypy` se ejecuta solo sobre `app/`; sobre `tests/` quedan avisos pendientes (stubs de `openpyxl` y dos puntuales). Comandos en `Backend/README.md`.
 
 ## Pendiente (fuera de R-001)
 

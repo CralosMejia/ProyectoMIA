@@ -3,7 +3,7 @@
 PostgreSQL 16. Creado en R-002 (día 1 del [cronograma](../../05-cronograma-semana.md)). Fuente: entidades de [03 §16](../../03-casos-de-uso.md).
 
 - ORM (descripción del `MetaData`): `Backend/app/infrastructure/persistence/models/{base,historial,modelo,retencion}.py`.
-- Migraciones: `Backend/alembic/versions/0001_esquema_inicial.py` (esquema) y `0002_estado_sistema_inicial.py` (datos). Las aplica **solo** el servicio `migrate` ([10-docker.md](10-docker.md), [ADR-004](../../adr/ADR-004-migracion-datos-al-arrancar.md)); la aplicación nunca migra al arrancar.
+- Migraciones: `Backend/alembic/versions/0001_esquema_inicial.py` (esquema), `0002_estado_sistema_inicial.py` (datos) y `0003_membresias_socio_id_not_null.py` (R-003). Las aplica **solo** el servicio `migrate` ([10-docker.md](10-docker.md), [ADR-004](../../adr/ADR-004-migracion-datos-al-arrancar.md)); la aplicación nunca migra al arrancar.
 
 ## Convenciones
 
@@ -31,7 +31,7 @@ PostgreSQL 16. Creado en R-002 (día 1 del [cronograma](../../05-cronograma-sema
 |---|---|---|
 | `socios` | `cedula VARCHAR(20) NULL` (cédula o pasaporte, D-14), `nombre`, `nombre_normalizado` `TEXT NOT NULL`, `celular`, `correo` `TEXT NULL` | `ux_socios_cedula` único parcial `WHERE cedula IS NOT NULL AND deleted_at IS NULL`; `ix_socios_nombre_normalizado` |
 | `cargas` | `tipo` (`TipoCarga`), `fecha_carga TIMESTAMPTZ`, `nombre_archivo TEXT NOT NULL`, `filas_leidas`, `filas_guardadas`, `filas_duplicadas`, `socios_enlazados` `INTEGER NOT NULL` | conteos `>= 0`; `ux_cargas_migracion_historica` único parcial `(tipo) WHERE tipo = 'MIGRACION_HISTORICA' AND deleted_at IS NULL` (una sola migración histórica) |
-| `membresias` | FK `socio_id` **NULL** (provisional, ver pendientes), FK `carga_id` NOT NULL; `plan` (`Plan`), `forma_pago` (`FormaPago`) NOT NULL; `estado_registro` (`EstadoRegistro`) NULL; `origen` (`OrigenMembresia`); `fecha_inicio`, `fecha_vencimiento` `DATE NULL`; `monto_facturado`, `monto_cobrado` `NUMERIC(19,4) NULL`; `asistencias INTEGER NULL`; `observaciones`; `referencia_origen JSONB NULL` (año, hoja, fila del libro); `plan_original`, `forma_pago_original` `TEXT NULL`; `inicio_aproximado BOOLEAN NOT NULL` | montos `>= 0`; `asistencias BETWEEN 0 AND 400`; `ix_membresias_socio_id_fecha_vencimiento`, `ix_membresias_fecha_vencimiento` |
+| `membresias` | FK `socio_id` **NOT NULL** (migración `0003`, R-003), FK `carga_id` NOT NULL; `plan` (`Plan`), `forma_pago` (`FormaPago`) NOT NULL; `estado_registro` (`EstadoRegistro`) NULL; `origen` (`OrigenMembresia`); `fecha_inicio`, `fecha_vencimiento` `DATE NULL`; `monto_facturado`, `monto_cobrado` `NUMERIC(19,4) NULL`; `asistencias INTEGER NULL`; `observaciones`; `referencia_origen JSONB NULL` (año, hoja, fila del libro); `plan_original`, `forma_pago_original` `TEXT NULL`; `inicio_aproximado BOOLEAN NOT NULL` | montos `>= 0`; `asistencias BETWEEN 0 AND 400`; `ix_membresias_socio_id_fecha_vencimiento`, `ix_membresias_fecha_vencimiento` |
 
 ### Modelo predictivo
 
@@ -50,14 +50,17 @@ PostgreSQL 16. Creado en R-002 (día 1 del [cronograma](../../05-cronograma-sema
 | `campanias` | `nombre TEXT`, `descripcion TEXT NULL`, `activa`, `es_ejemplo` `BOOLEAN`, `niveles_riesgo TEXT[]`, `planes TEXT[]`, `prioridad` | arreglos no vacíos y contenidos en `NivelRiesgo` y `PLANES_CAMPANIA` (sin `DIARIO`); `prioridad >= 1` |
 | `gestiones_retencion` | FK `prediccion_id`, `membresia_id` NOT NULL, FK `campania_id` NULL; `fecha_asignacion`, `fecha_seguimiento` `DATE`; `estado` (`EstadoGestion`); `responsable`; `contactado BOOLEAN NULL`; `campania_ofrecida`, `campania_aceptada`, `renovo_declarado` NULL; `fecha_contacto DATE NULL`; `observaciones`; `cerrada_en TIMESTAMPTZ NULL` | respuestas con `CHECK` de `RESPUESTAS_OFRECIMIENTO` {SI, NO, NO_APLICA}, `RESPUESTAS_ACEPTACION` {SI, NO, PENDIENTE, NO_APLICA}, `RESPUESTAS_RENOVACION` {SI, NO, PENDIENTE}; `ux_gestiones_retencion_membresia_id` único parcial `WHERE deleted_at IS NULL` (RN-08.1: una gestión por ciclo); `ix_gestiones_retencion_estado_fecha_seguimiento` |
 
+**`membresias.socio_id NOT NULL`** (decisión del usuario, día 2): toda membresía pertenece a un socio. Coherente con el notebook: los registros del histórico sin identidad utilizable (sin cédula válida y nombre normalizado de menos de 5 caracteres; 23 en los libros reales) se descartan antes de guardar y solo cuentan en el informe de la migración. `predicciones.socio_id` sigue `NULL`.
+
 `modelos.version` se guarda como entero; la API la expone como texto `"v<n>"` (p. ej. `"v1"`, ver [API_CONTRACT](../API_CONTRACT.md)).
 
 ## Migraciones y pruebas
 
 - `Backend/alembic.ini` sin URL; `alembic/env.py` lee `DATABASE_URL` del entorno y, si falta, termina con un error que nombra la variable sin mostrar valores. `compare_type=True`.
 - Pruebas de integración (`tests/integration/persistence/test_migrations.py`) contra la base `app_db_test` (`TEST_DATABASE_URL`). La fixture **aborta** si el nombre de la base no termina en `_test` (el `downgrade base` vaciaría la de desarrollo) y crea la base si no existe. Cubren: 10 tablas, `alembic check` sin diferencias, cada `CHECK` e índice único, ciclo `upgrade head` → `downgrade base` → `upgrade head`.
+- `0003` (`down_revision = "0002"`): `upgrade` hace `ALTER COLUMN socio_id SET NOT NULL` y **falla** si ya existen membresías sin socio (hoy ninguna base las tiene); `downgrade` lo devuelve a `NULL`. Las pruebas verifican `IntegrityError` con `socio_id NULL` tras `upgrade head`, aceptación tras `downgrade 0002` y `alembic current` → `0003 (head)`.
+- Fixture `db_session` (`tests/integration/conftest.py`): `Session` sobre una conexión con transacción externa que termina en `rollback`; la usan las pruebas de repositorios ([11-historico.md](11-historico.md)).
 
 ## Pendientes
 
-- **`membresias.socio_id`**: `NULL` provisional; el día 2 decide si pasa a `NOT NULL` según la identidad del histórico.
 - **S23**: rol de BD sin superusuario para la app y rol separado para migraciones (día 7).

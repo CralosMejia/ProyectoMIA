@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -45,7 +45,11 @@ describe('router de la aplicacion (bordes)', () => {
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Inicio' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Estado del sistema' })).not.toBeInTheDocument()
-    expect(fetchMock).not.toHaveBeenCalled()
+    // Desde R-003/T12 Inicio consulta el estado del sistema; lo que no debe ocurrir es pedir /health.
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    const urls = fetchMock.mock.calls.map(([url]) => String(url))
+    expect(urls.some((url) => url.includes('/api/v1/sistema/estado'))).toBe(true)
+    expect(urls.some((url) => url.includes('/health'))).toBe(false)
   })
 
   it('ruta anidada inexistente → "Página no encontrada" y ningun enlace marcado salvo que coincida', async () => {

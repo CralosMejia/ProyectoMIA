@@ -26,7 +26,7 @@ pip install -e ".[dev]"
 | alembic | 1.20.0 |
 | python-multipart | 0.0.32 |
 
-El notebook original corrió con Python 3.11.15 y no registra las versiones de sus librerías: estas son las estables compatibles con Python 3.12, no las del notebook (riesgo al portar la lógica el día 2, en especial con pandas 3.x). `mypy` ignora imports sin tipos solo para `sklearn.*` y `joblib.*`. pandas, numpy y scikit-learn están prohibidos en `domain` y `application` (contrato de `lint-imports`, ADR-002).
+El notebook original corrió con Python 3.11.15 y no registra las versiones de sus librerías: estas son las estables compatibles con Python 3.12, no las del notebook. Se mantiene pandas 3.x: las cifras de referencia del notebook corresponden a pandas 3 y la conversión de fechas y montos de la app no usa pandas (detalle en `../Documentation/docs/backend/11-historico.md`). `mypy` ignora imports sin tipos solo para `sklearn.*` y `joblib.*`. pandas, numpy y scikit-learn están prohibidos en `domain` y `application` (contrato de `lint-imports`, ADR-002).
 
 ## Variables de entorno
 
@@ -57,6 +57,22 @@ En el stack de Docker las aplica el servicio `migrate` antes de arrancar el back
 | Arranque local | `uvicorn app.main:app --reload` |
 
 Con el servidor arriba: `http://localhost:8000/api/v1/health`, documentación interactiva en `http://localhost:8000/docs`.
+
+## Datos sintéticos de prueba
+
+`tests/fixtures/` contiene 2 libros históricos (`historico/`) y 5 plantillas (`plantillas/`: válida, cédula inválida, catálogo inválido, fechas inválidas, 501 filas), sin datos reales, y `esperado.py` con sus conteos. Para regenerarlos (determinista, mismos conteos):
+
+```bash
+python tests/fixtures/generar_fixtures.py
+```
+
+## Verificación con los libros reales (local, fuera de la suite)
+
+```bash
+python scripts/verificar_historico.py <carpeta con los libros Control Gym>
+```
+
+Imprime solo conteos "notebook vs obtenido" (nunca nombres, cédulas, contactos ni rutas) y no escribe archivos. Código de salida: `0` todo coincide o solo difieren las diferencias conocidas con su delta exacto, `1` cualquier otra diferencia, `2` carpeta sin libros. `pytest` no lo recoge. Los libros reales están en `.gitignore`.
 
 ## Docker
 

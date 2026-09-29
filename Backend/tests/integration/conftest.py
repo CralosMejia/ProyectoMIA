@@ -14,6 +14,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import URL, make_url
+from sqlalchemy.orm import Session
 
 from app.infrastructure.persistence.database import create_database_engine
 
@@ -104,3 +105,21 @@ def migrated_engine(engine: Engine, alembic_config: Config) -> Iterator[Engine]:
         yield engine
     finally:
         command.downgrade(alembic_config, "base")
+
+
+@pytest.fixture
+def db_session(migrated_engine: Engine) -> Iterator[Session]:
+    """``Session`` dentro de una transaccion externa que siempre termina en ``rollback``.
+
+    La sesion trabaja sobre ``SAVEPOINT``s (``create_savepoint``): un error dentro de la
+    prueba se recupera con ``session.rollback()`` sin perder la transaccion externa, y la
+    base queda como estaba.
+    """
+    with migrated_engine.connect() as connection:
+        transaction = connection.begin()
+        session = Session(bind=connection, join_transaction_mode="create_savepoint")
+        try:
+            yield session
+        finally:
+            session.close()
+            transaction.rollback()

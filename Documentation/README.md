@@ -21,6 +21,7 @@ Registro del paso del notebook `MVP.ipynb` a una aplicación web. Sirve de insum
 | [docs/backend/01-arquitectura.md](docs/backend/01-arquitectura.md) | Capas del Backend, composition root, configuración, pruebas |
 | [docs/backend/09-esquema-base-de-datos.md](docs/backend/09-esquema-base-de-datos.md) | Las 10 tablas, convenciones, restricciones, índices, excepción de `deleted_at`, migraciones |
 | [docs/backend/10-docker.md](docs/backend/10-docker.md) | `compose.yaml`, imágenes, variables de entorno, pendientes de seguridad |
+| [docs/backend/11-historico.md](docs/backend/11-historico.md) | Lectura de libros, limpieza, identidad, ciclos y etiquetas; repositorios del historial; conciliación con el notebook |
 | [docs/frontend/01-arquitectura.md](docs/frontend/01-arquitectura.md) | Capas del Frontend, cliente HTTP, feature de referencia, estilos |
 
 ## Decisiones de arquitectura (ADR)

@@ -89,9 +89,9 @@ class Carga(IdMixin, TimestampMixin, SoftDeleteMixin, Base):
 class Membresia(IdMixin, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "membresias"
 
-    # NULL: registros historicos sin identidad utilizable (decision final en el dia 2).
-    socio_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("socios.id", ondelete="RESTRICT"), nullable=True
+    # Toda membresia pertenece a un socio (decision del dia 2, migracion 0003).
+    socio_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("socios.id", ondelete="RESTRICT"), nullable=False
     )
     carga_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("cargas.id", ondelete="RESTRICT"), nullable=False
