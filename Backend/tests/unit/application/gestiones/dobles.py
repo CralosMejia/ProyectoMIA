@@ -121,7 +121,7 @@ class GestionesEnMemoria:
             renovo_declarado=None,
             fecha_contacto=None,
             observaciones=None,
-            cerrada_en=None,
+            cerrada_en=nueva.cerrada_en,
         )
         return gestion_id
 

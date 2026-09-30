@@ -179,6 +179,88 @@ def test_inactivar_inexistente_devuelve_none(repo: SqlAlchemyCampaniaRepository)
     assert repo.inactivar(999_999) is None
 
 
+def test_activar_pone_activa_true_con_updated_at_del_reloj_y_sin_perder_filas(
+    db_session: Session, repo: SqlAlchemyCampaniaRepository, reloj: RelojAjustable
+) -> None:
+    creada = repo.crear(datos("Activar"))
+    repo.inactivar(creada.id)
+    antes = contar(db_session)
+    reloj.instante = INSTANTE + timedelta(hours=3)
+
+    activada = repo.activar(creada.id)
+
+    assert activada is not None
+    assert activada.activa is True
+    assert activada.es_ejemplo is False
+    guardada = fila(db_session, creada.id)
+    assert guardada["activa"] is True
+    assert guardada["es_ejemplo"] is False
+    assert guardada["deleted_at"] is None
+    assert guardada["created_at"] == INSTANTE
+    assert guardada["updated_at"] == INSTANTE + timedelta(hours=3)
+    assert contar(db_session) == antes
+
+
+def test_activar_campania_de_ejemplo_conserva_es_ejemplo(
+    db_session: Session, repo: SqlAlchemyCampaniaRepository
+) -> None:
+    ejemplo = next(c for c in repo.listar() if c.es_ejemplo)
+    repo.inactivar(ejemplo.id)
+
+    activada = repo.activar(ejemplo.id)
+
+    assert activada is not None
+    assert activada.activa is True
+    assert activada.es_ejemplo is True
+    assert fila(db_session, ejemplo.id)["es_ejemplo"] is True
+
+
+def test_activar_ya_activa_no_cambia_updated_at(
+    db_session: Session, repo: SqlAlchemyCampaniaRepository, reloj: RelojAjustable
+) -> None:
+    creada = repo.crear(datos("Ya activa"))
+    reloj.instante = INSTANTE + timedelta(days=1)
+
+    repo.activar(creada.id)
+
+    assert fila(db_session, creada.id)["updated_at"] == INSTANTE
+
+
+def test_activar_inexistente_o_borrada_devuelve_none_sin_cambiar_filas(
+    db_session: Session, repo: SqlAlchemyCampaniaRepository, reloj: RelojAjustable
+) -> None:
+    borrada = repo.crear(datos("Borrada inactiva"))
+    repo.inactivar(borrada.id)
+    borrar_logicamente(db_session, borrada.id)
+    reloj.instante = INSTANTE + timedelta(hours=1)
+
+    assert repo.activar(borrada.id) is None
+    assert repo.activar(999_999) is None
+
+    guardada = fila(db_session, borrada.id)
+    assert guardada["activa"] is False
+    assert guardada["updated_at"] == INSTANTE
+
+
+def test_compatibles_vuelve_a_incluir_la_campania_tras_inactivar_y_activar(
+    db_session: Session, repo: SqlAlchemyCampaniaRepository
+) -> None:
+    inactivar_ejemplos(db_session)
+    repo.crear(datos("beta"))
+    alfa = repo.crear(datos("Alfa"))
+    repo.crear(datos("Prioridad dos", prioridad=2))
+
+    repo.inactivar(alfa.id)
+    assert [c.nombre for c in repo.compatibles(ALTO, Plan.MENSUAL)] == ["beta", "Prioridad dos"]
+
+    repo.activar(alfa.id)
+    assert [c.nombre for c in repo.compatibles(ALTO, Plan.MENSUAL)] == [
+        "Alfa",
+        "beta",
+        "Prioridad dos",
+    ]
+
+
 def test_no_existe_metodo_de_borrado() -> None:
     metodos = {n for n, _ in inspect.getmembers(SqlAlchemyCampaniaRepository, inspect.isfunction)}
 

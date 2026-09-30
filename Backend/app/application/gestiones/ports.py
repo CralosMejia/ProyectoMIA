@@ -2,7 +2,8 @@
 
 Unidad de trabajo: la transaccion la gestiona siempre quien llama. El repositorio recibe la
 sesion ya abierta (infraestructura) y **nunca** hace ``commit`` ni ``rollback``. No expone
-borrado: una gestion solo cambia de estado (``PENDIENTE`` -> ``CERRADA``). Ningun puerto
+borrado: una gestion solo cambia de estado (``PENDIENTE`` -> ``CERRADA``) o nace ``CERRADA``
+si no se le asigna campana. Ningun puerto
 recibe ni devuelve sesiones ni modelos ORM: solo los tipos de aqui.
 """
 
@@ -38,7 +39,8 @@ class NuevaGestion:
     """Gestion a crear. ``created_at``/``updated_at`` los pone el repositorio desde el reloj.
 
     ``campania_nombre`` es la instantanea del nombre al asignar (RN-08.2): nulo si y solo si
-    ``campania_id`` es nulo.
+    ``campania_id`` es nulo. ``cerrada_en`` es el instante de cierre de una gestion que nace
+    cerrada (sin campana, R-010 (c)): no nulo si y solo si ``estado`` es ``CERRADA``.
     """
 
     prediccion_id: int
@@ -49,10 +51,13 @@ class NuevaGestion:
     fecha_seguimiento: date
     responsable: str | None
     estado: EstadoGestion = EstadoGestion.PENDIENTE
+    cerrada_en: datetime | None = None
 
     def __post_init__(self) -> None:
         if (self.campania_id is None) != (self.campania_nombre is None):
             raise ValueError("campania_id y campania_nombre deben ser ambos nulos o no nulos")
+        if (self.estado is EstadoGestion.CERRADA) != (self.cerrada_en is not None):
+            raise ValueError("cerrada_en debe informarse si y solo si el estado es CERRADA")
 
 
 @dataclass(frozen=True, slots=True)

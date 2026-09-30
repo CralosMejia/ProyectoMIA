@@ -15,6 +15,7 @@ from app.domain.gestiones.errores import (
     ResultadoIncoherenteError,
 )
 from app.domain.gestiones.reglas import (
+    estado_inicial,
     estado_tras_resultado,
     fecha_sugerida,
     rango_seguimiento,
@@ -203,6 +204,17 @@ def test_estado_tras_resultado_segun_renovo(renovo: Respuesta, estado: EstadoGes
 def test_estado_tras_resultado_no_aplica_lanza_error() -> None:
     with pytest.raises(ResultadoIncoherenteError):
         estado_tras_resultado(NA)
+
+
+# --- estado inicial (R-010 (c)) ---------------------------------------------------------
+
+
+def test_estado_inicial_con_campania_es_pendiente() -> None:
+    assert estado_inicial(True) is EstadoGestion.PENDIENTE
+
+
+def test_estado_inicial_sin_campania_es_cerrada() -> None:
+    assert estado_inicial(False) is EstadoGestion.CERRADA
 
 
 # --- errores ---------------------------------------------------------------------------

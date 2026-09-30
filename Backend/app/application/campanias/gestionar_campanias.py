@@ -1,8 +1,9 @@
-"""CU-06: listar, crear, editar e inactivar campanas de retencion.
+"""CU-06: listar, crear, editar, inactivar y activar campanas de retencion.
 
 Cada caso de uso abre su unidad de trabajo, delega las reglas en ``DatosCampania.crear`` y
 confirma **una** vez al final; si el dominio o el repositorio fallan no se confirma nada.
-No existe borrado: una campana se inactiva y las gestiones que ya la usan la conservan.
+No existe borrado: una campana se inactiva (y se puede volver a activar, R-010 (a)) y las
+gestiones que ya la usan la conservan.
 """
 
 from app.application.campanias.dtos import CampaniaDTO, CampaniaEntradaDTO
@@ -105,3 +106,23 @@ class InactivarCampania:
                 raise CampaniaNoExisteError()
             uow.commit()
         return a_dto(inactivada)
+
+
+class ActivarCampania:
+    """Vuelve a sugerir la campana; activar una ya activa no cambia nada (idempotente)."""
+
+    def __init__(self, unidad_de_trabajo: UnidadDeTrabajoCampanias) -> None:
+        self._uow = unidad_de_trabajo
+
+    def ejecutar(self, campania_id: int) -> CampaniaDTO:
+        with self._uow() as uow:
+            actual = uow.campanias.obtener(campania_id)
+            if actual is None:
+                raise CampaniaNoExisteError()
+            if actual.activa:
+                return a_dto(actual)
+            activada = uow.campanias.activar(campania_id)
+            if activada is None:
+                raise CampaniaNoExisteError()
+            uow.commit()
+        return a_dto(activada)

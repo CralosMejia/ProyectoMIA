@@ -207,7 +207,8 @@ def test_get_lista_and_ultima_return_the_gestion_of_each_item(
     segunda = contract_client.post(LISTAS, json=BODY).json()
     esperado = {
         con_campania["socio_nombre"]: (gestiones[0].json()["id"], "PENDIENTE", nombre),
-        sin_campania["socio_nombre"]: (gestiones[1].json()["id"], "PENDIENTE", None),
+        # R-010: sin campana la gestion nace cerrada.
+        sin_campania["socio_nombre"]: (gestiones[1].json()["id"], "CERRADA", None),
         sin_gestion["socio_nombre"]: (None, None, None),
     }
 

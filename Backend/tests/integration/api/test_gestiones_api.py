@@ -195,6 +195,12 @@ def assert_error(response: Any, status_code: int, code: str, message: str) -> No
 
 
 def crear(client: TestClient, datos: Datos, **cambios: Any) -> dict[str, Any]:
+    """Crea la gestion de ``prediccion_1``; con la campana de ejemplo salvo que se indique otra.
+
+    Desde R-010 una gestion sin campana nace cerrada: las pruebas del seguimiento y del
+    resultado necesitan una gestion con campana.
+    """
+    cambios.setdefault("campania_id", datos.campania_ejemplo)
     response = client.post(GESTIONES_PATH, json=cuerpo_crear(datos.prediccion_1, **cambios))
     assert response.status_code == 201, response.text
     creada: dict[str, Any] = response.json()
@@ -236,12 +242,121 @@ def test_post_repetido_o_desde_otra_lista_del_mismo_ciclo_devuelve_409(
     assert contar(migrated_engine, datos.membresia_id) == 1
 
 
-def test_post_sin_campania_crea_con_nombre_nulo(client: TestClient, datos: Datos) -> None:
-    creada = crear(client, datos, campania_id=None, responsable=None)
+RESULTADO_NULO = (
+    "contactado",
+    "campania_ofrecida",
+    "campania_aceptada",
+    "renovo_declarado",
+    "fecha_contacto",
+    "observaciones",
+    "responsable",
+)
 
+
+def fila_gestion(engine: Engine, gestion_id: int) -> dict[str, Any]:
+    with engine.connect() as conexion:
+        return dict(
+            conexion.execute(
+                text("SELECT * FROM gestiones_retencion WHERE id = :g"), {"g": gestion_id}
+            )
+            .mappings()
+            .one()
+        )
+
+
+def test_post_sin_campania_crea_la_gestion_cerrada_sin_resultado(
+    migrated_engine: Engine, client: TestClient, datos: Datos
+) -> None:
+    response = client.post(
+        GESTIONES_PATH, json={"prediccion_id": datos.prediccion_1, "campania_id": None}
+    )
+
+    assert response.status_code == 201, response.text
+    creada = response.json()
+    assert creada["estado"] == "CERRADA"
     assert creada["campania_id"] is None
     assert creada["campania_nombre"] is None
+    assert datetime.fromisoformat(creada["fecha_cierre"]) == AHORA
+    assert datetime.fromisoformat(creada["fecha_asignacion"]) == AHORA
+    assert {campo: creada[campo] for campo in RESULTADO_NULO} == dict.fromkeys(RESULTADO_NULO)
+    fila = fila_gestion(migrated_engine, creada["id"])
+    assert fila["estado"] == "CERRADA"
+    assert fila["cerrada_en"] == AHORA
+    assert fila["fecha_seguimiento"] == fila["fecha_asignacion"] == AHORA.date()
+    assert {campo: fila[campo] for campo in RESULTADO_NULO} == dict.fromkeys(RESULTADO_NULO)
+    assert fila["deleted_at"] is None
+    assert client.get(f"{GESTIONES_PATH}/{creada['id']}").json() == creada
+
+
+def test_post_sin_campania_ignora_fecha_de_seguimiento_y_responsable(
+    client: TestClient, datos: Datos
+) -> None:
+    # La fecha enviada esta fuera del rango [hoy, vencimiento + 30]: sin campana no se valida.
+    creada = crear(
+        client, datos, campania_id=None, fecha_seguimiento="2027-01-01", responsable="Andrea"
+    )
+
+    assert creada["estado"] == "CERRADA"
+    assert creada["fecha_seguimiento"] == "2026-09-29"
     assert creada["responsable"] is None
+
+
+def test_post_sin_campania_no_queda_entre_las_pendientes(
+    migrated_engine: Engine, client: TestClient, datos: Datos
+) -> None:
+    """R-010 (h): las alertas del dia 6 cuentan solo ``PENDIENTE``."""
+    crear(client, datos, campania_id=None)
+
+    with migrated_engine.connect() as conexion:
+        pendientes = conexion.execute(
+            text(
+                "SELECT count(*) FROM gestiones_retencion "
+                "WHERE estado = 'PENDIENTE' AND membresia_id = :m"
+            ),
+            {"m": datos.membresia_id},
+        ).scalar_one()
+    assert pendientes == 0
+    assert contar(migrated_engine, datos.membresia_id) == 1
+
+
+def test_post_tras_gestion_sin_campania_devuelve_409_con_o_sin_campania(
+    migrated_engine: Engine, client: TestClient, datos: Datos
+) -> None:
+    crear(client, datos, campania_id=None)
+
+    sin_campania = client.post(
+        GESTIONES_PATH, json={"prediccion_id": datos.prediccion_2, "campania_id": None}
+    )
+    con_campania = client.post(
+        GESTIONES_PATH,
+        json=cuerpo_crear(datos.prediccion_1, campania_id=datos.campania_ejemplo),
+    )
+
+    assert_error(sin_campania, 409, "conflict", DUPLICADA)
+    assert_error(con_campania, 409, "conflict", DUPLICADA)
+    assert contar(migrated_engine, datos.membresia_id) == 1
+
+
+def test_put_resultado_sobre_gestion_sin_campania_devuelve_409_sin_cambios(
+    migrated_engine: Engine, client: TestClient, datos: Datos
+) -> None:
+    creada = crear(client, datos, campania_id=None)
+    antes = fila_gestion(migrated_engine, creada["id"])
+
+    response = client.put(
+        f"{GESTIONES_PATH}/{creada['id']}/resultado",
+        json=resultado(
+            contactado=False,
+            campania_ofrecida="NO_APLICA",
+            campania_aceptada="NO_APLICA",
+            fecha_contacto=None,
+            renovo_declarado="NO",
+        ),
+    )
+
+    assert_error(response, 409, "conflict", CERRADA)
+    assert fila_gestion(migrated_engine, creada["id"]) == antes
+    assert client.get(f"{GESTIONES_PATH}/{creada['id']}").json() == creada
 
 
 @pytest.mark.parametrize("fecha", ["2026-09-28", "2026-11-05"])
@@ -249,7 +364,10 @@ def test_post_fecha_fuera_de_rango_devuelve_422_con_el_rango(
     migrated_engine: Engine, client: TestClient, datos: Datos, fecha: str
 ) -> None:
     response = client.post(
-        GESTIONES_PATH, json=cuerpo_crear(datos.prediccion_1, fecha_seguimiento=fecha)
+        GESTIONES_PATH,
+        json=cuerpo_crear(
+            datos.prediccion_1, campania_id=datos.campania_ejemplo, fecha_seguimiento=fecha
+        ),
     )
 
     assert_error(
@@ -298,11 +416,15 @@ def test_post_prediccion_inexistente_devuelve_404(client: TestClient, datos: Dat
     assert_error(response, 404, "not_found", "La prediccion no existe.")
 
 
-def test_post_sin_fecha_de_seguimiento_devuelve_400(
-    migrated_engine: Engine, client: TestClient, datos: Datos
+@pytest.mark.parametrize("omitir", [True, False], ids=["sin-el-campo", "nula"])
+def test_post_con_campania_y_sin_fecha_de_seguimiento_devuelve_400(
+    migrated_engine: Engine, client: TestClient, datos: Datos, omitir: bool
 ) -> None:
-    body = cuerpo_crear(datos.prediccion_1)
-    del body["fecha_seguimiento"]
+    body = cuerpo_crear(
+        datos.prediccion_1, campania_id=datos.campania_ejemplo, fecha_seguimiento=None
+    )
+    if omitir:
+        del body["fecha_seguimiento"]
 
     assert_validation_error(client.post(GESTIONES_PATH, json=body))
     assert contar(migrated_engine, datos.membresia_id) == 0
@@ -395,11 +517,7 @@ def test_put_resultado_fecha_fuera_de_rango_devuelve_422(client: TestClient, dat
 
     response = client.put(
         f"{GESTIONES_PATH}/{creada['id']}/resultado",
-        json=resultado(
-            campania_ofrecida="NO_APLICA",
-            campania_aceptada="NO_APLICA",
-            fecha_seguimiento="2026-11-05",
-        ),
+        json=resultado(fecha_seguimiento="2026-11-05"),
     )
 
     assert_error(

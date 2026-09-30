@@ -1,8 +1,9 @@
 """API de campanas y sugerencias contra PostgreSQL real en ``head`` (R-009 T8; CU-06, CU-07).
 
 Cada prueba borra al terminar las campanas que creo (por id) y la prediccion ficticia que
-sembro; las 3 campanas de ejemplo de ``0007`` no se modifican. Aislamiento entre usuarios:
-NO APLICA (RT-12, sin login; acceso restringido por IP, CU-00). Datos 100 % ficticios.
+sembro; las 3 campanas de ejemplo de ``0007`` quedan como estaban (activas). Aislamiento
+entre usuarios: NO APLICA (RT-12, sin login; acceso restringido por IP, CU-00). Datos
+100 % ficticios.
 """
 
 from collections.abc import Iterator
@@ -10,9 +11,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 
+from app.api.dependencies import get_clock
 from tests.integration.api.contract_helpers import assert_validation_error
 from tests.integration.persistence.test_migrations import insert, membresia, modelo
 
@@ -239,6 +242,77 @@ def test_inactivar_inexistente_devuelve_404(
     assert response.json()["error"]["message"] == "La campana no existe."
 
 
+# ------------------------------------------------------------------ POST /campanias/{id}/activar
+def test_activar_inactiva_devuelve_200_idempotente_y_get_la_muestra_activa(
+    migrated_engine: Engine, campanias: Campanias, contract_client: TestClient
+) -> None:
+    creada = campanias.crear()
+    contract_client.post(f"{CAMPANIAS_PATH}/{creada['id']}/inactivar")
+    antes = contar(migrated_engine)
+
+    primera = contract_client.post(f"{CAMPANIAS_PATH}/{creada['id']}/activar")
+    segunda = contract_client.post(f"{CAMPANIAS_PATH}/{creada['id']}/activar")
+
+    assert primera.status_code == 200, primera.text
+    assert primera.json() == creada
+    assert primera.json()["activa"] is True
+    assert segunda.status_code == 200
+    assert segunda.json() == primera.json()
+    assert creada in contract_client.get(CAMPANIAS_PATH).json()
+    assert contar(migrated_engine) == antes
+
+
+def test_activar_ya_activa_no_cambia_updated_at(
+    migrated_engine: Engine, campanias: Campanias, contract_client: TestClient
+) -> None:
+    creada = campanias.crear()
+    consulta = text("SELECT updated_at FROM campanias WHERE id = :id")
+    with migrated_engine.connect() as conexion:
+        antes = conexion.execute(consulta, {"id": creada["id"]}).scalar_one()
+
+    response = contract_client.post(f"{CAMPANIAS_PATH}/{creada['id']}/activar")
+
+    assert response.status_code == 200
+    assert response.json() == creada
+    with migrated_engine.connect() as conexion:
+        assert conexion.execute(consulta, {"id": creada["id"]}).scalar_one() == antes
+
+
+def test_activar_inexistente_devuelve_404(
+    migrated_engine: Engine, contract_client: TestClient
+) -> None:
+    response = contract_client.post(f"{CAMPANIAS_PATH}/999999/activar")
+
+    assert response.status_code == 404
+    assert response.json() == {"error": {"code": "not_found", "message": "La campana no existe."}}
+
+
+def test_activar_id_cero_devuelve_400(contract_client: TestClient) -> None:
+    assert_validation_error(contract_client.post(f"{CAMPANIAS_PATH}/0/activar"))
+
+
+def test_inactivar_y_activar_una_campania_de_ejemplo_conserva_es_ejemplo(
+    migrated_engine: Engine, contract_client: TestClient
+) -> None:
+    ejemplo = next(c for c in contract_client.get(CAMPANIAS_PATH).json() if c["es_ejemplo"])
+    try:
+        inactivada = contract_client.post(f"{CAMPANIAS_PATH}/{ejemplo['id']}/inactivar")
+        activada = contract_client.post(f"{CAMPANIAS_PATH}/{ejemplo['id']}/activar")
+    finally:
+        # La campana de ejemplo queda activa aunque la prueba falle a medias.
+        with migrated_engine.begin() as conexion:
+            conexion.execute(
+                text("UPDATE campanias SET activa = true WHERE id = :id"), {"id": ejemplo["id"]}
+            )
+
+    assert inactivada.status_code == 200
+    assert inactivada.json() == {**ejemplo, "activa": False}
+    assert inactivada.json()["es_ejemplo"] is True
+    assert activada.status_code == 200
+    assert activada.json() == ejemplo
+    assert activada.json()["es_ejemplo"] is True
+
+
 # ------------------------------------------------------------------ sugerencias (CU-07)
 def test_sugeridas_devuelve_compatibles_activas_por_prioridad_y_excluye_inactivadas(
     campanias: Campanias, contract_client: TestClient, prediccion_alto_mensual: int
@@ -263,6 +337,61 @@ def test_sugeridas_devuelve_compatibles_activas_por_prioridad_y_excluye_inactiva
     assert "Campana API compatible" not in nombres
 
 
+class _Reloj29Sep:
+    def now(self) -> datetime:
+        return INSTANTE
+
+
+def test_campania_activada_vuelve_a_sugerirse_en_su_orden_y_se_puede_asignar(
+    migrated_engine: Engine,
+    contract_app: FastAPI,
+    campanias: Campanias,
+    contract_client: TestClient,
+    prediccion_alto_mensual: int,
+) -> None:
+    compatible = campanias.crear(nombre="Campana API compatible", prioridad=5)
+    ruta = f"/api/v1/predicciones/{prediccion_alto_mensual}/campanias-sugeridas"
+    antes = [c["nombre"] for c in contract_client.get(ruta).json()]
+    with migrated_engine.begin() as conexion:
+        conexion.execute(
+            text(
+                "UPDATE membresias SET fecha_vencimiento = '2026-10-05' WHERE id = "
+                "(SELECT membresia_id FROM predicciones WHERE id = :p)"
+            ),
+            {"p": prediccion_alto_mensual},
+        )
+
+    contract_client.post(f"{CAMPANIAS_PATH}/{compatible['id']}/inactivar")
+    inactiva = [c["nombre"] for c in contract_client.get(ruta).json()]
+    contract_client.post(f"{CAMPANIAS_PATH}/{compatible['id']}/activar")
+    activa = [c["nombre"] for c in contract_client.get(ruta).json()]
+
+    contract_app.dependency_overrides[get_clock] = _Reloj29Sep
+    try:
+        gestion = contract_client.post(
+            "/api/v1/gestiones",
+            json={
+                "prediccion_id": prediccion_alto_mensual,
+                "campania_id": compatible["id"],
+                "fecha_seguimiento": "2026-10-30",
+            },
+        )
+    finally:
+        contract_app.dependency_overrides.pop(get_clock, None)
+        with migrated_engine.begin() as conexion:
+            conexion.execute(
+                text("DELETE FROM gestiones_retencion WHERE prediccion_id = :p"),
+                {"p": prediccion_alto_mensual},
+            )
+
+    assert antes[-1] == "Campana API compatible"
+    assert "Campana API compatible" not in inactiva
+    assert activa == antes
+    assert gestion.status_code == 201, gestion.text
+    assert gestion.json()["campania_id"] == compatible["id"]
+    assert gestion.json()["estado"] == "PENDIENTE"
+
+
 def test_sugeridas_prediccion_inexistente_devuelve_404(
     migrated_engine: Engine, contract_client: TestClient
 ) -> None:
@@ -281,6 +410,7 @@ def test_openapi_campanias_sin_501_y_prioridad_maxima_999(openapi_spec: dict[str
         ("post", "/api/v1/campanias"),
         ("put", "/api/v1/campanias/{campania_id}"),
         ("post", "/api/v1/campanias/{campania_id}/inactivar"),
+        ("post", "/api/v1/campanias/{campania_id}/activar"),
         ("get", "/api/v1/predicciones/{prediccion_id}/campanias-sugeridas"),
     ]
     for metodo, ruta in rutas:

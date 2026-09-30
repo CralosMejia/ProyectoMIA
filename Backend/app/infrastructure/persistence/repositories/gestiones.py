@@ -2,7 +2,8 @@
 
 Escribe dentro de la transaccion de la ``Session`` recibida (unit of work): nunca hace
 ``commit`` ni ``rollback``. ``created_at``/``updated_at`` salen del ``Clock``. Toda lectura
-ignora las gestiones con ``deleted_at``; no hay borrado (una gestion solo cambia de estado).
+ignora las gestiones con ``deleted_at``; no hay borrado (una gestion solo cambia de estado;
+sin campana nace ya ``CERRADA``, con ``cerrada_en`` y sin campos de resultado).
 Escrituras con el ORM; lecturas con ``select`` parametrizado.
 
 Los datos de la prediccion (score, nivel, version del modelo, plan, vencimiento y socio) se
@@ -136,6 +137,7 @@ class SqlAlchemyGestionRepository:
             fecha_seguimiento=nueva.fecha_seguimiento,
             estado=nueva.estado.value,
             responsable=nueva.responsable,
+            cerrada_en=nueva.cerrada_en,
             created_at=ahora,
             updated_at=ahora,
         )

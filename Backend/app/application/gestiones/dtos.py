@@ -3,9 +3,9 @@
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum, unique
-from typing import Annotated, Literal, get_args
+from typing import Annotated, Literal, Self, get_args
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from app.domain.common.enums import EstadoGestion, NivelRiesgo, Plan, Respuesta
 
@@ -31,7 +31,11 @@ class FiltroGestiones(StrEnum):
 
 
 class CrearGestionDTO(BaseModel):
-    """CU-08: ``campania_id`` nulo = no asignar campana."""
+    """CU-08: ``campania_id`` nulo = no asignar campana.
+
+    Con campana, ``fecha_seguimiento`` es obligatoria. Sin campana la gestion nace cerrada:
+    ``fecha_seguimiento`` y ``responsable`` son opcionales y, si llegan, se ignoran.
+    """
 
     model_config = ConfigDict(
         frozen=True,
@@ -43,15 +47,22 @@ class CrearGestionDTO(BaseModel):
                     "campania_id": 3,
                     "fecha_seguimiento": "2026-10-25",
                     "responsable": "Andrea",
-                }
+                },
+                {"prediccion_id": 15, "campania_id": None},
             ]
         },
     )
 
     prediccion_id: int = Field(ge=1)
     campania_id: int | None = Field(default=None, ge=1)
-    fecha_seguimiento: date
+    fecha_seguimiento: date | None = None
     responsable: Responsable | None = None
+
+    @model_validator(mode="after")
+    def _fecha_obligatoria_con_campania(self) -> Self:
+        if self.campania_id is not None and self.fecha_seguimiento is None:
+            raise ValueError("fecha_seguimiento es obligatoria cuando se asigna una campana")
+        return self
 
 
 class RegistrarResultadoDTO(BaseModel):

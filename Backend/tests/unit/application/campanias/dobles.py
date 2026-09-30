@@ -32,6 +32,7 @@ class RepositorioCampaniasEnMemoria:
     creadas: list[DatosCampania] = field(default_factory=list)
     actualizadas: list[tuple[int, DatosCampania]] = field(default_factory=list)
     inactivadas: list[int] = field(default_factory=list)
+    activadas: list[int] = field(default_factory=list)
     consultas_compatibles: list[tuple[NivelRiesgo, Plan]] = field(default_factory=list)
 
     def listar(self) -> list[CampaniaGuardada]:
@@ -80,6 +81,15 @@ class RepositorioCampaniasEnMemoria:
             return None
         self.inactivadas.append(campania_id)
         nueva = replace(actual, activa=False)
+        self.campanias[campania_id] = nueva
+        return nueva
+
+    def activar(self, campania_id: int) -> CampaniaGuardada | None:
+        actual = self.campanias.get(campania_id)
+        if actual is None:
+            return None
+        self.activadas.append(campania_id)
+        nueva = replace(actual, activa=True)
         self.campanias[campania_id] = nueva
         return nueva
 

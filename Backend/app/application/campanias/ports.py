@@ -2,7 +2,7 @@
 
 Unidad de trabajo: la transaccion la gestiona siempre quien llama. Los repositorios reciben
 la sesion ya abierta (infraestructura) y **nunca** hacen ``commit`` ni ``rollback``. Una
-campana no se borra: se inactiva (RN-06.x), por eso ``CampaniaRepository`` no expone
+campana no se borra: se inactiva o se activa (RN-06.x), por eso ``CampaniaRepository`` no expone
 borrado. Ningun puerto recibe ni devuelve sesiones, engines ni modelos ORM.
 """
 
@@ -56,6 +56,10 @@ class CampaniaRepository(Protocol):
 
     def inactivar(self, campania_id: int) -> CampaniaGuardada | None:
         """``activa = false`` (sin ``deleted_at``); ``None`` si la campana no existe."""
+        ...
+
+    def activar(self, campania_id: int) -> CampaniaGuardada | None:
+        """``activa = true``; no cambia ``es_ejemplo``. ``None`` si la campana no existe."""
         ...
 
     def compatibles(self, nivel: NivelRiesgo, plan: Plan) -> list[CampaniaGuardada]:

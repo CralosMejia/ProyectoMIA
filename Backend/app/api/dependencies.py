@@ -10,6 +10,7 @@ from fastapi import Depends, Request
 from sqlalchemy import Engine
 
 from app.application.campanias.gestionar_campanias import (
+    ActivarCampania,
     CrearCampania,
     EditarCampania,
     InactivarCampania,
@@ -163,6 +164,10 @@ def get_editar_campania(uow: UnidadRetencion) -> EditarCampania:
 
 def get_inactivar_campania(uow: UnidadRetencion) -> InactivarCampania:
     return InactivarCampania(uow)
+
+
+def get_activar_campania(uow: UnidadRetencion) -> ActivarCampania:
+    return ActivarCampania(uow)
 
 
 def get_sugerir_campanias(uow: UnidadRetencion) -> SugerirCampanias:

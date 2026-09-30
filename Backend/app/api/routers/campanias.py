@@ -3,7 +3,7 @@
 Solo HTTP: valida la entrada, delega en los casos de uso y traduce sus errores a codigos de
 estado (``404`` si la campana o la prediccion no existen; ``400 validation_error`` si los
 datos pasan el DTO pero no las reglas de la campana). No existe ``DELETE``: una campana se
-inactiva, nunca se borra.
+inactiva (y se puede volver a activar), nunca se borra.
 
 Aislamiento entre usuarios: NO APLICA (RT-12, sin login; acceso restringido por IP, CU-00).
 """
@@ -14,6 +14,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Path, status
 from fastapi.exceptions import RequestValidationError
 
 from app.api.dependencies import (
+    get_activar_campania,
     get_crear_campania,
     get_editar_campania,
     get_inactivar_campania,
@@ -24,6 +25,7 @@ from app.api.openapi import OpenApiResponses, error_responses, success_response
 from app.application.campanias.dtos import CampaniaDTO, CampaniaEntradaDTO
 from app.application.campanias.gestionar_campanias import (
     MENSAJE_CAMPANIA_NO_EXISTE,
+    ActivarCampania,
     CampaniaNoExisteError,
     CrearCampania,
     EditarCampania,
@@ -254,6 +256,31 @@ def post_inactivar_campania(
 ) -> CampaniaDTO:
     try:
         return inactivar.ejecutar(campania_id)
+    except CampaniaNoExisteError:
+        raise _no_existe(MENSAJE_CAMPANIA_NO_EXISTE) from None
+
+
+@router.post(
+    "/campanias/{campania_id}/activar",
+    response_model=CampaniaDTO,
+    status_code=status.HTTP_200_OK,
+    responses={
+        **success_response(
+            status.HTTP_200_OK,
+            "Campana activada (repetir devuelve la misma campana sin cambios). Vuelve a "
+            "sugerirse; no cambia ningun otro dato ni las gestiones ya creadas.",
+            CAMPANIA_EXAMPLE,
+        ),
+        **_errores_con_id(MENSAJE_CAMPANIA_NO_EXISTE, _BAD_ID),
+    },
+    summary="Activar una campana inactiva",
+)
+def post_activar_campania(
+    campania_id: CampaniaId,
+    activar: Annotated[ActivarCampania, Depends(get_activar_campania)],
+) -> CampaniaDTO:
+    try:
+        return activar.ejecutar(campania_id)
     except CampaniaNoExisteError:
         raise _no_existe(MENSAJE_CAMPANIA_NO_EXISTE) from None
 

@@ -2,10 +2,11 @@
 
 Solo HTTP: valida la entrada, delega en los casos de uso y traduce sus errores a codigos de
 estado: ``404`` si la prediccion, la campana o la gestion no existen; ``409`` si el ciclo ya
-tiene gestion o la gestion esta cerrada; el resto de reglas de dominio (fecha fuera de rango,
-plazo terminado, campana que no aplica, resultado incoherente) -> ``422 domain_rule_violated``
-por el manejador global. ``GET /gestiones?filtro`` y ``GET /alertas`` siguen en ``501`` hasta
-el dia 6 del cronograma (R-009 decision (a)).
+tiene gestion o la gestion esta cerrada (una gestion sin campana nace cerrada, R-010); el
+resto de reglas de dominio (fecha fuera de rango, plazo terminado, campana que no aplica,
+resultado incoherente) -> ``422 domain_rule_violated`` por el manejador global.
+``GET /gestiones?filtro`` y ``GET /alertas`` siguen en ``501`` hasta el dia 6 del cronograma
+(R-009 decision (a)).
 
 Aislamiento entre usuarios: NO APLICA (RT-12, sin login; acceso restringido por IP, CU-00).
 """
@@ -89,6 +90,15 @@ GESTION_CON_RESULTADO_EXAMPLE = {
     "observaciones": "Acepta el descuento; renovara la proxima semana.",
     "fecha_seguimiento": "2026-10-27",
 }
+GESTION_SIN_CAMPANIA_EXAMPLE = {
+    **GESTION_EXAMPLE,
+    "campania_id": None,
+    "campania_nombre": None,
+    "estado": "CERRADA",
+    "fecha_seguimiento": "2026-09-29",
+    "responsable": None,
+    "fecha_cierre": "2026-09-29T15:30:00Z",
+}
 GESTIONES_RESUMEN_EXAMPLE = [
     {
         "id": 9,
@@ -112,7 +122,7 @@ CREAR_REQUEST_EXAMPLES: dict[str, Any] = {
     "con_campania": {
         "summary": "Con campana sugerida",
         "description": "La campana debe estar activa y aplicar al nivel y al plan del socio. "
-        "Fecha de seguimiento entre hoy y el vencimiento + 30 dias.",
+        "Fecha de seguimiento obligatoria, entre hoy y el vencimiento + 30 dias.",
         "value": {
             "prediccion_id": 1501,
             "campania_id": 2,
@@ -122,13 +132,10 @@ CREAR_REQUEST_EXAMPLES: dict[str, Any] = {
     },
     "sin_campania": {
         "summary": "No asignar campana",
-        "description": "``campania_id`` nulo: la gestion se crea sin campana.",
-        "value": {
-            "prediccion_id": 1501,
-            "campania_id": None,
-            "fecha_seguimiento": "2026-10-30",
-            "responsable": None,
-        },
+        "description": "``campania_id`` nulo: la gestion nace cerrada, sin seguimiento ni "
+        "resultado que registrar. ``fecha_seguimiento`` y ``responsable`` no se envian (si "
+        "llegan, se ignoran) y no importa que el plazo de seguimiento haya terminado.",
+        "value": {"prediccion_id": 1501, "campania_id": None},
     },
 }
 RESULTADO_REQUEST_EXAMPLES: dict[str, Any] = {
@@ -181,7 +188,24 @@ def _error(codigo: int, mensaje: str) -> HTTPException:
     response_model=GestionDTO,
     status_code=status.HTTP_201_CREATED,
     responses={
-        **success_response(status.HTTP_201_CREATED, "Gestion creada.", GESTION_EXAMPLE),
+        status.HTTP_201_CREATED: {
+            "description": "Gestion creada: PENDIENTE con campana; CERRADA (con "
+            "``fecha_cierre`` y resultado nulo) si no se asigna campana.",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "con_campania": {
+                            "summary": "Con campana: pendiente de seguimiento",
+                            "value": GESTION_EXAMPLE,
+                        },
+                        "sin_campania": {
+                            "summary": "Sin campana: cerrada desde su creacion",
+                            "value": GESTION_SIN_CAMPANIA_EXAMPLE,
+                        },
+                    }
+                }
+            },
+        },
         **_con_mensajes(
             error_responses(
                 status.HTTP_400_BAD_REQUEST,
@@ -190,11 +214,15 @@ def _error(codigo: int, mensaje: str) -> HTTPException:
                 status.HTTP_409_CONFLICT,
                 status.HTTP_422_UNPROCESSABLE_CONTENT,
                 descriptions={
+                    status.HTTP_400_BAD_REQUEST: (
+                        "Entrada invalida; incluye asignar campana sin fecha de seguimiento."
+                    ),
                     status.HTTP_404_NOT_FOUND: "La prediccion o la campana no existen.",
                     status.HTTP_409_CONFLICT: MENSAJE_GESTION_DUPLICADA,
                     status.HTTP_422_UNPROCESSABLE_CONTENT: (
-                        "Fecha de seguimiento fuera de [hoy, vencimiento + 30], plazo de "
-                        "seguimiento terminado o campana inactiva / que no aplica al socio."
+                        "Solo con campana: fecha de seguimiento fuera de [hoy, vencimiento + "
+                        "30], plazo de seguimiento terminado o campana inactiva / que no "
+                        "aplica al socio."
                     ),
                 },
             ),
@@ -295,7 +323,10 @@ def get_gestion(
                 status.HTTP_422_UNPROCESSABLE_CONTENT,
                 descriptions={
                     status.HTTP_404_NOT_FOUND: MENSAJE_GESTION_NO_EXISTE,
-                    status.HTTP_409_CONFLICT: MENSAJE_GESTION_CERRADA,
+                    status.HTTP_409_CONFLICT: (
+                        "La gestion esta cerrada: ya se registro Renovo Si o No, o se creo "
+                        "sin campana (nace cerrada y no admite resultado)."
+                    ),
                     status.HTTP_422_UNPROCESSABLE_CONTENT: (
                         "Respuestas incoherentes o fecha de seguimiento fuera de rango."
                     ),

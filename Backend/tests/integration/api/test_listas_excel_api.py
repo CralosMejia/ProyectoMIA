@@ -164,16 +164,34 @@ def test_get_excel_uses_the_list_name_and_keeps_api_fields(
 def test_get_excel_shows_gestion_state_at_download_time(
     contract_client: TestClient, base_migrada: Engine
 ) -> None:
-    """R-009 (j): el Excel lleva el estado de la gestion al momento de descargar."""
+    """R-009 (j): el Excel lleva el estado de la gestion al momento de descargar.
+
+    R-010 (c), (f): una gestion sin campana nace cerrada y se ve "Cerrada" / "Sin campaña".
+    """
     lista = contract_client.post(
         LISTAS, json={"fecha_referencia": "2026-08-31", "horizonte_dias": 30, "top_k": 25}
     ).json()
-    primero = lista["items"][0]
+    con_campania, sin_campania = lista["items"][:2]
+    nombre = (
+        "Ejemplo: Llamada personal antes del vencimiento"
+        if con_campania["nivel_riesgo"] == "ALTO"
+        else "Ejemplo: Recordatorio de renovación"
+    )
+    campanias = {c["nombre"]: c["id"] for c in contract_client.get("/api/v1/campanias").json()}
     gestion = contract_client.post(
         "/api/v1/gestiones",
-        json={"prediccion_id": primero["prediccion_id"], "fecha_seguimiento": "2026-09-05"},
+        json={
+            "prediccion_id": con_campania["prediccion_id"],
+            "campania_id": campanias[nombre],
+            "fecha_seguimiento": "2026-09-05",
+        },
     )
     assert gestion.status_code == 201, gestion.text
+    cerrada_al_crear = contract_client.post(
+        "/api/v1/gestiones",
+        json={"prediccion_id": sin_campania["prediccion_id"], "campania_id": None},
+    )
+    assert cerrada_al_crear.status_code == 201, cerrada_al_crear.text
 
     pendiente = load_workbook(
         io.BytesIO(contract_client.get(f"{LISTAS}/{lista['id']}/excel").content)
@@ -192,6 +210,8 @@ def test_get_excel_shows_gestion_state_at_download_time(
         io.BytesIO(contract_client.get(f"{LISTAS}/{lista['id']}/excel").content)
     )[HOJAS[0]]
 
-    assert (pendiente["I2"].value, pendiente["J2"].value) == ("Pendiente", "Sin campaña")
-    assert (cerrada["I2"].value, cerrada["J2"].value) == ("Cerrada", "Sin campaña")
-    assert (cerrada["I3"].value, cerrada["J3"].value) == ("Sin gestión", "—")
+    assert (pendiente["I2"].value, pendiente["J2"].value) == ("Pendiente", nombre)
+    assert (pendiente["I3"].value, pendiente["J3"].value) == ("Cerrada", "Sin campaña")
+    assert (cerrada["I2"].value, cerrada["J2"].value) == ("Cerrada", nombre)
+    assert (cerrada["I3"].value, cerrada["J3"].value) == ("Cerrada", "Sin campaña")
+    assert (cerrada["I4"].value, cerrada["J4"].value) == ("Sin gestión", "—")

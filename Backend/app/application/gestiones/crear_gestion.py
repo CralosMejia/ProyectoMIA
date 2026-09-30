@@ -5,11 +5,16 @@ Flujo (todo en **una** unidad de trabajo, con un solo ``commit`` al final):
 1. "Hoy" = ``hoy_en_negocio(clock.now())`` (Ecuador).
 2. Prediccion inexistente -> ``PrediccionNoExisteError``; su ciclo ya con gestion ->
    ``GestionDuplicadaError`` (RN-08.1).
-3. Fecha de seguimiento dentro de ``[hoy, vencimiento + 30]`` (decision (g)).
-4. Campana (opcional): inexistente o borrada -> ``CampaniaNoExisteError``; inactiva o
-   incompatible con el nivel y el plan de la prediccion -> ``CampaniaNoAplicableError``.
-5. Se guarda con la instantanea del nombre de la campana (RN-08.2) y estado ``PENDIENTE``.
+3. Con campana: fecha de seguimiento dentro de ``[hoy, vencimiento + 30]`` (decision (g));
+   campana inexistente o borrada -> ``CampaniaNoExisteError``; inactiva o incompatible con el
+   nivel y el plan de la prediccion -> ``CampaniaNoAplicableError``. Se guarda ``PENDIENTE``
+   con la instantanea del nombre de la campana (RN-08.2).
+4. Sin campana (R-010 (c), (d)): la gestion nace ``CERRADA`` (``estado_inicial``) con
+   ``cerrada_en`` = ahora; no hay seguimiento, asi que la fecha y el responsable enviados se
+   ignoran (se guarda hoy y nulo) y no se valida el rango ni el plazo.
 """
+
+from datetime import date
 
 from app.application.campanias.gestionar_campanias import CampaniaNoExisteError
 from app.application.campanias.sugerir_campanias import PrediccionNoExisteError
@@ -24,9 +29,10 @@ from app.application.gestiones.ports import (
 from app.application.listas.consultar_listas import version_texto
 from app.domain.campanias.campania import es_compatible
 from app.domain.common.clock import Clock
+from app.domain.common.enums import EstadoGestion
 from app.domain.common.fechas import hoy_en_negocio
 from app.domain.gestiones.errores import CampaniaNoAplicableError, GestionDuplicadaError
-from app.domain.gestiones.reglas import validar_fecha_seguimiento
+from app.domain.gestiones.reglas import estado_inicial, validar_fecha_seguimiento
 
 
 def gestion_a_dto(detalle: GestionDetalle) -> GestionDTO:
@@ -70,14 +76,16 @@ class CrearGestion:
         self._clock = clock
 
     def ejecutar(self, datos: CrearGestionDTO) -> GestionDTO:
-        hoy = hoy_en_negocio(self._clock.now())
+        ahora = self._clock.now()
+        hoy = hoy_en_negocio(ahora)
+        estado = estado_inicial(datos.campania_id is not None)
         with self._uow() as ctx:
             prediccion = ctx.gestiones.datos_prediccion(datos.prediccion_id)
             if prediccion is None:
                 raise PrediccionNoExisteError()
             if ctx.gestiones.existe_para_membresia(prediccion.membresia_id):
                 raise GestionDuplicadaError()
-            validar_fecha_seguimiento(datos.fecha_seguimiento, hoy, prediccion.fecha_vencimiento)
+            fecha_seguimiento, responsable = _seguimiento(datos, hoy, prediccion)
             campania_nombre = _nombre_campania(ctx, datos.campania_id, prediccion)
             gestion_id = ctx.gestiones.crear(
                 NuevaGestion(
@@ -86,8 +94,10 @@ class CrearGestion:
                     campania_id=datos.campania_id,
                     campania_nombre=campania_nombre,
                     fecha_asignacion=hoy,
-                    fecha_seguimiento=datos.fecha_seguimiento,
-                    responsable=datos.responsable,
+                    fecha_seguimiento=fecha_seguimiento,
+                    responsable=responsable,
+                    estado=estado,
+                    cerrada_en=ahora if estado is EstadoGestion.CERRADA else None,
                 )
             )
             detalle = ctx.gestiones.obtener(gestion_id)
@@ -95,6 +105,22 @@ class CrearGestion:
                 raise RuntimeError("La gestion recien creada no se encontro.")
             ctx.commit()
         return gestion_a_dto(detalle)
+
+
+def _seguimiento(
+    datos: CrearGestionDTO, hoy: date, prediccion: DatosPrediccionGestion
+) -> tuple[date, str | None]:
+    """Fecha de seguimiento y responsable a guardar.
+
+    Sin campana no hay seguimiento: lo enviado se ignora y la fecha (columna obligatoria)
+    queda en hoy, sin validar el rango ni el plazo.
+    """
+    if datos.campania_id is None:
+        return hoy, None
+    if datos.fecha_seguimiento is None:  # pragma: no cover - lo impide ``CrearGestionDTO``
+        raise ValueError("fecha_seguimiento es obligatoria cuando se asigna una campana")
+    validar_fecha_seguimiento(datos.fecha_seguimiento, hoy, prediccion.fecha_vencimiento)
+    return datos.fecha_seguimiento, datos.responsable
 
 
 def _nombre_campania(

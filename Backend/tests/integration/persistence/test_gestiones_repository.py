@@ -217,6 +217,65 @@ def test_crear_sin_campania_deja_nombre_nulo(
     assert detalle.campania_nombre is None
 
 
+def test_crear_sin_campania_cerrada_guarda_cerrada_en_y_resultado_nulo(
+    db_session: Session, repo: SqlAlchemyGestionRepository, escenario: Escenario
+) -> None:
+    """R-010 (c): la gestion sin campana nace cerrada; ningun ``CHECK`` lo impide."""
+    gestion_id = repo.crear(
+        NuevaGestion(
+            prediccion_id=escenario.prediccion_1,
+            membresia_id=escenario.membresia_id,
+            campania_id=None,
+            campania_nombre=None,
+            fecha_asignacion=HOY,
+            fecha_seguimiento=HOY,
+            responsable=None,
+            estado=EstadoGestion.CERRADA,
+            cerrada_en=INSTANTE,
+        )
+    )
+
+    detalle = repo.obtener(gestion_id)
+    assert detalle is not None
+    assert detalle.estado is EstadoGestion.CERRADA
+    assert detalle.cerrada_en == INSTANTE
+    assert detalle.creada_en == INSTANTE
+    assert detalle.campania_id is None
+    assert detalle.campania_nombre is None
+    assert detalle.fecha_seguimiento == detalle.fecha_asignacion == HOY
+    assert detalle.responsable is None
+    assert detalle.contactado is None
+    assert detalle.campania_ofrecida is None
+    assert detalle.campania_aceptada is None
+    assert detalle.renovo_declarado is None
+    assert detalle.fecha_contacto is None
+    assert detalle.observaciones is None
+    fila = (
+        db_session.execute(
+            text(
+                "SELECT estado, cerrada_en, fecha_asignacion, fecha_seguimiento, deleted_at "
+                "FROM gestiones_retencion WHERE id = :id"
+            ),
+            {"id": gestion_id},
+        )
+        .mappings()
+        .one()
+    )
+    assert fila["estado"] == "CERRADA"
+    assert fila["cerrada_en"] == INSTANTE
+    assert fila["fecha_seguimiento"] == fila["fecha_asignacion"]
+    assert fila["deleted_at"] is None
+    pendientes = db_session.execute(
+        text(
+            "SELECT count(*) FROM gestiones_retencion "
+            "WHERE estado = 'PENDIENTE' AND membresia_id = :m"
+        ),
+        {"m": escenario.membresia_id},
+    ).scalar_one()
+    assert pendientes == 0
+    assert repo.existe_para_membresia(escenario.membresia_id) is True
+
+
 def test_existe_para_membresia_sin_gestion_es_false(
     repo: SqlAlchemyGestionRepository, escenario: Escenario
 ) -> None:

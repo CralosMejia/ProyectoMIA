@@ -1,8 +1,8 @@
-"""API de campanas: sin reactivar, orden del listado y sugerencias por plan (R-009, test-engineer).
+"""API de campanas: editar no activa, orden del listado y sugerencias por plan (R-009, R-010).
 
 Complementa ``test_campanias_api.py``:
-- una campana inactiva se puede editar pero sigue inactiva; no hay forma de reactivarla
-  (ni ``activa`` en el cuerpo ni ruta ``activar``) (decision (e), nota de alcance);
+- una campana inactiva se puede editar pero sigue inactiva; ``activa`` en el cuerpo se
+  rechaza: solo se reactiva con ``POST /campanias/{id}/activar`` (R-010, decision (a));
 - ``GET /campanias`` ordena ``activa DESC, prioridad, lower(nombre)`` (decision (e));
 - las sugerencias filtran tambien por plan y se ordenan por prioridad y nombre (decision (f)).
 
@@ -57,15 +57,18 @@ def test_put_campania_con_activa_en_el_cuerpo_devuelve_400_y_no_reactiva(
     assert activa is False
 
 
-@pytest.mark.parametrize("ruta", ["activar", "reactivar"])
-def test_no_existe_ruta_para_reactivar_una_campania(
-    campanias: Campanias, contract_client: TestClient, ruta: str
+def test_campania_inactiva_solo_se_reactiva_con_la_ruta_activar(
+    campanias: Campanias, contract_client: TestClient
 ) -> None:
     creada = campanias.crear()
+    contract_client.post(f"{CAMPANIAS_PATH}/{creada['id']}/inactivar")
 
-    response = contract_client.post(f"{CAMPANIAS_PATH}/{creada['id']}/{ruta}")
+    otra_ruta = contract_client.post(f"{CAMPANIAS_PATH}/{creada['id']}/reactivar")
+    activada = contract_client.post(f"{CAMPANIAS_PATH}/{creada['id']}/activar")
 
-    assert response.status_code in (404, 405)
+    assert otra_ruta.status_code in (404, 405)
+    assert activada.status_code == 200, activada.text
+    assert activada.json() == creada
 
 
 def test_get_campanias_ordena_activas_primero_luego_prioridad_y_nombre_sin_mayusculas(

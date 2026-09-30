@@ -3,8 +3,8 @@
 Escribe dentro de la transaccion de la ``Session`` recibida (unit of work): nunca hace
 ``commit`` ni ``rollback``. ``created_at``/``updated_at`` salen del ``Clock``. Toda lectura
 y escritura ignora las campanas con ``deleted_at``; no hay borrado (una campana se
-inactiva). Escrituras con el ORM; lecturas con ``select`` parametrizado (el filtro por nivel
-y plan usa ``:valor = ANY(columna)`` con parametros enlazados).
+inactiva o se vuelve a activar). Escrituras con el ORM; lecturas con ``select``
+parametrizado (el filtro por nivel y plan usa ``:valor = ANY(columna)`` con parametros enlazados).
 """
 
 from sqlalchemy import func, select
@@ -93,6 +93,16 @@ class SqlAlchemyCampaniaRepository:
             return None
         if fila.activa:
             fila.activa = False
+            fila.updated_at = self._clock.now()
+            self._session.flush()
+        return _guardada(fila)
+
+    def activar(self, campania_id: int) -> CampaniaGuardada | None:
+        fila = self._vigente(campania_id)
+        if fila is None:
+            return None
+        if not fila.activa:
+            fila.activa = True
             fila.updated_at = self._clock.now()
             self._session.flush()
         return _guardada(fila)

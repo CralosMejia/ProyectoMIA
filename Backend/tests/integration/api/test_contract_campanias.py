@@ -17,6 +17,7 @@ from app.domain.common.enums import PLANES_CAMPANIA
 from tests.integration.api.contract_helpers import (
     assert_operation_contract,
     assert_validation_error,
+    json_example,
     request_body_schema_name,
 )
 
@@ -59,6 +60,13 @@ def test_put_campania_invalid_id_returns_400(contract_client: TestClient) -> Non
     assert_validation_error(contract_client.put(f"{CAMPANIAS_PATH}/abc", json=VALID_BODY))
 
 
+@pytest.mark.parametrize("campania_id", ["abc", "0", "-1"])
+def test_post_activar_campania_invalid_id_returns_400(
+    contract_client: TestClient, campania_id: str
+) -> None:
+    assert_validation_error(contract_client.post(f"{CAMPANIAS_PATH}/{campania_id}/activar"))
+
+
 def test_delete_campania_is_not_allowed(contract_client: TestClient) -> None:
     assert contract_client.delete(f"{CAMPANIAS_PATH}/7").status_code == 405
 
@@ -89,6 +97,17 @@ def test_openapi_campanias_operations_declare_examples(openapi_spec: dict[str, A
         (400, 403, 404),
         CampaniaDTO,
     )
+    activar = assert_operation_contract(
+        openapi_spec,
+        "post",
+        "/api/v1/campanias/{campania_id}/activar",
+        200,
+        (400, 403, 404),
+        CampaniaDTO,
+    )
+    assert json_example(activar, 200)["activa"] is True
+    assert json_example(activar, 404)["error"]["message"] == "La campana no existe."
+    assert "requestBody" not in activar
     assert_operation_contract(
         openapi_spec,
         "get",

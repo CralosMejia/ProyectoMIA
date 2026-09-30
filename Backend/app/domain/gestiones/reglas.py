@@ -1,4 +1,4 @@
-"""Reglas de una gestion de retencion (CU-08, CU-10; decisiones (g) y (h) de R-009).
+"""Reglas de una gestion de retencion (CU-08, CU-10; (g) y (h) de R-009, (c) de R-010).
 
 Sin reloj: ``hoy`` (fecha de negocio en Ecuador) la calcula quien llama con
 ``hoy_en_negocio(clock.now())``.
@@ -90,6 +90,14 @@ def validar_resultado(
             raise ResultadoIncoherenteError(MENSAJE_FECHA_CONTACTO_RANGO)
     elif fecha_contacto is not None:
         raise ResultadoIncoherenteError(MENSAJE_FECHA_CONTACTO_SOBRANTE)
+
+
+def estado_inicial(con_campania: bool) -> EstadoGestion:
+    """Con campana la gestion nace ``PENDIENTE``; sin campana nace ``CERRADA`` (R-010 (c)).
+
+    Sin campana no hay seguimiento ni resultado que registrar.
+    """
+    return EstadoGestion.PENDIENTE if con_campania else EstadoGestion.CERRADA
 
 
 def estado_tras_resultado(renovo: Respuesta) -> EstadoGestion:

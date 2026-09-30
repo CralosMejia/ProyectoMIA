@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import TypeAdapter
 from sqlalchemy import Engine
 
 from app.application.gestiones.dtos import (
@@ -32,6 +33,8 @@ from tests.integration.api.contract_helpers import (
     assert_not_implemented,
     assert_operation_contract,
     assert_validation_error,
+    json_example,
+    operation,
     request_body_schema_name,
 )
 
@@ -169,8 +172,9 @@ def test_alertas_dto_rejects_negative_counters() -> None:
 
 
 def test_openapi_gestiones_operations_declare_examples(openapi_spec: dict[str, Any]) -> None:
+    # El 201 lleva dos ejemplos (con y sin campana): se validan en la prueba siguiente.
     crear = assert_operation_contract(
-        openapi_spec, "post", GESTIONES_PATH, 201, (400, 403, 404, 409, 422), GestionDTO
+        openapi_spec, "post", GESTIONES_PATH, 201, (400, 403, 404, 409, 422)
     )
     assert_operation_contract(
         openapi_spec, "get", "/api/v1/gestiones/{gestion_id}", 200, (400, 403, 404), GestionDTO
@@ -193,6 +197,64 @@ def test_openapi_gestiones_operations_declare_examples(openapi_spec: dict[str, A
     schemas = openapi_spec["components"]["schemas"]
     assert schemas["CrearGestionDTO"].get("examples")
     assert schemas["RegistrarResultadoDTO"].get("examples")
+
+
+def test_openapi_crear_gestion_documenta_la_gestion_con_y_sin_campania(
+    openapi_spec: dict[str, Any],
+) -> None:
+    """R-010 (c), (d): sin campana la fecha no es requerida y la gestion nace cerrada."""
+    esquema = openapi_spec["components"]["schemas"]["CrearGestionDTO"]
+    assert esquema["required"] == ["prediccion_id"]
+    assert [e.get("campania_id") for e in esquema["examples"]] == [3, None]
+    assert "fecha_seguimiento" not in esquema["examples"][1]
+
+    op = operation(openapi_spec, "post", GESTIONES_PATH)
+    peticion = op["requestBody"]["content"]["application/json"]["examples"]
+    assert peticion["con_campania"]["value"]["fecha_seguimiento"]
+    # FastAPI omite los nulos del ejemplo: sin campana solo viaja la prediccion.
+    sin_fecha = peticion["sin_campania"]["value"]
+    assert sin_fecha["prediccion_id"] == 1501
+    assert sin_fecha.get("campania_id") is None
+    assert "fecha_seguimiento" not in sin_fecha
+    assert "responsable" not in sin_fecha
+
+    respuestas = op["responses"]["201"]["content"]["application/json"]["examples"]
+    adaptador = TypeAdapter(GestionDTO)
+    con_campania = adaptador.validate_python(respuestas["con_campania"]["value"])
+    sin_campania = adaptador.validate_python(respuestas["sin_campania"]["value"])
+    assert (con_campania.estado, con_campania.fecha_cierre) == ("PENDIENTE", None)
+    assert sin_campania.estado == "CERRADA"
+    assert sin_campania.campania_id is None
+    assert sin_campania.fecha_cierre is not None
+    assert sin_campania.renovo_declarado is None
+    assert sin_campania.contactado is None
+
+
+def test_openapi_resultado_409_explica_la_gestion_sin_campania(
+    openapi_spec: dict[str, Any],
+) -> None:
+    op = operation(openapi_spec, "put", "/api/v1/gestiones/{gestion_id}/resultado")
+
+    assert "sin campana" in op["responses"]["409"]["description"]
+    assert json_example(op, 409)["error"]["message"] == (
+        "La gestion esta cerrada y no se puede modificar."
+    )
+
+
+def test_post_gestiones_sin_campania_ni_fecha_passes_validation(
+    migrated_engine: Engine, contract_client: TestClient
+) -> None:
+    body = {"prediccion_id": INEXISTENTE, "campania_id": None}
+
+    assert_not_found(contract_client.post(GESTIONES_PATH, json=body), "La prediccion no existe.")
+
+
+def test_post_gestiones_con_campania_y_sin_fecha_returns_400(
+    contract_client: TestClient,
+) -> None:
+    body = {"prediccion_id": 15, "campania_id": 3}
+
+    assert_validation_error(contract_client.post(GESTIONES_PATH, json=body))
 
 
 def test_post_gestiones_boundary_responsable_120_passes_validation(

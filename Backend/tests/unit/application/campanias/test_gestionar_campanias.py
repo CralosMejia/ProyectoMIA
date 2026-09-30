@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from app.application.campanias.dtos import CampaniaDTO, CampaniaEntradaDTO
 from app.application.campanias.gestionar_campanias import (
+    ActivarCampania,
     CampaniaNoExisteError,
     CrearCampania,
     EditarCampania,
@@ -164,6 +165,63 @@ def test_inactivar_inexistente_lanza_no_existe_sin_commit() -> None:
     assert uow.contexto.commits == 0
 
 
+def test_activar_inactiva_la_deja_activa_con_un_commit_y_sin_cambiar_nada_mas() -> None:
+    uow = UnidadFalsa()
+    inactiva = guardada(
+        7, activa=False, nombre="Llamada", niveles_riesgo=(ALTO, MEDIO), prioridad=4
+    )
+    uow.contexto.campanias.campanias = {7: inactiva}
+
+    resultado = ActivarCampania(uow).ejecutar(7)
+
+    assert resultado == CampaniaDTO(
+        id=7,
+        nombre="Llamada",
+        descripcion=None,
+        activa=True,
+        niveles_riesgo=[ALTO, MEDIO],
+        planes=[Plan.MENSUAL],
+        prioridad=4,
+        es_ejemplo=False,
+    )
+    assert uow.contexto.campanias.activadas == [7]
+    assert uow.contexto.commits == 1
+
+
+def test_activar_ya_activa_es_idempotente_sin_llamar_al_repositorio() -> None:
+    uow = UnidadFalsa()
+    activa = guardada(7)
+    uow.contexto.campanias.campanias = {7: activa}
+
+    resultado = ActivarCampania(uow).ejecutar(7)
+
+    assert resultado.activa is True
+    assert resultado.id == 7
+    assert uow.contexto.campanias.activadas == []
+    assert uow.contexto.campanias.campanias[7] == activa
+    assert uow.contexto.commits == 0
+
+
+def test_activar_inexistente_lanza_no_existe_sin_commit() -> None:
+    uow = UnidadFalsa()
+
+    with pytest.raises(CampaniaNoExisteError, match=r"La campana no existe\."):
+        ActivarCampania(uow).ejecutar(99)
+
+    assert uow.contexto.campanias.activadas == []
+    assert uow.contexto.commits == 0
+
+
+def test_activar_campania_de_ejemplo_inactiva_sigue_siendo_de_ejemplo() -> None:
+    uow = UnidadFalsa()
+    uow.contexto.campanias.campanias = {7: guardada(7, activa=False, es_ejemplo=True)}
+
+    resultado = ActivarCampania(uow).ejecutar(7)
+
+    assert resultado.activa is True
+    assert resultado.es_ejemplo is True
+
+
 def test_entrada_dto_prioridad_1000_es_invalida() -> None:
     with pytest.raises(ValidationError):
         entrada(prioridad=1000)
@@ -176,4 +234,12 @@ def test_entrada_dto_prioridad_999_es_valida() -> None:
 def test_puerto_no_expone_borrado() -> None:
     metodos = {m for m in dir(CampaniaRepository) if not m.startswith("_")}
 
-    assert metodos == {"listar", "obtener", "crear", "actualizar", "inactivar", "compatibles"}
+    assert metodos == {
+        "listar",
+        "obtener",
+        "crear",
+        "actualizar",
+        "inactivar",
+        "activar",
+        "compatibles",
+    }

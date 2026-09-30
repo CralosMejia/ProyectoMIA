@@ -1,7 +1,8 @@
 """API de gestiones: fronteras, concurrencia y datos personales (R-009 T9-T12, test-engineer).
 
 Complementa ``test_gestiones_api.py`` con los criterios que alli no se cubren:
-- plazo de seguimiento terminado -> ``422`` (decision (g));
+- plazo de seguimiento terminado -> ``422`` con campana (decision (g)); sin campana la
+  gestion se crea cerrada aunque el plazo haya terminado (R-010, decision (d));
 - campana activa pero incompatible con el nivel del socio -> ``422`` (decision (g));
 - "hoy" es el de Ecuador aunque en UTC ya sea el dia siguiente (decision (g));
 - dos creaciones simultaneas del mismo ciclo: una ``201`` y otra ``409``, una sola fila;
@@ -29,6 +30,7 @@ from sqlalchemy import Engine, text
 from app.api.dependencies import get_clock
 from tests.integration.api import test_gestiones_api as base
 from tests.integration.api.test_gestiones_api import (
+    AHORA,
     CERRADA,
     DUPLICADA,
     GESTIONES_PATH,
@@ -39,6 +41,7 @@ from tests.integration.api.test_gestiones_api import (
     cuerpo_crear,
     resultado,
 )
+from tests.integration.persistence.test_migrations import insert
 
 # Fixtures reutilizadas de ``test_gestiones_api.py`` (misma siembra y mismo reloj fijo).
 datos = base.datos
@@ -134,11 +137,36 @@ def test_post_plazo_de_seguimiento_terminado_devuelve_422(
         )
 
     response = client.post(
-        GESTIONES_PATH, json=cuerpo_crear(datos.prediccion_1, fecha_seguimiento="2026-09-29")
+        GESTIONES_PATH,
+        json=cuerpo_crear(
+            datos.prediccion_1,
+            campania_id=datos.campania_ejemplo,
+            fecha_seguimiento="2026-09-29",
+        ),
     )
 
     assert_error(response, 422, "domain_rule_violated", PLAZO_TERMINADO)
     assert contar(migrated_engine, datos.membresia_id) == 0
+
+
+def test_post_sin_campania_con_plazo_terminado_crea_la_gestion_cerrada(
+    migrated_engine: Engine, client: TestClient, datos: Datos
+) -> None:
+    # vencimiento + 30 = 2026-09-28, anterior a hoy: sin campana no hay seguimiento que validar.
+    with migrated_engine.begin() as conexion:
+        conexion.execute(
+            text("UPDATE membresias SET fecha_vencimiento = '2026-08-29' WHERE id = :m"),
+            {"m": datos.membresia_id},
+        )
+
+    response = client.post(
+        GESTIONES_PATH, json={"prediccion_id": datos.prediccion_1, "campania_id": None}
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["estado"] == "CERRADA"
+    assert response.json()["fecha_cierre"] is not None
+    assert contar(migrated_engine, datos.membresia_id) == 1
 
 
 def test_post_ultimo_dia_del_plazo_se_acepta(
@@ -307,9 +335,32 @@ def test_put_dos_cierres_simultaneos_esperan_el_bloqueo_uno_200_y_otro_409(
     ],
 )
 def test_put_resultado_incoherente_devuelve_422_con_el_mensaje_de_la_regla_sin_guardar(
-    client: TestClient, datos: Datos, con_campania: bool, cambios: dict[str, Any], mensaje: str
+    migrated_engine: Engine,
+    client: TestClient,
+    datos: Datos,
+    con_campania: bool,
+    cambios: dict[str, Any],
+    mensaje: str,
 ) -> None:
-    creada = crear(client, datos, campania_id=datos.campania_ejemplo if con_campania else None)
+    if con_campania:
+        creada = crear(client, datos)
+    else:
+        # Una gestion pendiente sin campana solo puede venir de antes de R-010 (hoy nace
+        # cerrada): se siembra directamente para conservar la cobertura de su regla.
+        with migrated_engine.begin() as conexion:
+            gestion_id = insert(
+                conexion,
+                "gestiones_retencion",
+                {
+                    "prediccion_id": datos.prediccion_1,
+                    "membresia_id": datos.membresia_id,
+                    "fecha_asignacion": AHORA.date(),
+                    "fecha_seguimiento": AHORA.date(),
+                    "estado": "PENDIENTE",
+                },
+            )
+        creada = client.get(f"{GESTIONES_PATH}/{gestion_id}").json()
+        assert (creada["estado"], creada["campania_id"]) == ("PENDIENTE", None)
 
     response = client.put(
         f"{GESTIONES_PATH}/{creada['id']}/resultado",
@@ -333,9 +384,7 @@ def test_put_resultado_renovo_si_cierra_la_gestion(client: TestClient, datos: Da
     assert response.json()["fecha_cierre"] is not None
 
 
-def test_put_resultado_sin_campania_no_contactado_cierra_con_no_aplica(
-    client: TestClient, datos: Datos
-) -> None:
+def test_put_resultado_no_contactado_cierra_con_no_aplica(client: TestClient, datos: Datos) -> None:
     creada = crear(client, datos)
 
     response = client.put(
@@ -364,9 +413,7 @@ def test_put_resultado_no_modifica_la_membresia(
 
     response = client.put(
         f"{GESTIONES_PATH}/{creada['id']}/resultado",
-        json=resultado(
-            campania_ofrecida="NO_APLICA", campania_aceptada="NO_APLICA", renovo_declarado="SI"
-        ),
+        json=resultado(renovo_declarado="SI"),
     )
 
     assert response.status_code == 200, response.text
@@ -393,7 +440,12 @@ def test_gestiones_no_exponen_datos_personales_en_logs_ni_en_errores(
 
     with caplog.at_level(logging.DEBUG):
         fuera = client.post(
-            GESTIONES_PATH, json=cuerpo_crear(datos.prediccion_1, fecha_seguimiento="2026-09-28")
+            GESTIONES_PATH,
+            json=cuerpo_crear(
+                datos.prediccion_1,
+                campania_id=datos.campania_ejemplo,
+                fecha_seguimiento="2026-09-28",
+            ),
         )
         inactiva = client.post(
             GESTIONES_PATH,
