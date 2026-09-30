@@ -5,9 +5,180 @@
 
 ## ACTIVO
 
-_(ninguno)_
+_Ninguno._
 
 ## TERMINADOS RECIENTEMENTE
+
+### R-010 — Arreglos tras el Día 5: reactivar campañas, gestión sin campaña cerrada desde su creación y ayuda ampliada (campañas y gestión) · **DONE** 2026-09-30
+
+**Cierre:** Backend 1.710 pytest; Frontend 597 Vitest; E2E 3/3 en el stack aislado 8081. Sin migración (esquema en `0008`). Seguridad diferida al día 7 (05 §1). Contrato y decisiones → [ADR-009](adr/ADR-009-reactivar-campanias-y-gestion-sin-campania-cerrada.md). Las gestiones pendientes sin campaña anteriores a R-010 no se migraron (solo posibles en el stack E2E). **Pendiente de confirmar:** T15 (reconstrucción del stack principal 8080 y verificación en el navegador) no consta en el handoff a documentación. **Aviso al usuario:** [03 §15](03-casos-de-uso.md) conserva el criterio "descargar dos veces la misma lista produce el mismo contenido", que ya no se cumple al pie de la letra para las columnas "Gestión" y "Campaña" (muestran el estado al descargar); no se modificó.
+
+**Objetivo:** una campaña inactiva se puede volver a activar; elegir "No asignar campaña" deja la gestión cerrada al crearla (sin resultado que registrar); y la ayuda "¿Cómo funciona esta lista?" y la guía 06 explican campañas, gestión, resultado y la regla de la fecha de contacto.
+
+**Fuente:** pedido del usuario tras R-009 · [03 §9, §11, §13, §15](03-casos-de-uso.md) (CU-06, CU-08, CU-10, CU-12) · [06 §7](06-como-funciona-la-lista.md) · `docs/API_CONTRACT.md` §Campañas y gestiones · [ADR-008](adr/ADR-008-gestion-por-ciclo-y-nombre-de-campania-congelado.md) · decisiones (e), (g), (h), (i), (k) de R-009.
+
+**Notas de alcance del planner**
+- No existe `products/P##-*.md`. Nada cae en `DEVELOPMENT_GUIDELINES.md` §Fuera de alcance: reactivar campañas no está listado, y una gestión que nace cerrada no es "editar una gestión cerrada" (sigue rechazándose con `409`).
+- **Sin migración:** el esquema queda en `0008`. Los `CHECK` actuales admiten todo lo que se guarda (ver (c)). Si el developer encuentra que hace falta una migración, se detiene y lo escala.
+- **Punto 2 del pedido (fecha de contacto): la regla NO cambia** (`fecha_asignacion ≤ fecha_contacto ≤ hoy`). Ninguna tarea toca `validar_resultado` ni `reglasGestion.ts` por este motivo; solo se explica (T13, DOC-1).
+- **Proceso (05 §1):** pruebas de los criterios de aceptación en todas las tareas (sin TDD obligatorio). Revisión de seguridad diferida a la revisión única del día 7. Sin login: no hay pruebas de aislamiento entre usuarios. Datos de prueba ficticios; logs y mensajes de error sin nombres, cédulas ni celulares.
+- **Stacks:** pruebas con escritura y E2E solo en `mtabolic-e2e` (8081). En el principal (8080) **no se crean campañas ni gestiones, ni se inactiva/activa ninguna**: solo se reconstruye y se mira.
+- **Decisiones del planner (reversibles; se avisan al usuario):**
+  - (a) **Reactivar (revierte R-009 (e) "no se reactivan"):** `POST /api/v1/campanias/{id}/activar` → `200` con `CampaniaDTO` y `activa: true`; ya activa → `200` sin cambios (idempotente, sin tocar `updated_at`); inexistente o borrada → `404` "La campana no existe."; id `0` → `400`. No cambia `es_ejemplo` ni ningún otro dato. Una campaña activada vuelve a salir en `GET /predicciones/{id}/campanias-sugeridas` y se puede asignar en `POST /gestiones`. Las gestiones ya creadas no cambian (nombre congelado, ADR-008).
+  - (b) **Frontend de activar:** botón "Activar" (nombre accesible `Activar <nombre>`) solo en las filas inactivas, junto a "Editar"; **sin ventana de confirmación** (no quita nada y se revierte con "Inactivar"). La fila se actualiza en su sitio, igual que al inactivar.
+  - (c) **Gestión sin campaña = cerrada al crearla.** `POST /gestiones` con `campania_id: null` guarda, en la misma transacción: `estado = CERRADA`, `cerrada_en = clock.now()` (el instante de creación), `fecha_asignacion = hoy` (Ecuador), `fecha_seguimiento = hoy` (la columna es `NOT NULL`; valor sin significado, no se muestra), `responsable = NULL`, y **todos los campos de resultado en `NULL`** (`contactado`, `campania_ofrecida`, `campania_aceptada`, `renovo_declarado`, `fecha_contacto`, `observaciones`). Se eligen nulos y no `NO_APLICA` porque el `CHECK` de `renovo_declarado` solo admite `SI/NO/PENDIENTE` (usar `NO_APLICA` exigiría migración) y porque nulo = "no hubo resultado que registrar". "Sin campaña" se reconoce por `campania_id IS NULL`.
+  - (d) **Contrato de `POST /gestiones`:** `fecha_seguimiento` pasa a opcional. Con `campania_id` → sigue siendo obligatoria (falta → `400 validation_error`) y valen las reglas de R-009 (g). Con `campania_id: null` → `fecha_seguimiento` y `responsable`, si llegan, **se ignoran**; no se valida el rango ni el plazo (`vencimiento + 30 < hoy` ya no bloquea este caso). Siguen valiendo `404` (predicción inexistente) y `409` (el ciclo ya tiene gestión). Respuesta `201` con `estado: "CERRADA"`, `fecha_cierre` informado y campos de resultado `null`.
+  - (e) **`PUT /gestiones/{id}/resultado`** sobre una gestión sin campaña → `409` "La gestion esta cerrada y no se puede modificar." (regla ya existente; sin código nuevo, solo prueba). La rama "sin campaña" de `validar_resultado` se **conserva** para gestiones pendientes sin campaña creadas antes de R-010 (solo pueden existir en el stack E2E; el principal tiene 0 gestiones): no se migran datos.
+  - (f) **Lista y Excel:** sin cambios de código en backend: la fila muestra Gestión "Cerrada", Campaña "Sin campaña" y acción "Ver gestión" (ya lo hace la tabla con `gestion_estado = CERRADA` y `campania_asignada = null`); el Excel, los mismos textos.
+  - (g) **Ventana de gestión (frontend):** al marcar "No asignar campaña" se ocultan "Fecha de seguimiento" y "Responsable" y aparece el aviso "Sin campaña, la gestión queda cerrada y no tendrá seguimiento."; "Crear gestión" queda habilitado aunque el plazo de seguimiento haya terminado. Al crearla, **la ventana se cierra** (no pasa a "Registrar resultado") y la lista se recarga. "Ver gestión" de una gestión cerrada **sin campaña** muestra solo el texto "No se le asignó campaña" (sin preguntas, campos ni botón de guardar). Con campaña todo sigue como en R-009 (k).
+  - (h) **Alertas del día 6 (CU-09):** cuentan solo gestiones `PENDIENTE`; la gestión sin campaña nace `CERRADA` y queda fuera por construcción. El dashboard del día 6 debe tratar `renovo_declarado` nulo como "sin resultado". `GET /alertas` y `GET /gestiones?filtro=` siguen en `501`.
+  - (i) **Ayuda:** se añaden dos secciones a la ventana "¿Cómo funciona esta lista?" ("Campañas" y "Gestionar a un socio"), en lenguaje del personal, sin palabras técnicas (nada de "API", "estado", "endpoint", "null", códigos ni nombres de campos). La guía 06 lleva el mismo contenido, más detallado.
+- **Excepción al límite de 4 archivos (ajustes mecánicos de pruebas existentes):** T4 puede tocar además `Backend/tests/integration/api/test_campanias_api_bordes.py` si afirma que no existe la ruta de activar. T6 puede ajustar las pruebas que hoy crean una gestión sin campaña y luego registran su resultado o la esperan `PENDIENTE`: `Backend/tests/integration/api/test_gestiones_api_bordes.py`, `test_contract_gestiones.py`, `test_listas_api.py`, `test_listas_excel_api.py`, `Backend/tests/integration/persistence/test_listas_repository.py`, `Backend/tests/unit/application/gestiones/test_consultar_gestion.py`. T11 puede ajustar `ListaPage.test.tsx` si alguna prueba crea una gestión sin campaña y espera la parte 2.
+
+**Tareas**
+
+- [x] **T1** · `domain` · Regla: estado inicial de una gestión según tenga o no campaña
+  - Archivos: `Backend/app/domain/gestiones/reglas.py` (principal: `estado_inicial(con_campania: bool) -> EstadoGestion`), `Backend/tests/unit/domain/gestiones/test_reglas.py`.
+  - Docs: `Documentation/docs/backend/01-arquitectura.md` §Capas; decisión (c).
+  - Aceptación: `estado_inicial(True)` → `PENDIENTE`; `estado_inicial(False)` → `CERRADA`. `validar_resultado` y sus pruebas **no cambian** (la regla de `fecha_contacto` sigue igual: anterior a `fecha_asignacion` o futura → error; extremos válidos). Solo librería estándar; `lint-imports` y `mypy app` en verde.
+  - Pruebas: unitarias.
+
+- [x] **T2** · `application` · CU-06: caso de uso `ActivarCampania`
+  - Archivos: `Backend/app/application/campanias/gestionar_campanias.py` (principal: `ActivarCampania`, espejo de `InactivarCampania`), `Backend/app/application/campanias/ports.py` (`CampaniaRepository.activar(campania_id) -> CampaniaGuardada | None`), `Backend/tests/unit/application/campanias/test_gestionar_campanias.py` (doble en memoria con `activar`).
+  - Docs: `.claude/rules/backend.md` §Application; `docs/API_CONTRACT.md` §Campañas y gestiones; decisión (a).
+  - Aceptación:
+    - Inactiva → devuelve `CampaniaDTO` con `activa=True`, **un** `commit`; `es_ejemplo`, nombre, niveles, planes y prioridad iguales que antes.
+    - Ya activa → devuelve la campaña igual, sin llamar a `activar` del repositorio (idempotente).
+    - Inexistente → `CampaniaNoExisteError`, sin `commit`.
+    - Campaña de ejemplo inactiva → tras activar sigue `es_ejemplo=True`.
+  - Pruebas: unitarias.
+
+- [x] **T3** · `infra` · Repositorio de campañas: `activar`
+  - Archivos: `Backend/app/infrastructure/persistence/repositories/campanias.py` (principal: `activar`, mismo patrón que `inactivar` en la línea 90), `Backend/tests/integration/persistence/test_campanias_repository.py`.
+  - Docs: `.claude/rules/database.md` §Reglas innegociables; `docs/backend/09-esquema-base-de-datos.md` §Retención; decisión (a).
+  - Aceptación (`app_db_test`, reloj fijo):
+    - Inactiva → `activa=true`, `updated_at` = reloj, `deleted_at` sigue `NULL`, `es_ejemplo` igual; conteo de filas igual.
+    - Id inexistente o con `deleted_at` → `None` y ninguna fila cambia.
+    - Tras `inactivar` + `activar`, `compatibles(nivel, plan)` vuelve a devolverla en su orden (`prioridad, lower(nombre), id`). Sin `commit` en el repositorio.
+  - Pruebas: integración.
+
+- [x] **T4** · `api` · `POST /api/v1/campanias/{id}/activar`
+  - Archivos: `Backend/app/api/routers/campanias.py` (principal: endpoint espejo de `/inactivar`, `response_model`, `responses` `400`/`404`, ejemplos de éxito y de cada error), `Backend/app/api/dependencies.py` (`get_activar_campania`), `Backend/tests/integration/api/test_campanias_api.py` (sustituye `test_no_existe_ruta_para_reactivar_una_campania`), `Backend/tests/integration/api/test_contract_campanias.py`.
+  - Docs: `docs/API_CONTRACT.md` §Campañas y gestiones; `.claude/rules/backend.md` §API; decisión (a).
+  - Aceptación (PostgreSQL de pruebas en `head`):
+    - Campaña inactiva → `200` con `activa: true`; `GET /campanias` la muestra activa; repetir → `200` igual.
+    - Id inexistente → `404` "La campana no existe."; id `0` → `400 validation_error`.
+    - Campaña de ejemplo: inactivar y activar → `es_ejemplo: true` en ambas respuestas.
+    - `GET /predicciones/{id}/campanias-sugeridas`: tras inactivar no aparece; tras activar **vuelve a aparecer** en su orden; y `POST /gestiones` con esa campaña → `201`.
+    - `PUT /campanias/{id}` con `activa` en el cuerpo sigue dando `400` (editar no activa).
+    - `/openapi.json`: la operación declara ejemplos de `200`, `400` y `404`; sigue sin existir `DELETE /campanias/{id}`.
+  - Pruebas: integración (API) + contrato.
+
+- [x] **T5** · `application` · CU-08: crear gestión sin campaña = cerrada
+  - Archivos: `Backend/app/application/gestiones/crear_gestion.py` (principal), `Backend/app/application/gestiones/dtos.py` (`CrearGestionDTO.fecha_seguimiento: date | None`, validador: obligatoria si hay `campania_id`; segundo ejemplo sin campaña), `Backend/app/application/gestiones/ports.py` (`NuevaGestion.cerrada_en: datetime | None = None`; invariante en `__post_init__`: `CERRADA` si y solo si `cerrada_en` no es nulo), `Backend/tests/unit/application/gestiones/test_crear_gestion.py`.
+  - Docs: `03-casos-de-uso.md` §11; `.claude/rules/backend.md` §Application; decisiones (c), (d).
+  - Aceptación (dobles en memoria, reloj fijo 2026-09-30):
+    - `campania_id=None`, sin fecha ni responsable → `NuevaGestion` con `estado=CERRADA` (de `estado_inicial`), `cerrada_en = clock.now()`, `fecha_asignacion = fecha_seguimiento = 2026-09-30`, `responsable=None`, `campania_nombre=None`; **un** `commit`; el DTO devuelto trae `estado CERRADA`, `fecha_cierre` informado y los seis campos de resultado en `None`.
+    - `campania_id=None` con `fecha_seguimiento="2027-01-01"` y `responsable="Andrea"` → no falla; se guardan hoy y `None` (se ignoran).
+    - `campania_id=None` con vencimiento 2026-08-29 (plazo terminado) → se crea igual (sin `PlazoSeguimientoTerminadoError`).
+    - `campania_id=None` y el ciclo ya tiene gestión → `GestionDuplicadaError`, sin `commit`; predicción inexistente → `PrediccionNoExisteError`.
+    - `CrearGestionDTO(prediccion_id=1, campania_id=3)` sin fecha → `ValidationError`. Con campaña y fecha → igual que R-009: `PENDIENTE`, `cerrada_en=None`, fecha fuera de rango → `FechaSeguimientoFueraDeRangoError`.
+    - `NuevaGestion(estado=CERRADA, cerrada_en=None)` o `(PENDIENTE, cerrada_en=<instante>)` → `ValueError`.
+  - Pruebas: unitarias.
+
+- [x] **T6** · `infra` + `api` · Guardar la gestión cerrada y publicar el contrato
+  - Archivos: `Backend/app/infrastructure/persistence/repositories/gestiones.py` (principal: `crear` escribe `cerrada_en`, línea 128), `Backend/tests/integration/persistence/test_gestiones_repository.py`, `Backend/app/api/routers/gestiones.py` (ejemplo `sin_campania` de la petición sin fecha ni responsable y ejemplo de respuesta `CERRADA`, líneas 123–156; descripción del `409` del resultado), `Backend/tests/integration/api/test_gestiones_api.py`.
+  - Docs: `docs/API_CONTRACT.md` §Campañas y gestiones; `docs/backend/09-esquema-base-de-datos.md` §Retención; decisiones (c)–(f), (h).
+  - Aceptación (PostgreSQL de pruebas en `head`, sin migración nueva: `alembic current` sigue en `0008 (head)`):
+    - `POST /gestiones` `{"prediccion_id": N, "campania_id": null}` → `201`, `estado: "CERRADA"`, `campania_id` y `campania_nombre` `null`, `fecha_cierre` no nulo, `contactado`/`campania_ofrecida`/`campania_aceptada`/`renovo_declarado`/`fecha_contacto`/`observaciones`/`responsable` `null`. En la base: fila con `estado='CERRADA'`, `cerrada_en` no nulo, `fecha_seguimiento = fecha_asignacion`, y ningún `CHECK` violado.
+    - `PUT /gestiones/{id}/resultado` sobre esa gestión (cuerpo válido) → `409` "La gestion esta cerrada y no se puede modificar."; la fila no cambia.
+    - `GET /gestiones/{id}` → `200` con los mismos datos.
+    - Segundo `POST /gestiones` para el mismo ciclo (con o sin campaña) → `409` "El ciclo de membresia ya tiene una gestion."
+    - `POST /gestiones` con `campania_id` y sin `fecha_seguimiento` → `400 validation_error`, sin fila nueva. Con campaña y fecha → `201` `PENDIENTE` (sin cambios).
+    - `GET /listas/{id}`: el ítem trae `gestion_estado: "CERRADA"`, `campania_asignada: null`, `gestion_id` informado; el Excel de esa lista muestra "Cerrada" y "Sin campaña" en esa fila.
+    - `SELECT count(*) FROM gestiones_retencion WHERE estado = 'PENDIENTE'` no incluye la gestión sin campaña (queda fuera de las alertas del día 6).
+    - `/openapi.json`: `fecha_seguimiento` de `CrearGestionDTO` no es requerida; hay ejemplo con y sin campaña.
+  - Pruebas: integración (repositorio + API) + contrato.
+
+- [x] **T7** · `frontend` · Servicio `activarCampania` y su mock
+  - Archivos: `Frontend/src/features/campanias/api/campanias-api.ts` (principal: `activarCampania(id, signal)`, espejo de `inactivarCampania`, línea 63), `Frontend/src/features/campanias/api/campanias-api.handlers.ts` (`POST */api/v1/campanias/:id/activar`, idempotente, `404` si no existe), `Frontend/src/features/campanias/api/campanias-api.test.ts`.
+  - Docs: `Documentation/docs/frontend/01-arquitectura.md` §Capas; `docs/API_CONTRACT.md` §Campañas y gestiones.
+  - Aceptación: `activarCampania(3)` hace `POST /campanias/3/activar` sin cuerpo y devuelve la campaña con `activa: true` y `esEjemplo` mapeado; `404` → `ApiError` con el mensaje del servidor; la señal de cancelación se propaga.
+  - Pruebas: frontend (Vitest + MSW).
+
+- [x] **T8** · `frontend` · Hook `useCampanias`: operación `activar`
+  - Archivos: `Frontend/src/features/campanias/hooks/useCampanias.ts` (principal), `Frontend/src/features/campanias/hooks/useCampanias.test.ts`.
+  - Docs: `docs/frontend/01-arquitectura.md` §Capas; decisión (b).
+  - Aceptación: `activar(id)` → `true` y la campaña queda `activa: true` en `campanias`, en su misma posición; error del servidor → `false`, `error` con su mensaje y la lista sin cambios; mientras `guardando`, una segunda llamada devuelve `false` sin enviar otra petición.
+  - Pruebas: frontend.
+
+- [x] **T9** · `frontend` · Botón "Activar" en la página Campañas
+  - Archivos: `Frontend/src/features/campanias/components/TablaCampanias.tsx` (principal: prop `onActivar`, botón en las filas inactivas), `Frontend/src/features/campanias/pages/CampaniasPage.tsx` (conecta `vista.activar`, sin ventana de confirmación), `Frontend/src/features/campanias/pages/CampaniasPage.test.tsx`.
+  - Docs: `docs/frontend/01-arquitectura.md`; decisión (b).
+  - Aceptación:
+    - Fila inactiva: hay un botón con nombre accesible `Activar <nombre>` y no hay `Inactivar <nombre>`; fila activa: al revés. "Editar" sigue en ambas.
+    - Pulsar `Activar <nombre>` → sin ventana intermedia; la columna Estado pasa a "Activa" y el botón a "Inactivar <nombre>".
+    - Si el servidor falla → se ve el mensaje de error y la fila sigue "Inactiva". Botones deshabilitados mientras se guarda.
+  - Pruebas: frontend.
+
+- [x] **T10** · `frontend` · Servicio de gestiones: crear sin fecha de seguimiento
+  - Archivos: `Frontend/src/features/lista/api/lista-api.ts` (principal: `crearGestion` envía `fecha_seguimiento: null` cuando no hay, línea 329), `Frontend/src/features/lista/types.ts` (`DatosNuevaGestion.fechaSeguimiento: string | null`), `Frontend/src/features/lista/api/lista-api.handlers.ts` (mock: sin campaña → gestión `CERRADA` con resultado nulo; `PUT` resultado sobre ella → `409`), `Frontend/src/features/lista/api/lista-api.test.ts`.
+  - Docs: `docs/frontend/01-arquitectura.md` §Capas; `docs/API_CONTRACT.md` §Campañas y gestiones; decisiones (c), (d).
+  - Aceptación: `crearGestion({prediccionId, campaniaId: null, fechaSeguimiento: null, responsable: null})` → cuerpo `{prediccion_id, campania_id: null, fecha_seguimiento: null, responsable: null}` y devuelve `estado: 'CERRADA'`, `campaniaId: null`, `contactado: null`, `renovoDeclarado: null`; con campaña el cuerpo lleva la fecha como hoy; `registrarResultado` sobre la gestión sin campaña → `ApiError` `409` con el mensaje del servidor.
+  - Pruebas: frontend (Vitest + MSW).
+
+- [x] **T11** · `frontend` · Ventana de gestión: "No asignar campaña" cierra la gestión
+  - Archivos: `Frontend/src/features/lista/components/FormularioGestion.tsx` (principal), `Frontend/src/features/lista/components/FormularioGestion.test.tsx`, `Frontend/src/features/lista/hooks/useGestion.ts` (`crear`: si la gestión devuelta está `CERRADA`, llama a `onGuardada` y cierra la ventana), `Frontend/src/features/lista/hooks/useGestion.test.ts`.
+  - Docs: `docs/frontend/01-arquitectura.md`; decisión (g).
+  - Aceptación:
+    - Con "No asignar campaña" marcada: no existen en pantalla "Fecha de seguimiento" ni "Responsable (opcional)"; se lee "Sin campaña, la gestión queda cerrada y no tendrá seguimiento."; al elegir una campaña vuelven a aparecer ambos campos con la fecha sugerida.
+    - "Crear gestión" sin campaña → `onCrear({campaniaId: null, fechaSeguimiento: null, responsable: null})`, aunque el plazo de seguimiento haya terminado (botón habilitado en ese caso solo para "No asignar campaña").
+    - Hook: tras crear sin campaña, `prediccion` vuelve a `null` (ventana cerrada), se llamó `onGuardada` una vez y nunca se muestra el formulario "Resultado del seguimiento". Tras crear con campaña, la ventana sigue abierta en la parte 2 (como en R-009).
+    - Abrir una gestión `CERRADA` con `campaniaId === null` → solo el texto "No se le asignó campaña": ningún radio, campo, ni botón "Guardar resultado"; el formulario "Resultado del seguimiento" no está en el documento. Una gestión cerrada **con** campaña se sigue viendo en solo lectura como antes.
+    - Con campaña sin elegir → sigue el mensaje "Elija una campaña o «No asignar campaña»."
+  - Pruebas: frontend.
+
+- [x] **T12** · `frontend` · Página Lista: fila de un socio gestionado sin campaña
+  - Archivos: `Frontend/src/features/lista/pages/ListaPage.test.tsx` (principal), `Frontend/src/features/lista/components/TablaLista.test.tsx`, `Frontend/src/features/lista/pages/ListaPage.tsx` (solo si hace falta para cerrar la ventana y recargar).
+  - Docs: `docs/frontend/01-arquitectura.md`; decisiones (f), (g).
+  - Aceptación: en la página, "Gestionar prioridad N" → "No asignar campaña" → "Crear gestión": la ventana se cierra, la lista se recarga y la fila muestra Gestión "Cerrada", Campaña "Sin campaña" y como única acción "Ver gestión prioridad N" (no hay "Registrar resultado" ni "Gestionar" en esa fila). Pulsar "Ver gestión" → ventana con "No se le asignó campaña" y nada más que cerrar; al cerrar, el foco vuelve al botón de la fila.
+  - Pruebas: frontend.
+
+- [x] **T13** · `frontend` · Ayuda "¿Cómo funciona esta lista?": campañas y gestión
+  - Archivos: `Frontend/src/features/lista/components/AyudaLista.tsx` (principal: dos `Seccion` nuevas tras "Motivos"), `Frontend/src/features/lista/components/AyudaLista.test.tsx`.
+  - Docs: `Documentation/06-como-funciona-la-lista.md` §7; decisión (i).
+  - Aceptación (textos en lenguaje sencillo; la ventana conserva las 4 secciones actuales):
+    - Sección **"Campañas"**: dice que se crean y administran en la página Campañas; que se pueden crear, editar, inactivar y volver a activar (no se borran); que **niveles de riesgo** y **planes** deciden a qué socios se les sugiere la campaña; que la **prioridad** ordena las sugerencias (1 sale primero); y que una campaña inactiva deja de sugerirse hasta que se active de nuevo.
+    - Sección **"Gestionar a un socio"**: botón "Gestionar" en la fila; elegir una campaña sugerida o "No asignar campaña"; la **fecha de seguimiento** es el día en que se volverá a revisar al socio; luego "Registrar resultado" con el significado de cada pregunta (¿Se contactó al socio?, ¿Se ofreció la campaña?, ¿Aceptó la campaña?, ¿Renovó? — Sí o No cierra la gestión, Pendiente la deja abierta); la **fecha del contacto** debe estar entre el día en que se creó la gestión y hoy; y **sin campaña la gestión queda cerrada** desde el inicio y solo se puede consultar.
+    - La prueba comprueba los dos títulos, las frases clave anteriores y que el texto de la ventana **no contiene** `API`, `endpoint`, `null`, `PENDIENTE`, `CERRADA`, `NO_APLICA`, `409` ni `422`. El foco vuelve al botón al cerrar (sin cambios).
+  - Pruebas: frontend.
+
+- [x] **T14** · `frontend` · E2E en el stack aislado: activar campaña y gestión sin campaña
+  - Archivos: `Frontend/e2e/campanias-gestion.spec.ts` (principal; mantiene el `test.skip` fuera de `E2E_BASE_URL=http://localhost:8081`).
+  - Docs: `Documentation/docs/backend/10-docker.md` §stack `mtabolic-e2e`; decisiones (a), (b), (g).
+  - Aceptación (solo contra 8081, datos sintéticos):
+    - En Campañas: inactivar la campaña creada por la prueba → "Inactiva" y botón "Activar <nombre>"; pulsarlo → "Activa"; al gestionar un socio compatible, la campaña aparece entre las sugeridas.
+    - En Lista: un socio con "No asignar campaña" → la ventana se cierra; su fila muestra "Cerrada", "Sin campaña" y "Ver gestión"; al abrirla se lee "No se le asignó campaña" y no hay "Guardar resultado".
+    - El flujo con campaña de R-009 (crear, registrar resultado, cerrar con Renovó Sí/No) sigue en verde. Contra 8080 la prueba se salta.
+  - Pruebas: e2e.
+
+- [~] **T15** · `infra-deploy` · Stack principal reconstruido y verificación en el navegador — suites y E2E confirmados en verde; la reconstrucción de 8080 y la verificación en el navegador **no constan** en el handoff a documentación (el orquestador la marca `[x]` si se hizo)
+  - Archivos: ninguno de código (usa `docker-compose.yml` y los scripts existentes; `.harness/tests.md` para el registro).
+  - Docs: `Documentation/docs/backend/10-docker.md`.
+  - Aceptación: suites completas en verde (Backend: `pytest`, `ruff check`, `ruff format --check`, `mypy app`, `lint-imports`; Frontend: `npm test`, `npm run build`, `npm run lint`; E2E 3/3 en 8081). Stack principal (8080) reconstruido y arriba, `alembic current` = `0008 (head)`, estado `LISTO`, conteos **iguales** a los del cierre de R-009 (campañas 3 de ejemplo, todas activas; gestiones 0; listas 0). En el navegador, **solo mirando**: la página Campañas carga con las 3 de ejemplo; la ayuda de la Lista muestra las secciones "Campañas" y "Gestionar a un socio". No se crea, inactiva ni activa nada en 8080.
+  - Pruebas: verificación manual + suites.
+
+- [x] **DOC-1** · `docs` (doc-agent) · Documentación de R-010 y pendientes de R-009
+  - Archivos: `Documentation/docs/API_CONTRACT.md` (§Campañas y gestiones: `POST /campanias/{id}/activar`; `fecha_seguimiento` opcional y respuesta `CERRADA` sin campaña; `409` del resultado), `Documentation/06-como-funciona-la-lista.md` (§7 y sección nueva de campañas: mismo contenido que T13, más la regla de la fecha de contacto), `Documentation/03-casos-de-uso.md` (CU-06 §9: activar, RN-06.3; CU-08 §11 y CU-10 §13: sin campaña la gestión queda cerrada y no hay resultado; **CU-12 §15: el Excel lleva "Gestión" y "Campaña"**, pendiente de R-009), ADR nuevo (reversión de R-009 (e) y cierre automático sin campaña, con el porqué de los nulos).
+  - También: `docs/backend/09-esquema-base-de-datos.md` §Retención (significado de los nulos y de `fecha_seguimiento` en gestiones sin campaña), `docs/frontend/01-arquitectura.md` (botón Activar, ventana de gestión), `05-cronograma-semana.md` (avance), `ACTION_PLAN.md` (cierre, DECISIONES IMPORTANTES, PRÓXIMO: nota (h) para el día 6).
+  - Aceptación: cada decisión (a)–(i) queda en un documento enlazado desde DECISIONES IMPORTANTES; 03 §15 ya no dice que el Excel no lleva gestión ni campaña; ningún documento afirma que las campañas "no se reactivan".
+
+**Dependencias:** Backend: T1 → T5 → T6; T2 → T3 → T4 (las dos cadenas son independientes entre sí). Frontend: T7 → T8 → T9; T10 → T11 → T12; T13 independiente. T14 necesita T4, T6, T9 y T12 desplegados en el stack `mtabolic-e2e`. T15 al final de todo; DOC-1 después de T15. Externas: ninguna (sin migración, sin librerías nuevas).
+
+**Riesgos:**
+1. Pruebas de R-009 que crean una gestión sin campaña y luego registran su resultado (API, bordes, contrato, listas, Excel, E2E) dejarán de valer: hay que reescribirlas como "nace cerrada" o pasarlas a una gestión con campaña, sin perder la cobertura de las reglas de coherencia del resultado.
+2. Gestiones sin campaña con todos los campos de resultado nulos y `fecha_seguimiento = hoy`: el dashboard y las alertas del día 6 deben filtrar por `estado` y tratar `renovo_declarado` nulo como "sin resultado"; si no, inflarían cifras.
+3. Cerrar la ventana tras crear sin campaña cambia el manejo del foco y la recarga de la lista (el botón de la fila pasa de "Gestionar" a "Ver gestión"): riesgo de foco perdido o de doble envío si el cierre y la recarga se pisan.
 
 ### R-009 — Día 5 del cronograma: campañas (CU-06, CU-07) y gestión de retención (CU-08, CU-10) desde la Lista · **DONE** 2026-09-30
 
@@ -1992,15 +2163,24 @@ _(ninguno)_
 - 2026-09-30 · R-009 · (b) `PrediccionDTO` añade `gestion_id`; `prioridad` de campaña 1..999; `GestionDTO.fecha_asignacion` = instante de creación → [ADR-008](adr/ADR-008-gestion-por-ciclo-y-nombre-de-campania-congelado.md).
 - 2026-09-30 · R-009 · (c) Migración `0008`: `gestiones_retencion.campania_nombre` congela el nombre de la campaña al asignarla (RN-08.2) → [ADR-008](adr/ADR-008-gestion-por-ciclo-y-nombre-de-campania-congelado.md), [09](docs/backend/09-esquema-base-de-datos.md).
 - 2026-09-30 · R-009 · (d) 3 campañas de ejemplo "Ejemplo: …" por migración de datos `0007` (el cronograma decía `0003`), sin duplicar → [09](docs/backend/09-esquema-base-de-datos.md).
-- 2026-09-30 · R-009 · (e) Nombres de campaña repetidos permitidos; no se reactivan; inactivar es idempotente; editar no cambia `es_ejemplo`.
+- 2026-09-30 · R-009 · (e) Nombres de campaña repetidos permitidos; inactivar es idempotente; editar no cambia `es_ejemplo`. La parte "una campaña inactiva no vuelve a activarse" fue **revertida en R-010** (ADR-009).
 - 2026-09-30 · R-009 · (g) Fecha de seguimiento sugerida = `max(vencimiento + 25, hoy)`; la gestión es por ciclo y se ve en todas las listas de esa membresía; (h) reglas de coherencia del resultado en el dominio → [API_CONTRACT §Campañas y gestiones](docs/API_CONTRACT.md).
-- 2026-09-30 · R-009 · (j) El Excel incluye "Gestión" y "Campaña" para seguir igual a la tabla; **revierte** el criterio de R-008 que las excluía → [12 §Excel](docs/backend/12-modelo-y-listas.md). [03 §15](03-casos-de-uso.md) sin modificar: pendiente de confirmación del usuario.
+- 2026-09-30 · R-009 · (j) El Excel incluye "Gestión" y "Campaña" para seguir igual a la tabla; **revierte** el criterio de R-008 que las excluía → [12 §Excel](docs/backend/12-modelo-y-listas.md). [03 §15](03-casos-de-uso.md) ajustado en R-010 (DOC-1).
 - 2026-09-30 · R-009 · Reinicio de la base principal **ejecutado** con `scripts/reiniciar-base-historica.sh --si`, autorizado por el usuario (socios 1.410, membresías 2.748, cargas 1, listas 0, predicciones 0; `LISTO`) → [DEVELOPMENT_GUIDELINES §Excepciones](DEVELOPMENT_GUIDELINES.md).
 - 2026-09-30 · R-009 · La revisión de seguridad de R-009 se difiere a la revisión única del día 7 ([05 §1](05-cronograma-semana.md)).
+
+- 2026-09-30 · R-010 · (a)(b) Las campañas inactivas se pueden volver a activar: `POST /campanias/{id}/activar` idempotente, sin tocar `es_ejemplo`; botón "Activar" sin confirmación. **Revierte** R-009 (e), a pedido del usuario → [ADR-009](adr/ADR-009-reactivar-campanias-y-gestion-sin-campania-cerrada.md), [API_CONTRACT](docs/API_CONTRACT.md), [frontend/01](docs/frontend/01-arquitectura.md). Ajusta CU-06 §9 de [03](03-casos-de-uso.md).
+- 2026-09-30 · R-010 · (c)(d)(e) La gestión sin campaña nace `CERRADA`, con los campos de resultado nulos (no `NO_APLICA`: exigiría migración) y `fecha_seguimiento` = hoy sin significado; `fecha_seguimiento` opcional en `POST /gestiones` (obligatoria solo con campaña); registrar resultado → `409`; sin migración de esquema ni de datos → [ADR-009](adr/ADR-009-reactivar-campanias-y-gestion-sin-campania-cerrada.md), [API_CONTRACT §Campañas y gestiones](docs/API_CONTRACT.md), [09 §Retención](docs/backend/09-esquema-base-de-datos.md). Ajusta CU-08 §11 y CU-10 §13 de [03](03-casos-de-uso.md).
+- 2026-09-30 · R-010 · (f)(g) Lista y Excel muestran "Cerrada" / "Sin campaña"; la ventana oculta fecha y responsable, se cierra al guardar y "Ver gestión" solo dice "No se le asignó campaña" → [frontend/01](docs/frontend/01-arquitectura.md), [06 §7](06-como-funciona-la-lista.md).
+- 2026-09-30 · R-010 · (h) Alertas y dashboard del día 6 filtran por `estado` y tratan `renovo_declarado` nulo como "sin resultado" → [05 Día 5, aviso para el día 6](05-cronograma-semana.md), [ADR-009](adr/ADR-009-reactivar-campanias-y-gestion-sin-campania-cerrada.md).
+- 2026-09-30 · R-010 · (i) La ayuda de la lista añade "Campañas" y "Gestionar a un socio"; la regla de la fecha de contacto no cambia, solo se explica → [06 §7–§8](06-como-funciona-la-lista.md).
+- 2026-09-30 · R-010 · La revisión de seguridad de R-010 se difiere a la revisión única del día 7 ([05 §1](05-cronograma-semana.md)).
 
 ## PRÓXIMO
 
 Día 6 del [cronograma](05-cronograma-semana.md): alertas (CU-09, incluye `GET /alertas` y `GET /gestiones?filtro=`, hoy en `501`), dashboard (CU-11), reentrenamiento (CU-02) y acceso por IP (CU-00).
+
+Registrado por R-010 para el día 6: una gestión `CERRADA` puede no tener resultado (gestión sin campaña). Alertas (CU-09) y dashboard (CU-11) deben **filtrar por `estado`** y tratar `renovo_declarado` nulo como "sin resultado"; `fecha_seguimiento` de esas gestiones no significa nada → [ADR-009](adr/ADR-009-reactivar-campanias-y-gestion-sin-campania-cerrada.md).
 
 Registrado por R-005, sin implementar: **D6-BE-06 / D6-FE-04** (alerta en Inicio si no hay carga en el mes actual). D4-FE-03 quedó hecho en R-007.
 

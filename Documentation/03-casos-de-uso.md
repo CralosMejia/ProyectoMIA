@@ -472,14 +472,16 @@ Se usan percentiles, y no probabilidades fijas, porque el notebook mostró que l
 
 - **RN-06.1** La aplicación no calcula descuentos ni modifica precios.
 - **RN-06.2** La campaña es una sugerencia; la decisión final es del personal.
-- **RN-06.3** Una campaña no se borra; se inactiva. Las gestiones que ya la usaron la siguen mostrando.
+- **RN-06.3** Una campaña no se borra; se inactiva, y una campaña inactiva se puede **volver a activar**. Las gestiones que ya la usaron la siguen mostrando.
 - **RN-06.4** Al instalar se cargan las **campañas iniciales** que entregue Mtabolic (se piden entre 3 y 5). Si no llegan a tiempo, se cargan campañas de ejemplo claramente marcadas como tales.
 
 ### Criterios de aceptación
 
-- Se puede crear, editar e inactivar una campaña.
-- Una campaña inactiva no aparece como sugerencia nueva.
+- Se puede crear, editar, inactivar y volver a activar una campaña.
+- Una campaña inactiva no aparece como sugerencia nueva; al activarla de nuevo, vuelve a aparecer.
 - Una campaña inactiva sigue visible en las gestiones que la usaron.
+
+> **Ajuste R-010 (pedido del usuario):** se añade la reactivación de campañas (R-009 no la permitía). Detalle: [ADR-009](adr/ADR-009-reactivar-campanias-y-gestion-sin-campania-cerrada.md).
 
 ---
 
@@ -536,17 +538,23 @@ En esta entrega, CU-08 y CU-10 son **el mismo formulario de gestión**, sobre la
 4. El usuario puede escribir su nombre en **Responsable** (texto libre y opcional).
 5. El sistema crea la gestión en estado `PENDIENTE`, asociada al socio, al ciclo, a la predicción, a la versión del modelo, a la campaña y a la fecha de asignación.
 
+**Flujo alternativo · No asignar campaña.** Si en el paso 2 el usuario elige **No asignar campaña**, no se piden fecha de seguimiento ni responsable y la gestión se crea directamente en estado `CERRADA`, sin resultado: no tendrá seguimiento ni pasa por CU-10, y solo se puede consultar.
+
+> **Ajuste R-010 (pedido del usuario):** antes, la gestión sin campaña quedaba `PENDIENTE` con fecha de seguimiento y resultado por registrar. Detalle: [ADR-009](adr/ADR-009-reactivar-campanias-y-gestion-sin-campania-cerrada.md).
+
 ### Reglas de negocio
 
 - **RN-08.1** Hay **una sola gestión por ciclo de membresía**. Un socio puede tener varias gestiones en el tiempo, una por cada ciclo.
 - **RN-08.2** La campaña queda registrada como estaba al asignarla; cambios posteriores a la campaña no alteran la gestión.
 - **RN-08.3** Crear la gestión no significa que la campaña se haya ofrecido; eso se registra en CU-10.
 - **RN-08.4** El campo **Responsable** sustituye a las cuentas de usuario para saber quién hizo la gestión; no se verifica.
+- **RN-08.5** Una gestión sin campaña nace `CERRADA`, sin fecha de seguimiento, responsable ni resultado (R-010). Cuenta como la gestión de ese ciclo (RN-08.1).
 
 ### Criterios de aceptación
 
 - No se puede crear una segunda gestión para el mismo ciclo.
-- No se acepta una fecha de seguimiento anterior a hoy ni posterior al vencimiento + 30 días.
+- Con campaña, no se acepta una fecha de seguimiento anterior a hoy ni posterior al vencimiento + 30 días.
+- Con **No asignar campaña**, la gestión queda `CERRADA` al crearla y no admite registrar resultado.
 - La gestión queda enlazada con la versión del modelo y el nivel de riesgo que tenía el socio en esa lista.
 
 ---
@@ -588,7 +596,7 @@ Segunda parte del formulario de gestión (ver CU-08).
 |---|---|
 | **Objetivo** | Registrar qué ocurrió después de asignar la estrategia. |
 | **Actor** | Personal de Mtabolic |
-| **Precondición** | Existe una gestión `PENDIENTE`. |
+| **Precondición** | Existe una gestión `PENDIENTE` (desde R-010, siempre con campaña: la gestión sin campaña nace `CERRADA`, ver CU-08). |
 
 ### Campos
 
@@ -609,14 +617,15 @@ Segunda parte del formulario de gestión (ver CU-08).
 3. El sistema valida la coherencia básica:
    - si no se contactó, "¿Se ofreció?" y "¿Aceptó?" deben ser *No aplica*;
    - si no se ofreció, "¿Aceptó?" debe ser *No aplica*;
-   - si no hubo campaña asignada, "¿Se ofreció?" y "¿Aceptó?" deben ser *No aplica*.
+   - si no hubo campaña asignada, "¿Se ofreció?" y "¿Aceptó?" deben ser *No aplica* (desde R-010 este caso ya no llega al formulario: la gestión sin campaña nace cerrada y no tiene resultado);
+   - si se contactó, la fecha del contacto es obligatoria y debe estar entre el día en que se creó la gestión y hoy.
 4. Si "¿Renovó?" es **Sí** o **No**, la gestión pasa a `CERRADA`. Si es **Pendiente**, sigue `PENDIENTE` y se puede ajustar la fecha de seguimiento dentro del límite de CU-08.
 
 ### Reglas de negocio
 
 - **RN-10.1** Aceptar la campaña no implica renovar.
 - **RN-10.2** El resultado registrado a mano **no reemplaza** la etiqueta del modelo: esta sale siempre del historial de membresías y de la regla T a T+30.
-- **RN-10.3** Una gestión `CERRADA` no se puede editar en esta entrega.
+- **RN-10.3** Una gestión `CERRADA` no se puede editar en esta entrega. Esto incluye la gestión sin campaña, cerrada desde su creación y sin resultado (R-010): en cifras y alertas cuenta como "sin resultado", no como renovación ni como no renovación.
 - **RN-10.4** Las cifras de campañas son descriptivas; no demuestran que la campaña causó la renovación.
 
 ### Criterios de aceptación
@@ -624,7 +633,8 @@ Segunda parte del formulario de gestión (ver CU-08).
 - Se puede cerrar una gestión con "Renovó = No".
 - Una gestión con campaña aceptada y renovación pendiente sigue `PENDIENTE`.
 - "No se contactó" junto con "Se ofreció = Sí" se rechaza.
-- Una gestión cerrada no se puede modificar.
+- Una gestión cerrada no se puede modificar; tampoco una gestión sin campaña.
+- Una fecha de contacto anterior al día en que se creó la gestión, o futura, se rechaza.
 - El resultado queda asociado al score, al nivel y a la versión del modelo originales.
 
 ---
@@ -677,9 +687,11 @@ El dashboard muestra **resultados observados, no causalidad**. Se puede decir: *
 | `Otros socios por vencer` | El resto de la cartera, por prioridad (solo encabezados si no hay). |
 | `Resumen` | Nombre de la lista, fecha de la lista, fecha hasta la que vencen, socios en cada tabla, total y conteos por nivel de riesgo. |
 
-**Columnas:** prioridad, nombre, cédula (texto, con el cero inicial; desde R-005 sustituye al correo), plan, fecha de vencimiento, días para vencer, nivel de riesgo y motivos principales (sin el aporte numérico): las mismas de la pantalla. Sin celular, monto cobrado, score, estado de la gestión ni campaña asignada.
+**Columnas:** prioridad, nombre, cédula (texto, con el cero inicial; desde R-005 sustituye al correo), plan, fecha de vencimiento, días para vencer, nivel de riesgo, motivos principales (sin el aporte numérico), **Gestión** ("Sin gestión" / "Pendiente" / "Cerrada") y **Campaña** (nombre, "Sin campaña" o "—"), con el estado al momento de descargar: las mismas de la pantalla. Sin celular, monto cobrado ni score.
 
 > **Ajuste R-008 (decisión del usuario):** el Excel pasa a ser igual a la tabla de la pantalla. Sustituye las hojas `top_K`, `cartera_completa` y `resumen` y la lista anterior de columnas (celular, monto cobrado, score, factores con aporte, estado de la gestión y campaña). Detalle: [docs/backend/12 §Excel](docs/backend/12-modelo-y-listas.md#excel-cu-12).
+
+> **Ajuste R-009 (registrado en R-010):** como la tabla de la pantalla ganó las columnas "Gestión" y "Campaña", el Excel también las lleva, para seguir igual a la tabla ([ADR-008](adr/ADR-008-gestion-por-ciclo-y-nombre-de-campania-congelado.md) punto 7). Sustituye la frase anterior "sin estado de la gestión ni campaña asignada".
 
 ### Reglas de negocio
 

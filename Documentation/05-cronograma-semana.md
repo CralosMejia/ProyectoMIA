@@ -343,7 +343,7 @@ A petición del usuario. **Estado:** `DONE` (14 tareas + documentación).
 
 **Realizado**
 - Base de datos: migración de datos `0007` (3 campañas "Ejemplo: …", sin duplicar si ya existen) y de esquema `0008` (`gestiones_retencion.campania_nombre`: el nombre de la campaña queda congelado al asignarla, RN-08.2); repositorios de campañas y gestiones sin borrado y unidad de trabajo de retención. Detalle: [09](docs/backend/09-esquema-base-de-datos.md), [ADR-008](adr/ADR-008-gestion-por-ciclo-y-nombre-de-campania-congelado.md).
-- Backend: campañas (listar, crear, editar, inactivar; sin borrar ni reactivar), sugerencias por nivel y plan, crear gestión (una por ciclo, rango de fecha de seguimiento), consultar gestión y registrar resultado (reglas de coherencia; Renovó Sí/No la cierra y ya no se edita). La lista y el Excel traen la gestión y la campaña de cada socio. Contrato: [API_CONTRACT §Campañas y gestiones](docs/API_CONTRACT.md#campañas-y-gestiones-cu-06-cu-07-cu-08-cu-10-r-009); Excel: [12 §Excel](docs/backend/12-modelo-y-listas.md).
+- Backend: campañas (listar, crear, editar, inactivar; sin borrar; volver a activarlas llegó en R-010), sugerencias por nivel y plan, crear gestión (una por ciclo, rango de fecha de seguimiento), consultar gestión y registrar resultado (reglas de coherencia; Renovó Sí/No la cierra y ya no se edita). La lista y el Excel traen la gestión y la campaña de cada socio. Contrato: [API_CONTRACT §Campañas y gestiones](docs/API_CONTRACT.md#campañas-y-gestiones-cu-06-cu-07-cu-08-cu-10-r-009); Excel: [12 §Excel](docs/backend/12-modelo-y-listas.md).
 - Frontend: página Campañas (tabla, alta y edición en ventana, inactivar con confirmación, etiqueta "Ejemplo") y formulario de gestión desde la Lista, con columnas "Gestión", "Campaña" y botón de acción ([frontend/01](docs/frontend/01-arquitectura.md)). Guía para el personal: [06 §7](06-como-funciona-la-lista.md).
 - Pruebas: Backend 1.671 pytest, `ruff`, `format` (267 archivos), `mypy app` (121), `lint-imports` (7 contratos), `verificar_lista.py` salida 0; Frontend 570 Vitest, `build`, `lint` 0; E2E en el stack aislado 8081: 3 en verde (`health`, `carga-lista-excel`, `campanias-gestion`); contra 8080: 1 en verde y 2 saltados a propósito. Carreras probadas: dos creaciones simultáneas → `201` y `409`; dos cierres → `200` y `409`.
 
@@ -351,8 +351,8 @@ A petición del usuario. **Estado:** `DONE` (14 tareas + documentación).
 - La migración de las campañas de ejemplo es la `0007` (el cronograma decía `0003`, número ya usado) y se añadió la `0008` para congelar el nombre de la campaña en la gestión.
 - `GET /alertas` y `GET /gestiones?filtro=` siguen en `501`: son del día 6 (CU-09).
 - Fecha de seguimiento sugerida = el mayor entre vencimiento + 25 y hoy (el cronograma decía solo vencimiento + 25, que puede quedar en el pasado). La gestión es por ciclo de membresía: se ve en todas las listas que contienen ese ciclo.
-- El Excel incluye las columnas "Gestión" y "Campaña", para seguir igual a la tabla; revierte el criterio de R-008 que las excluía. **Pendiente de decisión del usuario:** [03 §15 CU-12](03-casos-de-uso.md) todavía dice que el Excel no las lleva (no se modificó ese documento).
-- Nombres de campaña repetidos permitidos; una campaña inactiva no se reactiva; prioridad 1..999.
+- El Excel incluye las columnas "Gestión" y "Campaña", para seguir igual a la tabla; revierte el criterio de R-008 que las excluía. [03 §15 CU-12](03-casos-de-uso.md) se ajustó en R-010.
+- Nombres de campaña repetidos permitidos; prioridad 1..999. En R-009 una campaña inactiva no se podía volver a activar: **cambiado en R-010** (ver abajo).
 - Reinicio de la base principal ejecutado el 30-09-2026 con `scripts/reiniciar-base-historica.sh --si`, autorizado por el usuario ([DEVELOPMENT_GUIDELINES §Excepciones](DEVELOPMENT_GUIDELINES.md)).
 - Revisión de seguridad no ejecutada: diferida a la revisión única del día 7 (§1).
 
@@ -364,8 +364,22 @@ A petición del usuario. **Estado:** `DONE` (14 tareas + documentación).
 
 **Pendientes que pasan a los días siguientes**
 - **Día 6:** alertas (CU-09), dashboard (CU-11), reentrenamiento (CU-02), acceso por IP (CU-00) y alerta de datos del mes (D6-BE-06 / D6-FE-04).
-- **Día 7:** revisión de seguridad de lo hecho el día 5 y S23 (D7-OP-02); diseño visual (D7-FE-01).
+- **Día 7:** revisión de seguridad de lo hecho el día 5 (incluido R-010) y S23 (D7-OP-02); diseño visual (D7-FE-01).
 - Menor: con datos simulados en el navegador (`VITE_API_MOCKS`), las gestiones creadas no se recuerdan (solo afecta a pruebas). No hay prueba automática de "sin f-strings en `0007`" ni de `alembic check` tras `0008` (queda a la revisión de código).
+
+#### Arreglos posteriores al Día 5 (R-010)
+
+A petición del usuario. **Estado:** `DONE` (15 tareas + documentación). Sin migración: el esquema sigue en `0008`.
+
+- **Las campañas se pueden volver a activar:** `POST /api/v1/campanias/{id}/activar` (idempotente; no cambia `es_ejemplo`; la campaña vuelve a sugerirse) y botón "Activar" en las filas inactivas de la página Campañas, sin confirmación. Revierte la decisión (e) de R-009 → [ADR-009](adr/ADR-009-reactivar-campanias-y-gestion-sin-campania-cerrada.md), [API_CONTRACT](docs/API_CONTRACT.md).
+- **"No asignar campaña" deja la gestión cerrada al crearla:** no se piden fecha de seguimiento ni responsable, no hay resultado que registrar (`PUT …/resultado` → `409`) y la fila muestra "Cerrada" / "Sin campaña" con "Ver gestión" como única acción; el Excel, los mismos textos. `fecha_seguimiento` pasa a opcional en `POST /gestiones` (obligatoria solo con campaña) → [ADR-009](adr/ADR-009-reactivar-campanias-y-gestion-sin-campania-cerrada.md), [09 §Retención](docs/backend/09-esquema-base-de-datos.md), [frontend/01](docs/frontend/01-arquitectura.md), [03 §11, §13](03-casos-de-uso.md).
+- **La regla de la fecha de contacto no cambió** (entre el día en que se creó la gestión y hoy); ahora se explica en la ayuda y en [06 §7](06-como-funciona-la-lista.md).
+- **Ayuda "¿Cómo funciona esta lista?":** secciones nuevas "Campañas" y "Gestionar a un socio" ([06 §7–§8](06-como-funciona-la-lista.md)).
+- Documentación pendiente de R-009 cerrada: [03 §15 CU-12](03-casos-de-uso.md) ya dice que el Excel lleva "Gestión" y "Campaña".
+- Pruebas: Backend 1.710 pytest; Frontend 597 Vitest; E2E 3/3 en el stack aislado 8081. Las gestiones pendientes sin campaña anteriores a R-010 no se migraron (solo pueden existir en el stack E2E).
+- Revisión de seguridad no ejecutada: diferida a la revisión única del día 7 (§1).
+
+**Aviso para el día 6.** Desde R-010 una gestión `CERRADA` puede no tener resultado (gestión sin campaña: `renovo_declarado` y el resto de campos de resultado nulos, `fecha_seguimiento` sin significado). Las consultas de alertas (D6-BD-01, D6-BE-01) y del dashboard (D6-BE-02) deben **filtrar por `estado`** (las alertas cuentan solo `PENDIENTE`) y tratar `renovo_declarado` nulo como **"sin resultado"**, ni renovación ni no renovación; si no, inflarían las cifras.
 
 ---
 

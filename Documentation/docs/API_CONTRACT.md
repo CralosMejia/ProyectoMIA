@@ -64,12 +64,13 @@ Las operaciones están publicadas en `/openapi.json` con DTOs Pydantic (`app/app
 | `GET /campanias` **(real; R-009)** | 200 `[CampaniaDTO]` | — | CU-06 |
 | `POST /campanias` **(real; R-009)** | 201 `CampaniaDTO` | 400 | CU-06 |
 | `PUT /campanias/{campania_id}` **(real; R-009)** | 200 `CampaniaDTO` | 400, 404 | CU-06 |
-| `POST /campanias/{campania_id}/inactivar` **(real; R-009)** (idempotente; no hay `DELETE` ni reactivar) | 200 `CampaniaDTO` | 400, 404 | CU-06 |
+| `POST /campanias/{campania_id}/inactivar` **(real; R-009)** (idempotente; no hay `DELETE`) | 200 `CampaniaDTO` | 400, 404 | CU-06 |
+| `POST /campanias/{campania_id}/activar` **(real; nuevo en R-010)** (idempotente; sin cuerpo) | 200 `CampaniaDTO` | 400, 404 | CU-06 |
 | `GET /predicciones/{prediccion_id}/campanias-sugeridas` **(real; R-009)** | 200 `[CampaniaDTO]` por prioridad | 400, 404 | CU-07 |
 | `POST /gestiones` **(real; R-009)** | 201 `GestionDTO` | 400, 404, 409 (el ciclo ya tiene gestión), 422 (detalle en [Campañas y gestiones](#campañas-y-gestiones-cu-06-cu-07-cu-08-cu-10-r-009)) | CU-08 |
 | `GET /gestiones?filtro=vencidas\|hoy\|proximas` (**`501`** hasta el día 6) | 200 `[GestionResumenDTO]` | 400 (filtro fuera de la lista blanca) | CU-09 |
 | `GET /gestiones/{gestion_id}` **(real; R-009)** | 200 `GestionDTO` | 400, 404 | CU-10 |
-| `PUT /gestiones/{gestion_id}/resultado` **(real; R-009)** | 200 `GestionDTO` | 400, 404, 409 (cerrada), 422 | CU-10 |
+| `PUT /gestiones/{gestion_id}/resultado` **(real; R-009)** | 200 `GestionDTO` | 400, 404, 409 (cerrada; incluye toda gestión sin campaña creada desde R-010), 422 | CU-10 |
 | `GET /alertas` (**`501`** hasta el día 6) | 200 `AlertasDTO` {`vencidas`, `hoy`, `proximos_7_dias`} | — | CU-09 |
 | `GET /dashboard?mes=YYYY-MM` (opcional; por defecto mes actual del reloj) | 200 `DashboardDTO` | 400 | CU-11 |
 
@@ -81,7 +82,7 @@ Convenciones de los DTOs:
 - Catálogos (`plan`, `nivel_riesgo`, respuestas SI/NO/…) con los valores de los enums del dominio; `planes` de campaña excluye `DIARIO`; `campania_ofrecida` admite SI/NO/NO_APLICA.
 - Listas (cambio de contrato de R-004, decisión (b)):
   - `ListaPriorizadaDTO`: `id`, `modelo_version`, `fecha_generacion` (**`date`**: fecha de referencia de la cartera; antes `datetime`), `creada_en` (**nuevo**, `datetime` con zona: instante en que se guardó), `horizonte_dias`, `top_k`, `umbral_alto`, `umbral_medio` (string decimal), `advertencia_datos_antiguos`, `items` ordenados por `prioridad`.
-  - `PrediccionDTO` añade `monto_cobrado` (string decimal o `null`; desde R-008 el Excel ya no lo incluye). `score` es string decimal de 8 decimales. `factores_principales` = hasta 3 textos; `[]` → la UI y el Excel muestran "Sin factores de riesgo destacados". **R-009 (cambio de contrato):** se añade `gestion_id` (`int` o `null`); `gestion_estado` (`PENDIENTE`/`CERRADA`) y `campania_asignada` (nombre congelado al asignar) son reales y describen la gestión del **ciclo de membresía**, así que aparecen en todas las listas que lo contienen; sin gestión, los tres son `null`; gestión sin campaña → `campania_asignada: null`. Sustituye la nota anterior ("salen `null` hasta CU-08").
+  - `PrediccionDTO` añade `monto_cobrado` (string decimal o `null`; desde R-008 el Excel ya no lo incluye). `score` es string decimal de 8 decimales. `factores_principales` = hasta 3 textos; `[]` → la UI y el Excel muestran "Sin factores de riesgo destacados". **R-009 (cambio de contrato):** se añade `gestion_id` (`int` o `null`); `gestion_estado` (`PENDIENTE`/`CERRADA`) y `campania_asignada` (nombre congelado al asignar) son reales y describen la gestión del **ciclo de membresía**, así que aparecen en todas las listas que lo contienen; sin gestión, los tres son `null`; gestión sin campaña → `campania_asignada: null` y, desde R-010, `gestion_estado: "CERRADA"` desde su creación. Sustituye la nota anterior ("salen `null` hasta CU-08").
   - `ListaResumenDTO` (nuevo): `id`, `fecha_generacion`, `creada_en`, `modelo_version`, `horizonte_dias`, `top_k`, `total_items`.
   - Una lista guardada es inmutable (RN-04.5): sus ítems se devuelven aunque el socio tenga después `deleted_at`.
   - **R-008 (cambio de contrato):** `GenerarListaDTO` (cuerpo de `POST /listas`) acepta `nombre` opcional (`maxLength` 80): se recorta y debe quedar en 1..80 caracteres sin caracteres de control; vacío tras recortar, > 80, con caracteres de control o no string → `400 validation_error` sin guardar nada. Ausente o `null` → `"Lista del <d> <mmm> <aaaa>"` con la fecha de la lista (p. ej. `"Lista del 29 sep 2026"`). Se permiten nombres repetidos. `nombre` (string, requerido) se añade a `ListaPriorizadaDTO` y `ListaResumenDTO`; las listas anteriores a la migración `0006` reciben el nombre por defecto de su fecha.
@@ -92,33 +93,37 @@ Convenciones de los DTOs:
 
 ### Campañas y gestiones (CU-06, CU-07, CU-08, CU-10, R-009)
 
-Decisiones y motivos en [ADR-008](../adr/ADR-008-gestion-por-ciclo-y-nombre-de-campania-congelado.md). Los DTOs son los publicados el día 1, salvo `prioridad` 1..999 (antes sin máximo) y `PrediccionDTO.gestion_id`.
+Decisiones y motivos en [ADR-008](../adr/ADR-008-gestion-por-ciclo-y-nombre-de-campania-congelado.md) y, para los cambios de R-010 (activar campañas; gestión sin campaña cerrada al crearla), en [ADR-009](../adr/ADR-009-reactivar-campanias-y-gestion-sin-campania-cerrada.md). Los DTOs son los publicados el día 1, salvo `prioridad` 1..999 (antes sin máximo), `PrediccionDTO.gestion_id` y, desde R-010, `CrearGestionDTO.fecha_seguimiento` opcional.
 
-**Campañas (CU-06).** `CampaniaEntradaDTO`: `nombre` recortado 1..120; `descripcion` recortada ≤ 500 (vacía → `null`); `niveles_riesgo` y `planes` no vacíos (sin `DIARIO`), se deduplican y se devuelven en orden canónico (`ALTO, MEDIO, BAJO`; `MENSUAL, TRIMESTRAL, SEMESTRAL, ANUAL, OTRO`); `prioridad` 1..999. Cualquier incumplimiento o campo extra → `400 validation_error` sin guardar. Se permiten nombres repetidos. `PUT` no cambia `activa` ni `es_ejemplo` y admite campañas inactivas. `POST …/inactivar` sobre una ya inactiva → `200` sin cambios. `GET /campanias` excluye las borradas lógicamente y ordena por `activa DESC, prioridad, nombre (sin distinguir mayúsculas), id`; tras las migraciones trae 3 campañas `es_ejemplo: true` ("Ejemplo: …"). Id inexistente → `404` "La campana no existe."
+**Campañas (CU-06).** `CampaniaEntradaDTO`: `nombre` recortado 1..120; `descripcion` recortada ≤ 500 (vacía → `null`); `niveles_riesgo` y `planes` no vacíos (sin `DIARIO`), se deduplican y se devuelven en orden canónico (`ALTO, MEDIO, BAJO`; `MENSUAL, TRIMESTRAL, SEMESTRAL, ANUAL, OTRO`); `prioridad` 1..999. Cualquier incumplimiento o campo extra → `400 validation_error` sin guardar. Se permiten nombres repetidos. `PUT` no cambia `activa` ni `es_ejemplo` y admite campañas inactivas. `POST …/inactivar` sobre una ya inactiva → `200` sin cambios. **R-010 (cambio de contrato):** `POST …/activar` (sin cuerpo) devuelve la campaña con `activa: true`; sobre una ya activa → `200` sin cambios; no modifica `es_ejemplo` ni ningún otro dato; id inexistente o borrada → `404`; id `0` → `400`. Una campaña activada vuelve a salir en las sugerencias y se puede asignar en `POST /gestiones`; las gestiones ya creadas no cambian. Sustituye el texto de R-009 "no hay reactivar". `PUT` con `activa` en el cuerpo sigue dando `400`. `GET /campanias` excluye las borradas lógicamente y ordena por `activa DESC, prioridad, nombre (sin distinguir mayúsculas), id`; tras las migraciones trae 3 campañas `es_ejemplo: true` ("Ejemplo: …"). Id inexistente → `404` "La campana no existe."
 
 **Sugerencias (CU-07).** Campañas activas cuyo `niveles_riesgo` contiene el nivel de la predicción y cuyo `planes` contiene el plan de su membresía, por `prioridad, nombre, id`. Plan `DIARIO` o sin coincidencias → `[]`. La opción "No asignar campaña" la ofrece el frontend (`campania_id: null`). Predicción inexistente → `404` "La prediccion no existe."
 
-**Crear gestión (CU-08).** Cuerpo: `prediccion_id`, `campania_id` (o `null`), `fecha_seguimiento`, `responsable` (opcional, ≤ 120). "Hoy" = fecha de negocio de Ecuador.
+**Crear gestión (CU-08).** Cuerpo: `prediccion_id`, `campania_id` (o `null`), `fecha_seguimiento` (**opcional desde R-010**; obligatoria solo si hay `campania_id`), `responsable` (opcional, ≤ 120). "Hoy" = fecha de negocio de Ecuador. El `201` publica dos ejemplos en `/openapi.json`: con campaña y sin campaña.
 
 | Caso | Respuesta |
 |---|---|
-| Correcta | `201`, `estado: "PENDIENTE"`, `campania_nombre` (nombre en ese momento, o `null`), `score`, `nivel_riesgo` y `modelo_version` de la predicción; `fecha_asignacion` = instante de creación |
-| `fecha_seguimiento` fuera de `[hoy, vencimiento + 30]` | `422` "La fecha de seguimiento debe estar entre AAAA-MM-DD y AAAA-MM-DD." |
-| `vencimiento + 30 < hoy` | `422` "El plazo de seguimiento de este ciclo ya termino." |
+| Correcta, con campaña | `201`, `estado: "PENDIENTE"`, `campania_nombre` (nombre en ese momento), `score`, `nivel_riesgo` y `modelo_version` de la predicción; `fecha_asignacion` = instante de creación |
+| Correcta, sin campaña (`campania_id: null`; R-010) | `201`, `estado: "CERRADA"`, `fecha_cierre` = instante de creación, `campania_id` y `campania_nombre` `null`, `responsable` `null` y los seis campos de resultado (`contactado`, `campania_ofrecida`, `campania_aceptada`, `renovo_declarado`, `fecha_contacto`, `observaciones`) `null`. `fecha_seguimiento` y `responsable`, si llegan, **se ignoran** (no se valida el rango ni el plazo) |
+| Con campaña y sin `fecha_seguimiento` | `400 validation_error`, sin guardar |
+| Con campaña, `fecha_seguimiento` fuera de `[hoy, vencimiento + 30]` | `422` "La fecha de seguimiento debe estar entre AAAA-MM-DD y AAAA-MM-DD." |
+| Con campaña, `vencimiento + 30 < hoy` (sin campaña no bloquea) | `422` "El plazo de seguimiento de este ciclo ya termino." |
 | Campaña inactiva o que no aplica al nivel/plan | `422` "La campana no esta activa o no aplica a este socio." |
 | El ciclo de membresía ya tiene gestión (también desde otra lista o por peticiones simultáneas) | `409` "El ciclo de membresia ya tiene una gestion." |
 | Predicción o campaña inexistente | `404` |
 
 La fecha sugerida (`max(vencimiento + 25, hoy)`) la calcula el frontend; el servidor solo valida el rango.
 
+Una gestión sin campaña no tiene resultado que registrar: en `GestionDTO` su `fecha_seguimiento` es el día de creación (valor sin significado, la interfaz no lo muestra) y `renovo_declarado: null` significa "sin resultado", no "pendiente". En la lista (`GET /listas/{id}`) y en el Excel esa fila muestra "Cerrada" y "Sin campaña". Las alertas y el dashboard del día 6 deben filtrar por `estado` y tratar `renovo_declarado` nulo como "sin resultado" ([ADR-009](../adr/ADR-009-reactivar-campanias-y-gestion-sin-campania-cerrada.md)).
+
 **Resultado (CU-10).** `PUT /gestiones/{id}/resultado` reemplaza `contactado`, `campania_ofrecida`, `campania_aceptada`, `renovo_declarado`, `fecha_contacto`, `observaciones` y `responsable`; `fecha_seguimiento: null` conserva la actual. Incoherencias → `422 domain_rule_violated` con un mensaje por regla:
 
-- sin campaña, o con campaña y `contactado: false` → `campania_ofrecida` y `campania_aceptada` = `NO_APLICA`;
+- sin campaña, o con campaña y `contactado: false` → `campania_ofrecida` y `campania_aceptada` = `NO_APLICA` (la rama "sin campaña" solo alcanza a gestiones pendientes sin campaña creadas antes de R-010, que no se migraron y solo pueden existir en el stack E2E; las creadas desde R-010 nacen cerradas y responden `409`);
 - con campaña y `contactado: true` → ofrecida `SI`/`NO`; ofrecida `NO` → aceptada `NO_APLICA`; ofrecida `SI` → aceptada `SI`/`NO`/`PENDIENTE`;
-- `contactado: true` → `fecha_contacto` obligatoria, entre la fecha de asignación y hoy; `contactado: false` → `fecha_contacto: null`;
+- `contactado: true` → `fecha_contacto` obligatoria, entre la fecha de asignación (el día en que se creó la gestión) y hoy, ambos incluidos; `contactado: false` → `fecha_contacto: null` (regla sin cambios en R-010);
 - `renovo_declarado` `SI`/`NO` → `estado: "CERRADA"` con `fecha_cierre` (la `fecha_seguimiento` recibida se ignora); `PENDIENTE` → sigue `PENDIENTE` y la `fecha_seguimiento`, si llega, se valida con el rango de CU-08.
 
-Gestión cerrada → `409` "La gestion esta cerrada y no se puede modificar." (dos cierres simultáneos: `200` y `409`). Inexistente → `404`. El resultado no modifica membresías ni etiquetas (RN-10.2).
+Gestión cerrada → `409` "La gestion esta cerrada y no se puede modificar." (dos cierres simultáneos: `200` y `409`; también toda gestión creada sin campaña desde R-010). Inexistente → `404`. El resultado no modifica membresías ni etiquetas (RN-10.2).
 
 ### Cargas (CU-01, R-007)
 

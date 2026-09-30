@@ -35,7 +35,7 @@ Cada socio tiene un nivel: **alto**, **medio** o **bajo**.
 
 Junto a cada socio se muestran los **motivos principales** por los que tiene más riesgo; por ejemplo, el plan que tiene o cuántas membresías ha tenido antes. Se muestran sin números, en pantalla y en el Excel: sirven para orientar la conversación con el socio. Si no hay motivos destacados, se indica "Sin factores de riesgo destacados".
 
-> Las secciones 5 a 7 amplían la explicación en este documento; la ayuda **"¿Cómo funciona esta lista?"** de la aplicación solo muestra las secciones 1 a 4 (desde R-008).
+> La ayuda **"¿Cómo funciona esta lista?"** de la aplicación muestra un resumen de las secciones 1 a 4 y, desde R-010, de las secciones 7 ("Gestionar a un socio") y 8 ("Campañas"). Las secciones 5 y 6 solo están en este documento.
 
 ## 5. Qué datos se muestran
 
@@ -67,34 +67,53 @@ Los socios **sin cédula registrada no aparecen en la lista**. No se borran: sig
 |---|---|---|
 | **Gestión** | "Sin gestión" | Nadie ha empezado a trabajar con este socio. |
 | | "Pendiente" | Ya hay un seguimiento abierto; falta saber si renovó. |
-| | "Cerrada" | Ya se anotó si renovó o no. No se puede cambiar. |
+| | "Cerrada" | Ya se anotó si renovó o no, o se eligió "No asignar campaña". No se puede cambiar. |
 | **Campaña** | el nombre de una campaña | La campaña que se le asignó. |
-| | "Sin campaña" | Se decidió hacer seguimiento sin campaña. |
+| | "Sin campaña" | Se eligió "No asignar campaña". La gestión está cerrada. |
 | | "—" | Todavía no tiene gestión. |
 
-**Paso 1 · Crear la gestión.** Pulsa **"Gestionar"** en la fila del socio. Se abre una ventana donde eliges:
+**Paso 1 · Crear la gestión.** En la fila de cada socio está el botón **"Gestionar"**. Al pulsarlo se abre una ventana donde eliges una de las campañas sugeridas para ese socio o **"No asignar campaña"**.
 
-- **La campaña.** El sistema sugiere solo las campañas que aplican a ese socio (según su nivel de riesgo y su plan), en orden de prioridad. También puedes elegir **"No asignar campaña"**.
-- **La fecha de seguimiento**: el día en que vas a revisar si renovó. El sistema propone una; puedes cambiarla, siempre entre hoy y 30 días después del vencimiento.
+Si eliges **una campaña**, completas además:
+
+- **La fecha de seguimiento**: el día en que volverás a revisar a ese socio. El sistema propone una; puedes cambiarla, siempre entre hoy y 30 días después del vencimiento.
 - **El responsable** (opcional): quién se encarga.
 
 Pulsa **"Crear gestión"**. La fila pasa a "Pendiente".
 
-**Paso 2 · Registrar el resultado.** Cuando hayas hablado con el socio (o cuando llegue la fecha), pulsa **"Registrar resultado"** y responde: si se le contactó y cuándo, si se le ofreció la campaña, si la aceptó, y **si renovó**. Puedes añadir observaciones.
+Si eliges **"No asignar campaña"**, la ventana ya no pide fecha de seguimiento ni responsable y avisa: "Sin campaña, la gestión queda cerrada y no tendrá seguimiento." Al pulsar **"Crear gestión"** la ventana se cierra y la fila pasa a "Cerrada" y "Sin campaña". La gestión queda cerrada desde el inicio: no hay resultado que anotar y solo se puede consultar con **"Ver gestión"**, donde se lee "No se le asignó campaña".
 
-- Si en "¿Renovó?" eliges **Pendiente**, la gestión sigue abierta y puedes poner una nueva fecha de seguimiento.
-- Si eliges **Sí** o **No**, la gestión se **cierra**. Desde ese momento solo se puede consultar con **"Ver gestión"**.
+**Paso 2 · Registrar el resultado** (solo si asignaste una campaña). Cuando hayas hablado con el socio (o cuando llegue la fecha), pulsa **"Registrar resultado"** y anota cómo te fue:
+
+| Pregunta | Qué significa |
+|---|---|
+| **¿Se contactó al socio?** | Si lograste hablar o escribirte con él. |
+| **¿Se ofreció la campaña?** | Si le propusiste la campaña que tenía asignada. |
+| **¿Aceptó la campaña?** | Si el socio aceptó lo que le propusiste. |
+| **¿Renovó?** | **Sí** o **No** cierran la gestión y ya no se puede cambiar; **Pendiente** la deja abierta para seguir revisando al socio (puedes poner una nueva fecha de seguimiento). |
+
+Puedes añadir observaciones. Una gestión cerrada solo se puede consultar con **"Ver gestión"**.
+
+**La fecha del contacto.** Si contactaste al socio, anotas qué día fue. Esa fecha debe estar **entre el día en que se creó la gestión y hoy**: no puede ser anterior a ese día ni una fecha futura. Por ejemplo, si creaste la gestión el 30 de septiembre y hoy es 5 de octubre, vale cualquier día del 30 de septiembre al 5 de octubre.
 
 El formulario no deja marcar respuestas que no tienen sentido juntas (por ejemplo, "aceptó la campaña" si no se contactó al socio): esas opciones aparecen desactivadas.
 
 **Conviene saber**
 
 - Cada socio tiene **una sola gestión por cada período de su membresía**. Si el mismo socio aparece en otra lista, verás ahí la misma gestión.
-- Si después se cambia el nombre de una campaña o se inactiva, las gestiones que ya la tenían **la conservan tal como estaba**.
-- Las campañas se crean, se editan y se inactivan en la pantalla **Campañas**. Vienen tres de ejemplo (su nombre empieza por "Ejemplo:"). Una campaña inactiva deja de sugerirse; no se borra.
-- El Excel muestra las columnas Gestión y Campaña tal como están en el momento de descargarlo.
+- Si después se cambia el nombre de una campaña o se inactiva, los socios que ya la tenían asignada **la conservan tal como estaba**.
+- El Excel muestra las columnas Gestión y Campaña tal como están en el momento de descargarlo; una gestión sin campaña aparece como "Cerrada" y "Sin campaña".
 
-## 8. Próximamente
+## 8. Campañas
+
+Una campaña es lo que el gimnasio le propone a un socio para que renueve, por ejemplo una llamada o un beneficio.
+
+- Se crean y administran en la página **"Campañas"**. Allí puedes **crear** una campaña, **editarla**, **inactivarla** y **volver a activarla**. Las campañas **no se borran**. Vienen tres de ejemplo (su nombre empieza por "Ejemplo:").
+- Los **niveles de riesgo** y los **planes** que marcas en una campaña deciden a qué socios se les sugiere. Por ejemplo, una campaña marcada para nivel alto y plan mensual solo se sugiere a socios de riesgo alto con plan mensual.
+- La **prioridad** ordena las sugerencias: la campaña con prioridad 1 sale primero.
+- Una campaña **inactiva** deja de sugerirse hasta que la actives de nuevo con el botón **"Activar"** de su fila (no pide confirmación; si te equivocas, la vuelves a inactivar). Los socios que ya la tenían asignada la conservan.
+
+## 9. Próximamente
 
 Está planificado, todavía no disponible:
 
