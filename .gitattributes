@@ -1,0 +1,2 @@
+# Los scripts de shell se ejecutan en bash (Linux/macOS/Git Bash): siempre fin de linea LF.
+*.sh text eol=lf
