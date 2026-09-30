@@ -44,15 +44,23 @@ Con los libros reales: `LISTO` en ~5 s; 2.748 membresías, 1.410 socios, 1 model
 - **R-005 · socios sin cédula:** `MembresiaParaPrediccion.socio_con_cedula` (`socios.cedula IS NOT NULL`, misma consulta única). Se filtran solo de la cartera: siguen en la base, en el entrenamiento y en el historial usado para las variables de los demás. Todos sin cédula → lista válida con 0 ítems.
 - **R-005 · cédula en lugar de correo:** `ItemLista.cedula` y `PrediccionDTO.cedula` (string con cero inicial o `null`); el repositorio de listas lee `Socio.cedula` y ninguna consulta suya lee `socios.correo`.
 - `advertencia_datos_antiguos` se evalúa con la última carga cuya `fecha_carga ≤ creada_en` de la lista frente a `fecha_generacion` (`datos_antiguos`), también al consultar listas anteriores.
-- Una lista guardada es inmutable (RN-04.5): sus ítems no filtran `deleted_at`.
+- **R-008 · nombre de la lista:** `GenerarListaDTO.nombre` opcional; se recorta y debe quedar en 1..80 caracteres sin caracteres de control (`\x00-\x1f`, `\x7f`); si no, `400 validation_error`. Ausente o `null` → `nombre_por_defecto(fecha efectiva)` de `domain/listas/nombre.py`: `"Lista del <d> <mmm> <aaaa>"` con la tabla fija de meses sin punto (`ene … dic`), sin `locale` ni reloj (`2026-09-29` → `"Lista del 29 sep 2026"`). Nombres repetidos permitidos; se guarda recortado y la neutralización `= + - @` solo ocurre al escribir el Excel. `NuevaLista`, `ListaDetalle` y `ListaResumen` llevan `nombre`; el mismo formato está en la migración `0006` y en el frontend (`fechaCorta`).
+- Una lista guardada es inmutable (RN-04.5): sus ítems no filtran `deleted_at`, y el nombre no se edita después de generarla.
 - `gestion_estado` y `campania_asignada` salen `null` hasta CU-08 (día 5).
 - Sin prueba todavía de dos `POST /listas` simultáneos.
 
 ## Excel (CU-12)
 
-`GET /listas/{id}/excel`: libro generado en `BytesIO` (openpyxl, sin temporales en disco, RN-12.1) con las hojas `top_<K>`, `cartera_completa` y `resumen`. Textos con prefijo `'` si empiezan por `= + - @` (sin fórmulas); bytes deterministas para la misma lista. Nombre `lista_<id>_<fecha>.xlsx`, sin datos personales.
+`GET /listas/{id}/excel`: libro generado en `BytesIO` (openpyxl, sin temporales en disco, RN-12.1). Textos con prefijo `'` si empiezan por `= + - @` (sin fórmulas, incluido el nombre de la lista); bytes deterministas para la misma lista. Nombre del archivo `lista_<id>_<fecha>.xlsx`, sin datos personales.
 
-R-005: la columna "Correo" se sustituye por "Cédula" (texto con el cero inicial, neutralizada como el resto; `null` → celda vacía). El Excel **conserva** el score y los factores con su aporte; la pantalla no los muestra.
+**R-008 · el Excel es igual a la tabla de la pantalla:**
+
+- Hojas: `Socios prioritarios a contactar` (ítems con `dentro_top_k`), `Otros socios por vencer` (el resto; solo encabezados si no hay) y `Resumen`. Las dos primeras por `prioridad` ascendente.
+- Columnas A..H: Prioridad, Nombre, Cédula (texto con cero inicial; `null` → vacía), Plan, Vence el (fecha `dd/mm/yyyy`), Días para vencer (vencimiento − `fecha_generacion`), Nivel de riesgo (`Alto`/`Medio`/`Bajo`), Motivos principales (unidos con `"; "`, sin el aporte final entre paréntesis, misma regla que `APORTE_FINAL` de `TablaLista.tsx`; sin motivos → "Sin factores de riesgo destacados").
+- `Resumen`: Nombre de la lista, Fecha de la lista, Vencen hasta, Socios prioritarios a contactar, Otros socios por vencer, Total de socios por vencer, Riesgo alto, Riesgo medio, Riesgo bajo. Sin versión del modelo, umbrales, Top K ni score.
+- No incluye Celular, Score, Monto, Estado de la gestión ni Campaña. La API (`GET /listas/{id}`) **sigue** devolviendo `celular`, `score` y `monto_cobrado`.
+
+~~R-005: el Excel conserva el score y los factores con su aporte~~ — **sustituido por R-008** (decisión del usuario). También queda revertido R-006 ("el celular se mantiene en el Excel"). De R-005 sigue vigente: "Cédula" en lugar de "Correo".
 
 ## Conciliación con el notebook (T19)
 
@@ -80,7 +88,7 @@ R-005 (decisión c): el script no pasa por la API ni por `GenerarLista` con la v
 | (b) | Fecha pasada → `422 domain_rule_violated`; horizonte fuera de 1..31 → `400 validation_error`. |
 | (c) | `verificar_lista.py` conserva su ventana y trata a todos como "con cédula"; la app puede diferir del notebook. |
 | (d) | Las listas guardadas no se modifican: pueden tener socios sin cédula (`null`, "—" en pantalla) y horizontes > 31. Ninguna respuesta incluye `correo`. |
-| (e) | El Excel cambia Correo → Cédula y conserva score y aportes; la pantalla no. |
+| (e) | El Excel cambia Correo → Cédula y conserva score y aportes; la pantalla no. **Sustituida en R-008:** el Excel ya no lleva score ni aportes (ver §Excel). |
 
 ## Pendientes
 

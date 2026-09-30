@@ -5,9 +5,189 @@
 
 ## ACTIVO
 
-(ninguno)
+_Ninguno._
 
 ## TERMINADOS RECIENTEMENTE
+
+### R-008 — Correcciones tras el Día 4: Excel igual a la tabla, selector de archivo claro en Carga, ayuda sin dos secciones, reinicio por comandos de la base principal y nombre editable de la lista · **DONE** 2026-09-29
+
+**Cierre:** Backend 1.463 pytest, `ruff`, `format` (231), `mypy app` (106), `lint-imports` (7), `verificar_lista.py` salida 0; Frontend 448 Vitest, `build`, `lint` 0; E2E 2/2 en el stack aislado 8081 (Excel de "Campaña prueba" con las hojas y columnas esperadas). Stack principal reconstruido en `0006` sin `down -v`, datos intactos (socios 1.410, membresías 2.748, cargas 1, listas 2 del usuario); navegador: Carga en tres pasos sin confirmar, nombre sugerido, ayuda con 4 secciones. **Reinicio (T14 paso 2) no ejecutado** para no borrar las 2 listas del usuario: scripts verificados solo por sintaxis y cancelación. Seguridad diferida al día 7 (05 §1). Contrato y esquema → [ADR-007](adr/ADR-007-excel-igual-a-la-pantalla-y-nombre-de-lista.md); comando → [comandos/reiniciar-base-historica.md](comandos/reiniciar-base-historica.md).
+
+**Objetivo:** el Excel muestra exactamente lo que ve el personal en pantalla, la carga se hace con pasos explícitos (elegir → revisar → confirmar), la ayuda es más corta, existe un proceso versionado y documentado para dejar la base principal solo con el histórico, y cada lista tiene un nombre editable que se guarda y se ve en pantalla, historial y Excel.
+
+**Fuente:** petición del usuario tras el Día 4 · [03 §15 CU-12](03-casos-de-uso.md) (columnas del Excel) · `docs/backend/12-modelo-y-listas.md` §Excel (CU-12) · `docs/frontend/01-arquitectura.md` §Inicio y Carga, §Lista priorizada · [06 §5–§6](06-como-funciona-la-lista.md) · `docs/backend/10-docker.md` §Uso · `compose.yaml` (`name: proyectofinal`; stack E2E `-p mtabolic-e2e`).
+
+**Notas de alcance del planner**
+- No existe `products/P##-*.md`. Nada cae en `DEVELOPMENT_GUIDELINES.md` §Fuera de alcance. **Puntos 1–4 sin cambios de API ni de esquema:** `PrediccionDTO` sigue con `celular`, `score`, `monto_cobrado`, etc. **Punto 5 (ampliación del usuario)** sí cambia contrato y esquema: `nombre` en `GenerarListaDTO` (opcional), `ListaPriorizadaDTO` y `ListaResumenDTO`; migración `0006`. No se reentrena desde el código.
+- **Proceso (05 §1):** sin TDD; pruebas de los criterios de aceptación. Revisión de seguridad diferida a la revisión única del día 7. Sin login: no hay pruebas de aislamiento.
+- **Cambia decisiones anteriores (las registra DOC-1):** R-005 (e) "el Excel conserva score y aportes" y R-006 "el celular se mantiene en el Excel" quedan **revertidas** por el usuario; CU-12 §15 (03, línea de **Columnas**) se ajusta. El doc-agent decide si merece ADR (afecta a ADR-006 solo en el Excel).
+- **Reinicio de la base = borrado físico** de todo el volumen del stack principal (cargas por plantilla, listas, predicciones y, en el futuro, campañas y gestiones). Es una **operación manual y explícita del usuario**, no una función de la aplicación; se registra en `DEVELOPMENT_GUIDELINES.md` §Excepciones (DOC-1). El código de la app sigue sin exponer borrados.
+- **Decisiones del planner (reversibles; se avisan al usuario):**
+  - (a) **Hojas del Excel:** `Socios prioritarios a contactar` (31 caracteres, el máximo de Excel) = ítems con `dentro_top_k`; `Otros socios por vencer` = el resto (si no hay, la hoja queda solo con encabezados; en pantalla la tabla se oculta); `Resumen` con términos amigables. Ambas por `prioridad` ascendente. Desaparecen `top_{K}` y `cartera_completa`.
+  - (b) **Columnas (A..H):** Prioridad (número), Nombre, Cédula (texto, cero inicial, `null` → vacía), Plan, Vence el (celda fecha, formato `dd/mm/yyyy`), Días para vencer (número), Nivel de riesgo (`Alto`/`Medio`/`Bajo`, como `RiskBadge`), Motivos principales (unidos con `"; "`, cada uno **sin** el aporte final entre paréntesis, misma regla que `APORTE_FINAL` de `TablaLista.tsx`: `\s*\([^()]*\)\s*$`; sin motivos → "Sin factores de riesgo destacados").
+  - (c) **Resumen:** filas "Nombre de la lista" (punto 5, decisión (j)), "Fecha de la lista", "Vencen hasta" (fecha + horizonte), "Socios prioritarios a contactar", "Otros socios por vencer", "Total de socios por vencer", "Riesgo alto", "Riesgo medio", "Riesgo bajo". Sin versión del modelo, umbrales, "Top K", score ni horizonte. Fechas como celda fecha `dd/mm/yyyy`.
+  - (d) **Carga en tres pasos:** elegir archivo **no** llama a la API (nuevo estado `seleccionado`); "Revisar archivo" lanza la vista previa; "Confirmar carga" guarda. Cambiar de archivo limpia vista previa, resumen y errores y cancela la petición en curso. El `<input type="file">` queda oculto (`hidden`, fuera del orden de tabulación) y sigue asociado a la etiqueta "Archivo de la plantilla (.xlsx)" (lo usan pruebas y E2E); el control visible y enfocable es un `<button type="button">` "Seleccionar archivo de carga (.xlsx)" que abre el diálogo del sistema. Componente en `features/carga/components/` (un solo uso: no sube a `shared/ui`), con los tokens existentes, sin CSS nuevo.
+  - (e) **Scripts de reinicio** en `scripts/` de la raíz: fijan `-p proyectofinal` y `--env-file <raíz>/.env` (resueltos desde la ubicación del script, sin depender del directorio actual) y se niegan a continuar si no existen `compose.yaml` o `.env`; nunca aceptan otro nombre de proyecto. Confirmación escribiendo literalmente `BORRAR`; flag `-Si` / `--si` para uso no interactivo (documentado con advertencia). Espera `GET http://localhost:${BACKEND_PORT:-8000}/api/v1/sistema/estado` cada 5 s hasta `LISTO` (máx. 15 min; `FALTAN_DATOS_HISTORICOS` o tiempo agotado → salida ≠ 0). Conteos con `docker compose -p proyectofinal exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" …'` (credenciales dentro del contenedor, nunca en la línea de comandos ni en la salida). `.gitattributes` fija `*.sh text eol=lf`.
+  - (f) **Ejecución del reinicio en el stack principal (T14):** solo con confirmación explícita del usuario transmitida por el orquestador. La verificación del Excel en el navegador se hace en el stack E2E (8081, datos sintéticos) para que la base principal quede, tras el reinicio, en 0 listas; si el usuario prefiere, también en 8080.
+  - (g) **Nombre por defecto** = `"Lista del <d> <mmm> <aaaa>"` con la fecha de la lista (`fecha_generacion` efectiva) y la tabla fija de meses de R-006 (`ene feb mar abr may jun jul ago sep oct nov dic`, sin punto, día sin cero): `2026-09-29` → `"Lista del 29 sep 2026"`, `2027-01-05` → `"Lista del 5 ene 2027"`. El mismo formato en backend (dominio, sin `locale`), en la migración (SQL con `ARRAY[...]`) y en el frontend (`fechaCorta` de `formatoFechas.ts`).
+  - (h) **Validación del nombre:** se recorta (`strip`); tras recortar, 1..80 caracteres; sin caracteres de control (`\x00-\x1f`, `\x7f`). Ausente o `null` → nombre por defecto. Vacío tras recortar, > 80 o con caracteres de control → `400 validation_error` (entrada inválida, no regla de negocio). Se permiten nombres repetidos (no hay unicidad). Guardado tal cual (recortado); la neutralización `= + - @` ocurre **solo** al escribir el Excel (y React escapa en pantalla).
+  - (i) **Esquema (`0006`):** `listas_priorizadas.nombre TEXT NOT NULL` con `CHECK (char_length(nombre) BETWEEN 1 AND 80)` (`nombre_longitud`). `upgrade` en tres pasos: añade la columna `NULL` → rellena las filas existentes con el nombre por defecto de su `fecha_generacion` → `SET NOT NULL` + `CHECK`. `downgrade` elimina la columna (solo en desarrollo). Sin índice (no se busca por nombre). La lista sigue inmutable (RN-04.5): el nombre no se edita después de generarla.
+  - (j) **Dónde se ve:** título de la lista = `nombre` (sustituye a "Lista del 29 de septiembre de 2026", R-006 (d)); "Listas anteriores" = `"<nombre> · <N> prioritarios"`; Excel = primera fila de la hoja `Resumen` "Nombre de la lista". Campo "Nombre de la lista" en el formulario, primero de los parámetros; la sugerencia sigue a la fecha mientras el valor coincida con la sugerencia de la fecha anterior (no editado a mano); si el usuario lo cambia, se respeta aunque cambie la fecha.
+- **Excepción al límite de 4 archivos:** ajuste mecánico de selectores en `Frontend/e2e/carga-lista-excel.spec.ts` (T14); añadir `nombre` a los constructores de dobles y datos de prueba (`tests/unit/application/listas/dobles.py`, `tests/unit/application/listas/test_ports.py`, `tests/unit/infrastructure/exportacion/test_excel_lista.py`, `tests/integration/api/listas_datos.py`, `scripts/verificar_lista.py`) y la línea `"0005 (head)"` → `"0006 (head)"` en `test_migrations_robustness.py` (T7); `__init__.py` vacíos.
+
+**Tareas**
+
+- [x] **T1** · `infra` · Excel con las columnas y las dos tablas de la pantalla
+  - Archivos: `Backend/app/infrastructure/exportacion/excel_lista.py` (principal), `Backend/tests/unit/infrastructure/exportacion/test_excel_lista.py`, `Backend/tests/integration/api/test_listas_excel_api.py`.
+  - Docs: `Documentation/docs/backend/12-modelo-y-listas.md` §Excel (CU-12); `Frontend/src/features/lista/components/TablaLista.tsx` (regla `APORTE_FINAL`, solo lectura); decisiones (a), (b), (c), (j). Requiere `ListaDetalle.nombre` (T8).
+  - Aceptación (lista ficticia: 3 ítems, `top_k` 2, uno con factores `["Plan: TRIMESTRAL (+0,09)", "Membresías previas: 1 (-0,02)"]`, otro sin factores, uno con cédula `"0912345678"` y nombre `"=HYPERLINK(...)"`):
+    - `sheetnames == ["Socios prioritarios a contactar", "Otros socios por vencer", "Resumen"]`; la primera tiene 2 filas de datos (las `dentro_top_k`), la segunda 1; con todos dentro del top, la segunda solo tiene la fila de encabezados.
+    - Fila 1 de ambas hojas = exactamente `Prioridad, Nombre, Cédula, Plan, Vence el, Días para vencer, Nivel de riesgo, Motivos principales`. Ninguna celda de ninguna hoja contiene "Celular", "Score", "Monto", "Estado de la gestion", "Campania", "Top K", "Umbral", "Version del modelo"; ni el celular ni el score del ítem aparecen en ningún valor.
+    - Motivos → `"Plan: TRIMESTRAL; Membresías previas: 1"` (sin paréntesis ni números de aporte); sin factores → "Sin factores de riesgo destacados". Nivel → "Alto"/"Medio"/"Bajo".
+    - Cédula en celda de tipo texto con valor `"0912345678"`; el nombre con `=` queda `"'=HYPERLINK(...)"` (sin fórmulas en todo el libro). Vence el es fecha con formato `dd/mm/yyyy`; Días para vencer = vencimiento − `fecha_generacion`.
+    - Resumen con las 9 etiquetas de (c) y sus valores (nombre, 2, 1, 3 y los conteos por nivel). Con `nombre="=SUM(1)"` la celda es texto `"'=SUM(1)"`; con `"Campaña octubre"` sale igual.
+    - `generar(lista)` dos veces → bytes idénticos; sin archivos temporales (RN-12.1 intacto).
+    - API: `GET /api/v1/listas/{id}/excel` → `200`, `Content-Type` de xlsx, nombre `lista_<id>_<fecha>.xlsx`, hojas y encabezados anteriores; `GET /api/v1/listas/{id}` sigue devolviendo `celular`, `score` y `monto_cobrado` (contrato sin cambios); id inexistente → `404`.
+  - Pruebas: unitaria + integración (API).
+
+- [x] **T2** · `frontend` · Hook de carga en tres pasos (elegir → revisar → confirmar)
+  - Archivos: `Frontend/src/features/carga/hooks/useCarga.ts` (principal), `Frontend/src/features/carga/hooks/useCarga.test.ts` (nuevo, `renderHook` + MSW).
+  - Docs: `Documentation/docs/frontend/01-arquitectura.md` §Inicio y Carga; `.claude/rules/frontend.md` §Estado y asincronía; decisión (d).
+  - Aceptación:
+    - `EstadoCarga` añade `seleccionado`; se expone `archivoSeleccionado: string | null` (solo el nombre) y `revisar()`.
+    - `seleccionarArchivo(xlsx)` → estado `seleccionado`, nombre expuesto y **cero** peticiones a `/cargas/vista-previa` (contador del handler MSW = 0). `.csv` → `errorArchivo` "Seleccione un archivo .xlsx con la plantilla oficial.", estado `inicial`, sin petición. `null` → `inicial`.
+    - `revisar()` en `seleccionado` → `validando` → `vista-previa` (1 petición). `revisar()` sin archivo o mientras valida/envía → no hace nada. Error de la API → mensaje y vuelve a `seleccionado` (se puede reintentar); `413` → "El archivo supera el tamaño máximo permitido.".
+    - Elegir otro archivo durante `validando` aborta la petición anterior y limpia vista previa, resumen y errores. `confirmar()` sin cambios (sin doble envío; `422` → vuelve a `vista-previa`).
+  - Pruebas: frontend.
+
+- [x] **T3** · `frontend` · Selector de archivo visible y botones "Revisar archivo" / "Confirmar carga"
+  - Archivos: `Frontend/src/features/carga/components/SelectorArchivo.tsx` (principal, nuevo, presentacional), `Frontend/src/features/carga/pages/CargaPage.tsx`, `Frontend/src/features/carga/components/VistaPreviaCarga.tsx` (texto del botón), `Frontend/src/features/carga/pages/CargaPage.test.tsx`.
+  - Docs: `docs/frontend/01-arquitectura.md` §Inicio y Carga, §`shared/ui`, §Estilos; `.claude/rules/frontend.md` §Estilos; decisión (d).
+  - Aceptación (Vitest + MSW + `user-event`):
+    - Se ve un botón con nombre accesible "Seleccionar archivo de carga (.xlsx)", el texto de ayuda "Suba la plantilla oficial del mes." (enlazado con `aria-describedby`) y "Ningún archivo seleccionado"; tras elegir `plantilla.xlsx` → "Archivo elegido: plantilla.xlsx" y **no** aparece la vista previa.
+    - Botón "Revisar archivo": deshabilitado sin archivo; habilitado tras elegir; al pulsarlo → "Validando archivo..." y luego la vista previa. Deshabilitados ambos botones mientras valida o envía.
+    - Botón "Confirmar carga" (antes "Confirmar") con las mismas reglas de habilitación; confirmar → resumen.
+    - Teclado: `Tab` llega al botón de selección y a "Revisar archivo" (el `input` oculto no recibe foco); `Enter`/`Espacio` en el botón de selección dispara el `click` del `input` (espía). `getByLabelText('Archivo de la plantilla (.xlsx)')` sigue encontrando el `input` con `accept=".xlsx"`.
+    - Error de extensión se muestra junto al selector (`aria-describedby`). Las pruebas existentes de `CargaPage.test.tsx` se adaptan al nuevo paso "Revisar archivo" y siguen en verde. Sin CSS nuevo; solo tokens de Tailwind existentes.
+  - Pruebas: frontend.
+
+- [x] **T4** · `frontend` · Ayuda de la lista sin "Qué datos se muestran" ni "Casos frecuentes"
+  - Archivos: `Frontend/src/features/lista/components/AyudaLista.tsx` (principal), `Frontend/src/features/lista/components/AyudaLista.test.tsx`.
+  - Docs: `Documentation/06-como-funciona-la-lista.md` §1–§4; `docs/frontend/01-arquitectura.md` §Lista priorizada (párrafo "Ayuda de la lista").
+  - Aceptación:
+    - El diálogo tiene exactamente 4 encabezados de sección: "Qué hace la lista", "Socios prioritarios a contactar", "Niveles de riesgo: alto, medio y bajo", "Motivos". No contiene "Qué datos se muestran", "Casos frecuentes" ni la palabra "celular".
+    - Si la sección "Motivos" dice que el Excel incluye los números, se corrige (el Excel ya no los incluye, T1).
+    - Siguen en verde: apertura/cierre con "Cerrar" y `Escape`, foco de vuelta al botón y la prueba de términos prohibidos ("score", "Top K", "top", "horizonte", "percentil", "modelo v1").
+  - Pruebas: frontend.
+
+- [x] **T5** · `infra-deploy` · Scripts de reinicio de la base principal solo con el histórico
+  - Archivos: `scripts/reiniciar-base-historica.ps1` (principal, nuevo), `scripts/reiniciar-base-historica.sh` (nuevo, `#!/usr/bin/env bash`, `set -euo pipefail`), `.gitattributes` (nuevo o ampliado: `*.sh text eol=lf`).
+  - Docs: `Documentation/docs/backend/10-docker.md` §Uso; `compose.yaml` (cabecera: stack E2E y advertencia de `down -v`); `.claude/rules/deploy.md` §Configuración y secretos; decisión (e).
+  - Aceptación:
+    - Ambos muestran qué se borrará (cargas por plantilla, listas, predicciones y todo lo demás del volumen principal; se reentrena el modelo v1 idéntico) y piden escribir `BORRAR`; cualquier otra respuesta → "Cancelado", salida `0`, **ningún** comando `docker` ejecutado.
+    - Tras confirmar ejecutan en orden: `docker compose -p proyectofinal --env-file <raíz>/.env down -v` → `docker compose -p proyectofinal --env-file <raíz>/.env up -d` → espera `LISTO` → imprime conteos `socios`, `membresias`, `cargas`, `listas_priorizadas`, `predicciones`. Todos los comandos llevan `-p proyectofinal`; la cadena `mtabolic-e2e` no aparece salvo en un comentario que explica que no se toca.
+    - Sin `.env` o sin `compose.yaml` en la raíz → mensaje claro y salida ≠ 0 antes de cualquier `docker`. Un comando fallido → se detiene con salida ≠ 0 (`$ErrorActionPreference='Stop'` y comprobación de `$LASTEXITCODE`; `set -e` en bash). Estado `FALTAN_DATOS_HISTORICOS` o más de 15 min → salida ≠ 0 con el último estado.
+    - Ninguna contraseña, `DATABASE_URL` ni dato personal en el script ni en su salida (solo estados y conteos). Funcionan desde cualquier directorio actual.
+    - Comprobación estática: `bash -n scripts/reiniciar-base-historica.sh` y el parser de PowerShell (`[System.Management.Automation.Language.Parser]::ParseFile`) sin errores; ejecución con respuesta distinta de `BORRAR` → cancelado sin tocar Docker (verificable con `docker compose -p proyectofinal ps` antes/después idéntico).
+  - Pruebas: verificación por comandos (sin ejecutar el borrado en esta tarea).
+
+- [x] **T6** · `domain` · Punto 5 · Nombre por defecto de una lista
+  - Archivos: `Backend/app/domain/listas/nombre.py` (principal, nuevo: `MESES_CORTOS`, `LONGITUD_MAXIMA_NOMBRE = 80`, `nombre_por_defecto(fecha: date) -> str`), `Backend/tests/unit/domain/listas/test_nombre.py` (nuevo).
+  - Docs: `Documentation/docs/backend/01-arquitectura.md` §Capas; `docs/frontend/01-arquitectura.md` §Lista priorizada (fila `formatoFechas.ts`, mismo formato); decisión (g).
+  - Aceptación:
+    - `date(2026,9,29)` → `"Lista del 29 sep 2026"`; `date(2027,1,5)` → `"Lista del 5 ene 2027"`; los 12 meses dan `ene … dic` (parametrizada). Nunca supera 80 caracteres.
+    - Solo librería estándar; no usa `locale`, `strftime('%b')` ni el reloj. `lint-imports` en verde.
+  - Pruebas: unitarias.
+
+- [x] **T7** · `db` · Punto 5 · Migración `0006`: `listas_priorizadas.nombre`
+  - Archivos: `Backend/alembic/versions/0006_listas_nombre.py` (principal), `Backend/app/infrastructure/persistence/models/retencion.py` (`ListaPriorizada.nombre` + `CheckConstraint`), `Backend/tests/unit/infrastructure/persistence/test_models_metadata.py`, `Backend/tests/integration/persistence/test_migrations.py`.
+  - Docs: `.claude/rules/database.md` §Migraciones; `Documentation/docs/backend/09-esquema-base-de-datos.md` §Retención; decisión (i).
+  - Aceptación:
+    - `revision="0006"`, `down_revision="0005"`. Sobre una base en `0005` con 2 listas ficticias (`fecha_generacion` 2026-09-29 y 2027-01-05) → `upgrade` deja `nombre` = `"Lista del 29 sep 2026"` y `"Lista del 5 ene 2027"`; columna `NOT NULL`; insertar `nombre=''` o de 81 caracteres → `IntegrityError` (CHECK `nombre_longitud`).
+    - Sobre una base vacía también aplica. `alembic check` sin diferencias; `alembic current` → `0006 (head)`; ciclo `downgrade 0005` → `upgrade head` funciona. `predicciones` y demás tablas no cambian (conteos iguales).
+  - Pruebas: unitaria (metadatos) + integración.
+
+- [x] **T8** · `application` · Punto 5 · Contrato y caso de uso con `nombre`
+  - Archivos: `Backend/app/application/listas/dtos.py` (principal: `GenerarListaDTO.nombre: str | None = None` con recorte y (h), ejemplo con `"nombre": "Campaña octubre"`; `nombre: str` en `ListaPriorizadaDTO` y `ListaResumenDTO`), `Backend/app/application/listas/ports.py` (`nombre` en `NuevaLista` —`ValueError` si vacío o > 80—, `ListaDetalle`, `ListaResumen`), `Backend/app/application/listas/generar_lista.py` (usa el nombre recibido o `nombre_por_defecto(fecha efectiva)`), `Backend/tests/unit/application/listas/test_generar_lista.py`.
+  - Docs: `docs/backend/12-modelo-y-listas.md` §Lista priorizada; `docs/API_CONTRACT.md` §Operaciones de negocio (listas); `.claude/rules/backend.md` §API, §Application; decisiones (g), (h).
+  - Aceptación:
+    - `GenerarListaDTO(nombre="  Campaña octubre  ")` → `"Campaña octubre"`; `None`/ausente → `None`; `"   "`, 81 caracteres o `"a\x07b"` → `ValidationError`; 80 caracteres → válido.
+    - Caso de uso sin nombre y sin fecha, reloj `2026-09-29T15:00Z` → guarda `NuevaLista(nombre="Lista del 29 sep 2026")`; con `fecha_referencia=2026-10-02` → `"Lista del 2 oct 2026"`; con nombre → lo guarda tal cual. El DTO devuelto lleva `nombre`.
+    - Fecha pasada → `422` como antes y sin guardar (el nombre no altera las reglas existentes). Dobles y datos de prueba actualizados (excepción mecánica); `mypy app` en verde.
+  - Pruebas: unitarias.
+
+- [x] **T9** · `infra` · Punto 5 · Repositorio de listas guarda y lee `nombre`
+  - Archivos: `Backend/app/infrastructure/persistence/repositories/listas.py` (principal), `Backend/tests/integration/persistence/test_listas_repository.py`.
+  - Docs: `.claude/rules/database.md` §Reparto de herramientas; `docs/backend/09-esquema-base-de-datos.md` §Retención; decisión (i).
+  - Aceptación (PostgreSQL `app_db_test`):
+    - `crear(NuevaLista(nombre="Campaña octubre", …))` → `obtener` y `listar` devuelven ese `nombre`; `ultima()` también. SQL parametrizado; sigue siendo una consulta por método (sin N+1); sin `commit`.
+  - Pruebas: integración.
+
+- [x] **T10** · `api` · Punto 5 · `nombre` en `POST /listas`, `GET /listas`, `GET /listas/{id}` y `/ultima`
+  - Archivos: `Backend/app/api/routers/listas.py` (principal: ejemplos de request/response con `nombre` y ejemplo `400` de nombre inválido), `Backend/app/application/listas/consultar_listas.py` (`a_dto`, `_a_resumen`), `Backend/tests/integration/api/test_listas_api.py`.
+  - Docs: `docs/API_CONTRACT.md` §Operaciones de negocio; `.claude/rules/backend.md` §API; decisiones (h), (j).
+  - Aceptación (PostgreSQL de pruebas, `get_clock` fijo `2026-09-29T15:00Z`):
+    - `POST /listas {}` → `201` con `"nombre": "Lista del 29 sep 2026"`; `POST {"nombre": "  Campaña octubre  "}` → `201` `"nombre": "Campaña octubre"`; `GET /listas/{id}`, `GET /listas/ultima` y `GET /listas` devuelven el mismo `nombre`.
+    - `{"nombre": "   "}`, 81 caracteres, con carácter de control o `{"nombre": 5}` → `400 validation_error` con el formato único y **nada** guardado (conteo de `listas_priorizadas` igual).
+    - `/openapi.json`: `GenerarListaDTO.nombre` opcional (`maxLength` 80), `nombre` requerido en `ListaPriorizadaDTO` y `ListaResumenDTO`, con ejemplos.
+  - Pruebas: integración (API).
+
+- [x] **T11** · `frontend` · Punto 5 · Cliente API y tipos con `nombre`
+  - Archivos: `Frontend/src/features/lista/api/lista-api.ts` (principal: envía `nombre` si llega; mapea `nombre` en detalle y resumen), `Frontend/src/features/lista/types.ts`, `Frontend/src/features/lista/api/lista-api.handlers.ts` (MSW: nombre por defecto con el mismo formato y `400` para nombre vacío o > 80), `Frontend/src/features/lista/api/lista-api.test.ts`.
+  - Docs: `docs/frontend/01-arquitectura.md` §Lista priorizada (fila `lista` · API), §MSW; decisiones (g), (h).
+  - Aceptación:
+    - `generarLista({ …, nombre: 'Campaña octubre' })` envía `"nombre":"Campaña octubre"` en el cuerpo; sin `nombre` no envía la clave (o `null`). `ListaPriorizada.nombre` y `ListaResumen.nombre` mapeados desde la respuesta.
+    - `400` del servidor → `ApiError` con el mensaje del servidor. Los datos del handler son ficticios.
+  - Pruebas: frontend.
+
+- [x] **T12** · `frontend` · Punto 5 · Campo "Nombre de la lista" con sugerencia que sigue a la fecha
+  - Archivos: `Frontend/src/features/lista/hooks/useLista.ts` (principal: `ParametrosLista.nombre`, `nombreSugerido(fechaIso)` con `fechaCorta`, regla de edición manual (j), validación local (h)), `Frontend/src/features/lista/pages/ListaPage.tsx` (campo con `label`, `maxLength` 80, error con `aria-describedby`), `Frontend/src/features/lista/pages/ListaPage.test.tsx`.
+  - Docs: `docs/frontend/01-arquitectura.md` §Lista priorizada (fila `lista` · página), `formatoFechas.ts`; `.claude/rules/frontend.md` §Formularios; decisiones (g), (h), (j).
+  - Aceptación (Vitest + MSW, fecha del sistema simulada 2026-09-29):
+    - Al entrar, "Nombre de la lista" = "Lista del 29 sep 2026". Cambiar la fecha a 2026-10-02 sin tocar el nombre → "Lista del 2 oct 2026".
+    - Escribir "Campaña octubre" y luego cambiar la fecha → sigue "Campaña octubre". Si el usuario vuelve a escribir exactamente la sugerencia de la fecha actual, vuelve a seguir a la fecha.
+    - Vacío o solo espacios → error local "Escriba un nombre para la lista." sin llamar a la API; > 80 no se puede escribir (`maxLength`) y, si llegara, error "El nombre puede tener hasta 80 caracteres.".
+    - "Generar lista" envía el nombre recortado; la lista generada muestra ese nombre como título. `400` del servidor → `ErrorAlert` con el mensaje.
+  - Pruebas: frontend.
+
+- [x] **T13** · `frontend` · Punto 5 · Nombre como título y en "Listas anteriores"
+  - Archivos: `Frontend/src/features/lista/components/TablaLista.tsx` (principal: título `h2` = `lista.nombre`), `Frontend/src/features/lista/components/HistorialListas.tsx` (`etiquetaLista` = `"<nombre> · <N> prioritarios"`), `Frontend/src/features/lista/components/TablaLista.test.tsx`, `Frontend/src/features/lista/components/HistorialListas.test.tsx`.
+  - Docs: `docs/frontend/01-arquitectura.md` §Lista priorizada (resumen R-006, fila historial); decisión (j).
+  - Aceptación:
+    - Lista con `nombre` "Campaña octubre" → encabezado "Campaña octubre"; ya no aparece "Lista del 29 de septiembre de 2026". Las líneas "Rango de fechas: …" y "Socios priorizados para campañas: n" no cambian.
+    - Nombre `"<b>x</b>"` se muestra como texto literal (sin HTML). Historial con `nombre` "Lista del 29 sep 2026", `topK` 25, `totalItems` 30 → opción "Lista del 29 sep 2026 · 25 prioritarios"; singular "1 prioritario" se mantiene.
+  - Pruebas: frontend.
+
+- [x] **T14** · `infra-deploy` · Suites, E2E, stack reconstruido y verificación en el navegador
+  - Archivos: `Frontend/e2e/carga-lista-excel.spec.ts` (selectores: elegir archivo → "Revisar archivo" → "Confirmar carga"; si comprueba hojas del Excel, usar los nombres nuevos).
+  - Docs: `docs/backend/10-docker.md` §Uso; `.claude/rules/deploy.md`; decisiones (e), (f).
+  - Aceptación (el developer pega solo estados, códigos y conteos, sin datos personales):
+    1. Backend `pytest`, `ruff check`, `ruff format --check`, `mypy app`, `lint-imports`; Frontend `npm test`, `npm run lint`, `npm run build`; E2E `carga-lista-excel` y `health` en verde contra el stack E2E (8081) reconstruido (aplica `0006`).
+    2. **Solo si el usuario lo confirma** (decisión (f)): `scripts/reiniciar-base-historica.ps1` en el stack principal (tras `docker compose build`, para que `migrate` aplique `0006`) → `LISTO` y conteos socios 1.410, membresías 2.748, cargas 1, listas 0, predicciones 0; el stack E2E (`docker compose -p mtabolic-e2e ps`) sigue igual antes y después. Si no lo confirma: `docker compose up -d --build` sin `down -v` (aplica `0006` sobre las listas existentes, que reciben su nombre por defecto) y conteos de `socios`, `membresias`, `cargas`, `listas_priorizadas`, `predicciones` antes/después idénticos. En ambos casos `alembic current` → `0006 (head)`.
+    3. http://localhost:8080 → Carga: botón "Seleccionar archivo de carga (.xlsx)", ayuda "Suba la plantilla oficial del mes.", nombre del archivo tras elegir `plantilla_valida.xlsx`, "Revisar archivo" muestra la vista previa; **no** se confirma (R-007 (l)). Lista → campo "Nombre de la lista" con "Lista del <hoy corto>" que cambia al mover la fecha; "¿Cómo funciona esta lista?" con 4 secciones.
+    4. http://localhost:8081 (stack E2E) → generar una lista con nombre "Prueba R-008" → título "Prueba R-008", aparece en "Listas anteriores" como "Prueba R-008 · N prioritarios" → descargar Excel: hojas "Socios prioritarios a contactar", "Otros socios por vencer", "Resumen" (primera fila "Nombre de la lista" = "Prueba R-008"); columnas de la tabla; sin Celular ni Score; motivos sin paréntesis.
+  - Pruebas: E2E + verificación del stack y navegador.
+
+- [x] **DOC-1** · (doc-agent) · Documentación
+  - **Nueva carpeta** `Documentation/comandos/reiniciar-base-historica.md`: qué hace (paso a paso), cuándo usarlo, advertencias (borra cargas por plantilla, listas y predicciones y todo lo demás del volumen principal, sin vuelta atrás; reentrena el modelo v1 idéntico; nunca toca `mtabolic-e2e`), cómo ejecutarlo en Windows (PowerShell, incl. `-ExecutionPolicy Bypass -File` si hace falta) y en bash, flag `-Si`/`--si`, resultado esperado (1.410 socios, 2.748 membresías, 1 carga, 0 listas, 0 predicciones) y qué hacer si termina en `FALTAN_DATOS_HISTORICOS`. Enlace desde `Documentation/README.md` (nueva sección "Comandos"); **no** en el README raíz.
+  - `DEVELOPMENT_GUIDELINES.md` §Excepciones: el reinicio manual del stack principal como borrado físico explícito del usuario (no una función de la app); si se ejecutó en T14, fecha/hora y conteos.
+  - **Punto 5:** `docs/backend/09-esquema-base-de-datos.md` (columna `nombre`, CHECK, migración `0006` y su relleno); `docs/API_CONTRACT.md` (`nombre` en `POST /listas`, respuestas de listas y `400`); `docs/backend/12-modelo-y-listas.md` §Lista priorizada (nombre por defecto, decisiones (g)–(i)); `03-casos-de-uso.md` CU-04/CU-05 (nombre de la lista) si el doc-agent lo considera necesario; `06-como-funciona-la-lista.md` (cómo nombrar una lista). Nota breve en `docs/backend/10-docker.md` §Uso enlazando el nuevo documento.
+  - `docs/backend/12-modelo-y-listas.md` §Excel: hojas, columnas, motivos sin aporte, resumen amigable (decisiones (a)–(c)); marcar como sustituido el párrafo de R-005 sobre score/aportes. `03-casos-de-uso.md` §15 CU-12 **Columnas** y la mención de hojas.
+  - `06-como-funciona-la-lista.md`: §2 (hojas del Excel), §4 (el Excel ya no incluye los números), §5 (el Excel tiene las mismas columnas que la pantalla; sin celular ni monto); indicar que §5–§6 ya no están en la ayuda de la aplicación.
+  - `docs/frontend/01-arquitectura.md`: §Inicio y Carga (estado `seleccionado`, `SelectorArchivo`, "Revisar archivo", "Confirmar carga", accesibilidad), párrafo de la ayuda (4 secciones) y §Lista priorizada (campo "Nombre de la lista", sugerencia que sigue a la fecha, título y opciones del historial con el nombre; sustituye R-006 (d)).
+  - `05-cronograma-semana.md`: nota "Ajustes posteriores al Día 4 (R-008)". `ACTION_PLAN.md`: decisiones en DECISIONES IMPORTANTES (incluida la reversión de R-005 (e) y del celular en el Excel), R-008 a TERMINADOS. El doc-agent decide si hace falta ADR.
+
+**Dependencias**
+- Backend: T6 → T8 (usa `nombre_por_defecto`); T7 → T9; T8 → T9 → T10; **T8 → T1** (el Excel lee `ListaDetalle.nombre`). T6 y T7 pueden ir en paralelo.
+- Frontend: T2 → T3; T4 independiente; T11 → T12 y T13 (T11 puede empezar ya con MSW; el contrato de T10 manda).
+- T5 independiente. Todo (T1–T13) → T14 → DOC-1 (DOC-1 necesita la hora y los conteos de T14 si se ejecutó el reinicio).
+- Orden sugerido: T6, T7, T8, T9, T10, T1, T2, T3, T4, T11, T12, T13, T5, T14.
+- Externas: PostgreSQL con `app_db_test` (T1, T7, T9, T10); Docker Desktop y el `.env` local (T5, T14); stack E2E `mtabolic-e2e` con `.env.e2e` (T14); **confirmación explícita del usuario** para ejecutar el reinicio en T14.
+
+**Riesgos**
+1. **Borrado irreversible del stack equivocado o de datos útiles.** Un `down -v` sin `-p` o con el `.env` de otro stack borraría el volumen incorrecto; en el principal se pierden cargas confirmadas y listas. Mitigación: `-p proyectofinal` y `--env-file` fijos resueltos desde el script, confirmación con `BORRAR`, precondiciones antes de cualquier `docker`, ejecución real solo con confirmación del usuario (T5, T14) y advertencias en el documento.
+2. **Migración `0006` sobre una base con listas y cambio de contrato en cadena.** Un `NOT NULL` sin relleno fallaría con listas existentes, y un relleno SQL con otro formato distinto al del dominio/frontend dejaría nombres incoherentes; añadir `nombre` a los dataclass sin valor por defecto rompe dobles, `verificar_lista.py` y fixtures. Mitigación: migración en tres pasos probada sobre datos (T7) con el mismo caso de fechas que T6 y T12, excepción mecánica declarada para dobles, `mypy`/suite completa en T8 y T14.
+3. **Regresiones de accesibilidad y de pruebas en Carga (y quitar el celular del Excel).** Ocultar el `input` puede dejarlo sin foco o romper `getByLabel`/`setInputFiles` del E2E, y las 50+ aserciones de `CargaPage.test.tsx` asumen la vista previa automática. Mitigación: botón nativo enfocable que dispara el `input`, `input` etiquetado y oculto (T3), pruebas de teclado y E2E actualizado en T14. Quitar el celular deja al personal sin el contacto en el Excel (CU-12 lo listaba): decisión explícita del usuario; la API lo conserva y DOC-1 registra la reversión.
 
 ### R-007 — Día 4 del cronograma: carga por plantilla (CU-01) de punta a punta, integración real y ayuda de la lista · **DONE** 2026-09-29
 
@@ -1529,14 +1709,14 @@
 
 - 2026-09-29 · R-005 · "Hoy" = fecha de negocio de Ecuador (UTC−5 fijo) en el backend; en el navegador, la fecha local. Fecha pasada → `422`; horizonte fuera de 1..31 → `400` → [ADR-006](adr/ADR-006-lista-desde-hoy-y-cedula-en-lugar-de-correo.md).
 - 2026-09-29 · R-005 · Cédula en lugar de correo en la API, el Excel y el repositorio de listas; socios sin cédula fuera de las listas nuevas (siguen en la base y el entrenamiento); listas antiguas inmutables → [ADR-006](adr/ADR-006-lista-desde-hoy-y-cedula-en-lugar-de-correo.md), [API_CONTRACT](docs/API_CONTRACT.md). Ajusta CU-04 §7 y CU-12 §15 de [03](03-casos-de-uso.md) a petición del usuario.
-- 2026-09-29 · R-005 · El Excel conserva score y aportes; la pantalla no (dos tablas: prioritarios y resto) → [frontend/01](docs/frontend/01-arquitectura.md).
+- 2026-09-29 · R-005 · El Excel conserva score y aportes; la pantalla no (dos tablas: prioritarios y resto) → [frontend/01](docs/frontend/01-arquitectura.md). **Revertida en R-008** (ADR-007).
 - 2026-09-29 · R-005 · `verificar_lista.py` conserva su ventana y trata a todos como "con cédula": la conciliación al 31-08-2026 ya solo se hace con el script → [12](docs/backend/12-modelo-y-listas.md).
 - 2026-09-29 · R-005 · La revisión de seguridad de R-005 (incluida la exposición de la cédula) se difiere a la revisión única del día 7 ([05 §1](05-cronograma-semana.md)).
 
 - 2026-09-30 · R-006 · Borrado físico puntual de las listas de prueba (`predicciones` 117, `listas_priorizadas` 3) en la base de Docker, por decisión explícita del usuario; excepción única que no cambia la regla → [DEVELOPMENT_GUIDELINES §Excepciones](DEVELOPMENT_GUIDELINES.md), [09](docs/backend/09-esquema-base-de-datos.md).
 - 2026-09-29 · R-006 · Fechas cortas con tabla fija de meses sin punto ("sep"), aritmética en UTC; un rango en el mismo mes no se compacta ("1 oct – 15 oct 2026") → [frontend/01](docs/frontend/01-arquitectura.md).
 - 2026-09-29 · R-006 · En "Listas anteriores", N prioritarios = `min(topK, totalItems)`, sin cambiar la API → [frontend/01](docs/frontend/01-arquitectura.md).
-- 2026-09-29 · R-006 · El celular sale de la pantalla y se mantiene en la API y el Excel → [06 §5](06-como-funciona-la-lista.md).
+- 2026-09-29 · R-006 · El celular sale de la pantalla y se mantiene en la API y el Excel → [06 §5](06-como-funciona-la-lista.md). **En el Excel, revertida en R-008** (ADR-007); sigue en la API.
 - 2026-09-29 · R-006 · La revisión de seguridad de R-006 se difiere a la revisión única del día 7 ([05 §1](05-cronograma-semana.md)).
 
 - 2026-09-29 · R-007 · (l) Confirmaciones de carga de prueba y E2E solo en el stack aislado `mtabolic-e2e` (8081/8001/5433, base y libros sintéticos); en el principal solo vista previa y lista; puertos e `IMAGE_TAG` configurables → [10-docker](docs/backend/10-docker.md).
@@ -1546,6 +1726,12 @@
 - 2026-09-29 · R-007 · (j) Bloqueo consultivo de transacción en la confirmación; sin índice único de duplicados (D-04 conserva duplicados históricos); migración `0005` solo añade el índice parcial de socios sin cédula → [09](docs/backend/09-esquema-base-de-datos.md).
 - 2026-09-29 · R-007 · Un socio enlazado por nombre recibe la cédula aunque sus filas sean duplicadas; `ClaveMembresia` única en el dominio.
 - 2026-09-29 · R-007 · La revisión de seguridad de R-007 (incluidos 2 avisos moderados de `npm audit` por `uuid` vía `exceljs`, solo desarrollo) se difiere a la revisión única del día 7 ([05 §1](05-cronograma-semana.md)).
+
+- 2026-09-29 · R-008 · Excel igual a la tabla de la pantalla (hojas "Socios prioritarios a contactar", "Otros socios por vencer", "Resumen"; sin celular, score ni monto; motivos sin aporte). **Revierte** R-005 (e) (score y aportes en el Excel) y R-006 (celular en el Excel), por decisión del usuario; la API conserva esos campos. Ajusta CU-12 §15 de [03](03-casos-de-uso.md) → [ADR-007](adr/ADR-007-excel-igual-a-la-pantalla-y-nombre-de-lista.md).
+- 2026-09-29 · R-008 · Nombre editable de la lista: `nombre` 1..80 (migración `0006`, `CHECK`), opcional en `POST /listas`, por defecto "Lista del d mmm aaaa"; es el título, aparece en "Listas anteriores" y en el Excel; sustituye el título fijo de R-006 (d) → [ADR-007](adr/ADR-007-excel-igual-a-la-pantalla-y-nombre-de-lista.md), [API_CONTRACT](docs/API_CONTRACT.md).
+- 2026-09-29 · R-008 · Carga en tres pasos (elegir → "Revisar archivo" → "Confirmar carga"); elegir no llama a la API → [frontend/01](docs/frontend/01-arquitectura.md).
+- 2026-09-29 · R-008 · Reinicio de la base principal solo con scripts versionados (`-p proyectofinal` fijo, confirmación `BORRAR`); excepción de borrado físico explícito del usuario, no función de la app. No se ejecutó en R-008 para no borrar las 2 listas del usuario → [comandos](comandos/reiniciar-base-historica.md), [DEVELOPMENT_GUIDELINES §Excepciones](DEVELOPMENT_GUIDELINES.md).
+- 2026-09-29 · R-008 · La revisión de seguridad de R-008 se difiere a la revisión única del día 7 ([05 §1](05-cronograma-semana.md)).
 
 ## PRÓXIMO
 

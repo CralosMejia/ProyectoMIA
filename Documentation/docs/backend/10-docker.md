@@ -62,6 +62,8 @@ curl http://localhost:8080/api/v1/health   # vía nginx
 
 Primer arranque desde cero (R-004): `docker compose down -v && docker compose up -d --build` → `migrate` termina con 0 → `GET /api/v1/sistema/estado` pasa de `INICIALIZANDO` a `LISTO` (unos 5 s con los libros reales). `docker compose restart backend` no vuelve a migrar. Si el estado queda en `FALTAN_DATOS_HISTORICOS`, se corrige `HISTORICO_DIR` y se reinicia el backend. Pasos: `Backend/README.md` §Primer arranque.
 
+Reinicio de la base principal a solo histórico (R-008): scripts `scripts/reiniciar-base-historica.ps1` / `.sh`, con `-p proyectofinal` fijo y confirmación `BORRAR` → [comandos/reiniciar-base-historica.md](../../comandos/reiniciar-base-historica.md).
+
 ### Stack E2E aislado (R-007)
 
 Segundo stack con base, volumen, red e imágenes propios y libros históricos **sintéticos**, para confirmar cargas de prueba y correr el E2E sin tocar la base con datos reales (en ella no se pueden borrar físicamente socios ficticios). En el stack principal solo se usa la vista previa de la carga (no guarda) y la lista/Excel; confirmar allí queda a decisión del usuario.

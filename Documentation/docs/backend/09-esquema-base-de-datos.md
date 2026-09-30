@@ -3,7 +3,7 @@
 PostgreSQL 16. Creado en R-002 (día 1 del [cronograma](../../05-cronograma-semana.md)). Fuente: entidades de [03 §16](../../03-casos-de-uso.md).
 
 - ORM (descripción del `MetaData`): `Backend/app/infrastructure/persistence/models/{base,historial,modelo,retencion}.py`.
-- Migraciones: `Backend/alembic/versions/0001_esquema_inicial.py` (esquema), `0002_estado_sistema_inicial.py` (datos), `0003_membresias_socio_id_not_null.py` (R-003), `0004_membresias_fecha_actividad.py` (R-004) y `0005_socios_nombre_sin_cedula.py` (R-007). Las aplica **solo** el servicio `migrate` ([10-docker.md](10-docker.md), [ADR-004](../../adr/ADR-004-migracion-datos-al-arrancar.md)); la aplicación nunca migra al arrancar.
+- Migraciones: `Backend/alembic/versions/0001_esquema_inicial.py` (esquema), `0002_estado_sistema_inicial.py` (datos), `0003_membresias_socio_id_not_null.py` (R-003), `0004_membresias_fecha_actividad.py` (R-004) , `0005_socios_nombre_sin_cedula.py` (R-007) y `0006_listas_nombre.py` (R-008). Las aplica **solo** el servicio `migrate` ([10-docker.md](10-docker.md), [ADR-004](../../adr/ADR-004-migracion-datos-al-arrancar.md)); la aplicación nunca migra al arrancar.
 
 ## Convenciones
 
@@ -40,6 +40,8 @@ COMMIT;
 
 Sin `CASCADE`, sin `TRUNCATE`, sin reiniciar secuencias y sin script versionado. Intactas (antes = después): `socios` 1410, `membresias` 2748, `cargas` 1, `modelos` 1, `intentos_reentrenamiento` 1, `estado_sistema` 1, `campanias` 0, `gestiones_retencion` 0. Después: `GET /listas` → `[]`, `GET /listas/ultima` → `404`, sistema `LISTO`. Registrada en [DEVELOPMENT_GUIDELINES §Excepciones](../../DEVELOPMENT_GUIDELINES.md).
 
+**Reinicio manual de la base principal (R-008).** Los scripts `scripts/reiniciar-base-historica.ps1|.sh` borran todo el volumen del stack principal (`down -v`) y lo recrean solo con el histórico. Es una operación explícita del usuario fuera de la aplicación, no un `Delete` de los repositorios → [comandos/reiniciar-base-historica.md](../../comandos/reiniciar-base-historica.md).
+
 ## Tablas (10)
 
 ### Historial
@@ -62,7 +64,7 @@ Sin `CASCADE`, sin `TRUNCATE`, sin reiniciar secuencias y sin script versionado.
 
 | Tabla | Columnas relevantes | Restricciones e índices |
 |---|---|---|
-| `listas_priorizadas` | FK `modelo_id` NOT NULL, `fecha_generacion DATE`, `horizonte_dias`, `top_k`, `creada_en TIMESTAMPTZ` | `horizonte_dias > 0`, `top_k > 0` |
+| `listas_priorizadas` | FK `modelo_id` NOT NULL, `fecha_generacion DATE`, `horizonte_dias`, `top_k`, `creada_en TIMESTAMPTZ`, `nombre TEXT NOT NULL` (`0006`, R-008) | `horizonte_dias > 0`, `top_k > 0`, `nombre_longitud` `CHECK (char_length(nombre) BETWEEN 1 AND 80)`; sin índice ni unicidad por nombre |
 | `predicciones` | FK `lista_id`, `membresia_id` NOT NULL, FK `socio_id` NULL; `score`; `nivel_riesgo` (`NivelRiesgo`); `factores_principales JSONB`; `prioridad`; `dentro_top_k BOOLEAN` | `prioridad > 0`; único `(lista_id, membresia_id)`; `ix_predicciones_lista_id_prioridad` |
 | `campanias` | `nombre TEXT`, `descripcion TEXT NULL`, `activa`, `es_ejemplo` `BOOLEAN`, `niveles_riesgo TEXT[]`, `planes TEXT[]`, `prioridad` | arreglos no vacíos y contenidos en `NivelRiesgo` y `PLANES_CAMPANIA` (sin `DIARIO`); `prioridad >= 1` |
 | `gestiones_retencion` | FK `prediccion_id`, `membresia_id` NOT NULL, FK `campania_id` NULL; `fecha_asignacion`, `fecha_seguimiento` `DATE`; `estado` (`EstadoGestion`); `responsable`; `contactado BOOLEAN NULL`; `campania_ofrecida`, `campania_aceptada`, `renovo_declarado` NULL; `fecha_contacto DATE NULL`; `observaciones`; `cerrada_en TIMESTAMPTZ NULL` | respuestas con `CHECK` de `RESPUESTAS_OFRECIMIENTO` {SI, NO, NO_APLICA}, `RESPUESTAS_ACEPTACION` {SI, NO, PENDIENTE, NO_APLICA}, `RESPUESTAS_RENOVACION` {SI, NO, PENDIENTE}; `ux_gestiones_retencion_membresia_id` único parcial `WHERE deleted_at IS NULL` (RN-08.1: una gestión por ciclo); `ix_gestiones_retencion_estado_fecha_seguimiento` |
@@ -78,6 +80,7 @@ Sin `CASCADE`, sin `TRUNCATE`, sin reiniciar secuencias y sin script versionado.
 - `0003` (`down_revision = "0002"`): `upgrade` hace `ALTER COLUMN socio_id SET NOT NULL` y **falla** si ya existen membresías sin socio (hoy ninguna base las tiene); `downgrade` lo devuelve a `NULL`. Las pruebas verifican `IntegrityError` con `socio_id NULL` tras `upgrade head`, aceptación tras `downgrade 0002` y `alembic current` → `0003`.
 - `0004` (`down_revision = "0003"`): añade `fecha_actividad DATE NULL`, la rellena con `fecha_inicio` donde exista, hace `SET NOT NULL` (falla si queda alguna fila sin valor) y crea `ix_membresias_socio_id_fecha_actividad`; `downgrade` elimina índice y columna. Las pruebas verifican `IntegrityError` sin `fecha_actividad`, el ciclo `downgrade 0003` → `upgrade head` y `alembic current` → `0004`.
 - `0005` (`down_revision = "0004"`, R-007): crea el índice parcial `ix_socios_nombre_normalizado_sin_cedula` sobre `socios(nombre_normalizado)` `WHERE cedula IS NULL AND deleted_at IS NULL` para el enlace por nombre de la carga por plantilla ([13-cargas](13-cargas.md)); `downgrade` lo elimina. Sin datos que migrar. La búsqueda de duplicados reutiliza `ix_membresias_socio_id_fecha_vencimiento` (sin índice nuevo) y no hay índice único de duplicados (D-04 conserva los duplicados exactos del histórico). Las pruebas verifican el índice en los metadatos del ORM, `alembic check`, el ciclo `downgrade 0004` → `upgrade head` y `alembic current` → `0005 (head)`.
+- `0006` (`down_revision = "0005"`, R-008): añade `listas_priorizadas.nombre` en tres pasos: columna `TEXT NULL` → relleno de las filas existentes con el nombre por defecto de su `fecha_generacion` (`'Lista del <d> <mmm> <aaaa>'`, meses con `ARRAY['ene', …, 'dic']`, mismo formato que el dominio y el frontend) → `SET NOT NULL` + `CHECK nombre_longitud` (1..80). `downgrade` elimina la columna (solo desarrollo). Las pruebas verifican el relleno sobre una base en `0005` con listas (`2026-09-29` → `"Lista del 29 sep 2026"`, `2027-01-05` → `"Lista del 5 ene 2027"`), `IntegrityError` con `''` o 81 caracteres, base vacía, `alembic check`, el ciclo `downgrade 0005` → `upgrade head` y `alembic current` → `0006 (head)`. Aplicada al stack principal sin pérdida de datos (socios 1.410, membresías 2.748, cargas 1, las 2 listas existentes con su nombre por defecto).
 - Fixture `db_session` (`tests/integration/conftest.py`): `Session` sobre una conexión con transacción externa que termina en `rollback`; la usan las pruebas de repositorios ([11-historico.md](11-historico.md)).
 
 ## Pendientes

@@ -10,7 +10,7 @@ Registro del paso del notebook `MVP.ipynb` a una aplicación web. Sirve de insum
 | 03 | [Casos de uso del sistema de apoyo a la retención](03-casos-de-uso.md) | v4 · CU-00 a CU-12 con el alcance de la entrega de una semana y las decisiones confirmadas: un solo PC, migración automática y atómica del histórico, reentrenamiento sin recuperar fechas perdidas, lógica del notebook tal cual; modelo conceptual de datos; alcance diferido | 2026-09-28 |
 | 04 | [Decisiones y pendientes para iniciar el desarrollo](04-pendientes-para-iniciar-desarrollo.md) | Decisiones D-01 a D-18 confirmadas, implicaciones de la instalación en un solo PC, acciones sobre repositorio y datos, ajustes de configuración y plan resumido de la semana | 2026-09-28 |
 | 05 | [Cronograma de la entrega de una semana](05-cronograma-semana.md) | Tareas por día de base de datos, backend, frontend y apoyo, con responsable, dependencias, criterio de "hecho", ruta crítica, carga por persona y orden de recorte | 2026-09-28 |
-| 06 | [¿Cómo funciona la lista de socios por vencer?](06-como-funciona-la-lista.md) | Guía para el personal del gimnasio, sin términos técnicos: fecha y días a revisar, socios prioritarios, niveles alto/medio/bajo, datos mostrados y casos frecuentes | 2026-09-29 |
+| 06 | [¿Cómo funciona la lista de socios por vencer?](06-como-funciona-la-lista.md) | Guía para el personal del gimnasio, sin términos técnicos: fecha y días a revisar, socios prioritarios, nombre de la lista, niveles alto/medio/bajo, motivos, datos mostrados (pantalla y Excel iguales) y casos frecuentes | 2026-09-29 |
 
 > `01` se conserva como registro del análisis inicial; el alcance vigente es el de `03`.
 
@@ -28,10 +28,17 @@ Registro del paso del notebook `MVP.ipynb` a una aplicación web. Sirve de insum
 | [docs/backend/13-cargas.md](docs/backend/13-cargas.md) | Carga por plantilla (CU-01): lector, validación por fila, enlace de socios, duplicados, transacción todo o nada con bloqueo; decisiones de R-007 |
 | [docs/frontend/01-arquitectura.md](docs/frontend/01-arquitectura.md) | Capas del Frontend, cliente HTTP, feature de referencia, estilos |
 
+## Comandos
+
+| Documento | Contenido |
+|---|---|
+| [comandos/reiniciar-base-historica.md](comandos/reiniciar-base-historica.md) | Reiniciar la base principal a solo datos históricos (borra cargas mensuales, listas y predicciones; no toca `mtabolic-e2e`) |
+
 ## Decisiones de arquitectura (ADR)
 
 | ADR | Decisión |
 |---|---|
 | [ADR-001](adr/ADR-001-fastapi-react-postgresql.md) | FastAPI + React + PostgreSQL en lugar de Streamlit (cierra P-07) |
+| [ADR-007](adr/ADR-007-excel-igual-a-la-pantalla-y-nombre-de-lista.md) | Excel igual a la tabla de la pantalla y nombre editable de la lista (R-008) |
 
 Cómo levantar el stack: [README.md de la raíz](../README.md).

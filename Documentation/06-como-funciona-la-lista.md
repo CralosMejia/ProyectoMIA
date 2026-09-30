@@ -16,7 +16,9 @@ Tú indicas **cuántos socios quieres contactar primero** (por ejemplo, 25).
 
 - Esos son los **socios prioritarios a contactar**: salen arriba, en una tabla con ese mismo título.
 - El resto de socios que vencen en esos días aparece debajo, en otra tabla llamada **otros socios por vencer** (si no queda ninguno, esa tabla no se muestra).
-- El Excel que descargas tiene una hoja solo con los prioritarios, otra con todos y una hoja de resumen.
+- El Excel que descargas tiene las mismas dos tablas, cada una en su hoja: **"Socios prioritarios a contactar"** y **"Otros socios por vencer"** (si no queda ninguno, esta hoja solo tiene los títulos de las columnas), más una hoja **"Resumen"** con el nombre de la lista, su fecha, hasta qué día vencen, cuántos socios hay en cada tabla y cuántos en cada nivel de riesgo.
+
+**Nombre de la lista.** Antes de generarla puedes escribir un nombre (hasta 80 caracteres), por ejemplo "Campaña octubre". Si no lo cambias, el sistema propone uno con la fecha, por ejemplo **"Lista del 29 sep 2026"**, que se actualiza solo si cambias la fecha. El nombre es el título de la lista, aparece en **Listas anteriores** y en la hoja "Resumen" del Excel. Una vez generada, la lista no se puede renombrar.
 
 ## 3. Niveles de riesgo: alto, medio y bajo
 
@@ -29,17 +31,19 @@ Cada socio tiene un nivel: **alto**, **medio** o **bajo**.
   - el **50 %** restante es **bajo**.
 - Por eso lo normal es que los prioritarios salgan en nivel alto.
 
-## 4. Factores
+## 4. Motivos
 
-Junto a cada socio se muestran los **motivos principales** por los que tiene más riesgo; por ejemplo, el plan que tiene o cuántas membresías ha tenido antes. En pantalla se muestran sin números: sirven para orientar la conversación con el socio. Si no hay motivos destacados, se indica "Sin factores de riesgo destacados". El Excel sí incluye los números, para quien quiera revisarlos.
+Junto a cada socio se muestran los **motivos principales** por los que tiene más riesgo; por ejemplo, el plan que tiene o cuántas membresías ha tenido antes. Se muestran sin números, en pantalla y en el Excel: sirven para orientar la conversación con el socio. Si no hay motivos destacados, se indica "Sin factores de riesgo destacados".
+
+> Las secciones 5 y 6 amplían la explicación en este documento; la ayuda **"¿Cómo funciona esta lista?"** de la aplicación solo muestra las secciones 1 a 4 (desde R-008).
 
 ## 5. Qué datos se muestran
 
 | Se muestra | No se muestra |
 |---|---|
-| En pantalla: prioridad, nombre, cédula, plan, fecha de vencimiento ("Vence el"), días que faltan para el vencimiento, nivel de riesgo y motivos principales. El Excel añade el celular y el monto cobrado. | Correo electrónico (ni en pantalla ni en el Excel). El celular no se muestra en pantalla, solo en el Excel. |
+| En pantalla y en el Excel, las mismas columnas: prioridad, nombre, cédula, plan, fecha de vencimiento ("Vence el"), días que faltan para el vencimiento, nivel de riesgo y motivos principales. | Correo electrónico, celular y monto cobrado (ni en pantalla ni en el Excel). |
 
-Encima de las tablas, un resumen de dos líneas: **"Rango de fechas: 29 sep – 29 oct 2026"** (desde la fecha de la lista hasta los días que elegiste) y **"Socios priorizados para campañas: 25"**. En **Listas anteriores** cada lista aparece con un nombre corto, por ejemplo "29 sep 2026 · 25 prioritarios".
+Encima de las tablas, el **nombre de la lista** como título y un resumen de dos líneas: **"Rango de fechas: 29 sep – 29 oct 2026"** (desde la fecha de la lista hasta los días que elegiste) y **"Socios priorizados para campañas: 25"**. En **Listas anteriores** cada lista aparece con su nombre, por ejemplo "Lista del 29 sep 2026 · 25 prioritarios" o "Campaña octubre · 25 prioritarios".
 
 Los socios **sin cédula registrada no aparecen en la lista**. No se borran: siguen en el sistema y se siguen usando para aprender del historial.
 

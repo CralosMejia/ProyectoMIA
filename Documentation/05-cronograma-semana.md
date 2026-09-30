@@ -297,6 +297,18 @@ Continuación de R-005, a petición del usuario. **Estado:** `DONE` (5 tareas + 
 - **Día 7:** revisión de seguridad de lo hecho el día 4 y S23 (D7-OP-02); `npm audit` con 2 avisos moderados por `uuid` < 11.1.1 vía `exceljs` (solo `devDependency` del E2E); D7-FE-01 (diseño).
 - Menor: el aviso de enlace del contrato va con tildes ("históricos", "creó"), a diferencia de otros mensajes del backend sin tildes.
 
+#### Correcciones posteriores al Día 4 (R-008)
+
+A petición del usuario. **Estado:** `DONE` (14 tareas + documentación).
+
+- **Excel igual a la tabla:** hojas "Socios prioritarios a contactar", "Otros socios por vencer" y "Resumen", con las columnas de la pantalla (sin celular, score ni monto; motivos sin aporte). Revierte R-005 (e) y el celular en el Excel de R-006; la API conserva esos campos. Detalle: [12 §Excel](docs/backend/12-modelo-y-listas.md), [03 §15](03-casos-de-uso.md).
+- **Carga en tres pasos:** "Seleccionar archivo de carga (.xlsx)" (elegir no llama a la API) → "Revisar archivo" → "Confirmar carga" ([frontend/01](docs/frontend/01-arquitectura.md)).
+- **Ayuda de la lista** con 4 secciones (sin "Qué datos se muestran" ni "Casos frecuentes") ([06](06-como-funciona-la-lista.md)).
+- **Nombre editable de la lista:** migración `0006` (`listas_priorizadas.nombre`, 1..80), `nombre` opcional en `POST /listas` (por defecto "Lista del 29 sep 2026") y en las respuestas; título, "Listas anteriores" y hoja "Resumen" → [ADR-007](adr/ADR-007-excel-igual-a-la-pantalla-y-nombre-de-lista.md), [09](docs/backend/09-esquema-base-de-datos.md), [API_CONTRACT](docs/API_CONTRACT.md).
+- **Reinicio de la base principal a solo histórico** con scripts versionados → [comandos/reiniciar-base-historica.md](comandos/reiniciar-base-historica.md). No se ejecutó en esta sesión (la base tenía 2 listas del usuario).
+- Pruebas: Backend 1.463 pytest, `ruff`, `format` (231), `mypy app` (106), `lint-imports` (7), `verificar_lista.py` salida 0; Frontend 448 Vitest, `build`, `lint` 0; E2E 2/2 en el stack aislado. Stack principal en `0006` con datos intactos (socios 1.410, membresías 2.748, cargas 1, listas 2).
+- Revisión de seguridad no ejecutada: diferida a la revisión única del día 7 (§1).
+
 ---
 
 ### Día 5 · Campañas y gestión (CU-06, CU-07, CU-08, CU-10)

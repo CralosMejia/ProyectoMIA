@@ -386,7 +386,7 @@ Si la última carga de datos tiene más de 30 días respecto a la fecha de gener
 
 ### Información mostrada por socio
 
-Prioridad, nombre, cédula, celular, plan, fecha de vencimiento, días para vencer, nivel de riesgo, motivos principales (sin el aporte numérico), estado de la gestión y campaña asignada, si existe. Los socios dentro del top K se muestran en una tabla propia ("Socios prioritarios a contactar") y el resto en "Otros socios por vencer".
+Prioridad, nombre, cédula, plan, fecha de vencimiento, días para vencer, nivel de riesgo, motivos principales (sin el aporte numérico), estado de la gestión y campaña asignada, si existe. Los socios dentro del top K se muestran en una tabla propia ("Socios prioritarios a contactar") y el resto en "Otros socios por vencer". El celular no se muestra en pantalla (R-006) ni en el Excel (R-008).
 
 > Ajuste de R-005: la pantalla ya no muestra el correo, el score ni una columna de top K; el score y los aportes siguen en el Excel (CU-12).
 
@@ -673,11 +673,13 @@ El dashboard muestra **resultados observados, no causalidad**. Se puede decir: *
 
 | Hoja | Contenido |
 |---|---|
-| `top_K` | Los K socios de mayor prioridad, con datos de contacto. |
-| `cartera_completa` | Toda la cartera ordenada por score. |
-| `resumen` | Fecha de generación, horizonte, K, versión del modelo, umbrales de riesgo y conteos. |
+| `Socios prioritarios a contactar` | Los K socios de mayor prioridad (como la primera tabla de la pantalla). |
+| `Otros socios por vencer` | El resto de la cartera, por prioridad (solo encabezados si no hay). |
+| `Resumen` | Nombre de la lista, fecha de la lista, fecha hasta la que vencen, socios en cada tabla, total y conteos por nivel de riesgo. |
 
-**Columnas:** prioridad, nombre, celular, cédula (texto, con el cero inicial; desde R-005 sustituye al correo), plan, fecha de vencimiento, días para vencer, monto cobrado, score, nivel de riesgo, factores principales, estado de la gestión y campaña asignada. Las columnas se validarán con la asesora durante la semana; el cambio de orden o nombres no afecta al diseño.
+**Columnas:** prioridad, nombre, cédula (texto, con el cero inicial; desde R-005 sustituye al correo), plan, fecha de vencimiento, días para vencer, nivel de riesgo y motivos principales (sin el aporte numérico): las mismas de la pantalla. Sin celular, monto cobrado, score, estado de la gestión ni campaña asignada.
+
+> **Ajuste R-008 (decisión del usuario):** el Excel pasa a ser igual a la tabla de la pantalla. Sustituye las hojas `top_K`, `cartera_completa` y `resumen` y la lista anterior de columnas (celular, monto cobrado, score, factores con aporte, estado de la gestión y campaña). Detalle: [docs/backend/12 §Excel](docs/backend/12-modelo-y-listas.md#excel-cu-12).
 
 ### Reglas de negocio
 
@@ -687,7 +689,7 @@ El dashboard muestra **resultados observados, no causalidad**. Se puede decir: *
 
 ### Criterios de aceptación
 
-- El Excel tiene las tres hojas y la hoja `top_K` tiene como máximo K filas.
+- El Excel tiene las tres hojas y la hoja `Socios prioritarios a contactar` tiene como máximo K filas.
 - Un nombre que empieza por `=` aparece como texto en Excel.
 - Descargar dos veces la misma lista produce el mismo contenido, aunque entre medio se haya entrenado otro modelo.
 
@@ -719,7 +721,7 @@ Como el histórico no cumple la plantilla, algunos campos que la plantilla exige
 | `modelo` | `id`, `version`, `vigente`, `fecha_entrenamiento`, `ciclos_entrenamiento`, `periodo_desde`, `periodo_hasta`, `prevalencia`, `umbral_alto`, `umbral_medio`, `porcentajes_umbral`, `artefacto` (modelo serializado), `metadata_tecnica` (parámetros y versiones de librerías) |
 | `intento_reentrenamiento` | `id`, `fecha`, `fecha_programada`, `disparador` (`PROGRAMADO` / `MANUAL` / `INICIAL`), `resultado` (`ENTRENADO` / `CRITERIOS_NO_CUMPLIDOS` / `NO_SUPERA_VIGENTE` / `OMITIDO` / `FALLIDO`), `motivo`, `ciclos_nuevos`, `pr_auc_candidato`, `pr_auc_vigente`, `modelo_id` |
 | `estado_sistema` | Una sola fila: `migracion_historica` (`PENDIENTE` / `EN_CURSO` / `COMPLETADA`), `proxima_fecha_reentrenamiento` |
-| `lista_priorizada` | `id`, `modelo_id`, `fecha_generacion`, `horizonte_dias`, `top_k`, `creada_en` |
+| `lista_priorizada` | `id`, `modelo_id`, `nombre` (R-008), `fecha_generacion`, `horizonte_dias`, `top_k`, `creada_en` |
 | `prediccion` | `id`, `lista_id`, `membresia_id`, `socio_id`, `score`, `nivel_riesgo`, `factores_principales`, `prioridad`, `dentro_top_k` |
 | `campania` | `id`, `nombre`, `descripcion`, `activa`, `niveles_riesgo`, `planes`, `prioridad`, `es_ejemplo` |
 | `gestion_retencion` | `id`, `prediccion_id`, `membresia_id` (única: una gestión por ciclo), `campania_id` (opcional), `fecha_asignacion`, `fecha_seguimiento`, `estado` (`PENDIENTE` / `CERRADA`), `responsable`, `contactado`, `campania_ofrecida`, `campania_aceptada`, `renovo_declarado`, `fecha_contacto`, `observaciones`, `cerrada_en` |
@@ -767,7 +769,7 @@ Como el histórico no cumple la plantilla, algunos campos que la plantilla exige
 | Entrenamiento (CU-02, CU-03) | Reutiliza el Random Forest operativo y su pipeline (Secciones 9.5 y 13.8). Añade versionado, criterios de reentrenamiento y guardado en la base. |
 | Predicción (CU-04) | Reutiliza la cartera futura, la exclusión de renovados, el cálculo de variables, el score y los factores principales (Sección 13.8). |
 | Nivel de riesgo (CU-05) | Cambia los umbrales fijos del notebook por percentiles. |
-| Exportación (CU-12) | Reutiliza las hojas `top_K`, `cartera_completa` y `resumen`. |
+| Exportación (CU-12) | Reutilizaba las hojas `top_K`, `cartera_completa` y `resumen`; desde R-008 el Excel replica las tablas de la pantalla (§15). |
 | Campañas, gestión, alertas y dashboard (CU-06 a CU-11) | Nuevos; no existen en el notebook. |
 
 ---
