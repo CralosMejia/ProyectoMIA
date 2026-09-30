@@ -37,7 +37,9 @@ Junto a cada socio se muestran los **motivos principales** por los que tiene má
 
 | Se muestra | No se muestra |
 |---|---|
-| Prioridad, nombre, cédula, celular, plan, fecha de vencimiento ("Vence el"), días que faltan para el vencimiento, nivel de riesgo y motivos principales. El Excel añade el monto cobrado. | Correo electrónico (ni en pantalla ni en el Excel) |
+| En pantalla: prioridad, nombre, cédula, plan, fecha de vencimiento ("Vence el"), días que faltan para el vencimiento, nivel de riesgo y motivos principales. El Excel añade el celular y el monto cobrado. | Correo electrónico (ni en pantalla ni en el Excel). El celular no se muestra en pantalla, solo en el Excel. |
+
+Encima de las tablas, un resumen de dos líneas: **"Rango de fechas: 29 sep – 29 oct 2026"** (desde la fecha de la lista hasta los días que elegiste) y **"Socios priorizados para campañas: 25"**. En **Listas anteriores** cada lista aparece con un nombre corto, por ejemplo "29 sep 2026 · 25 prioritarios".
 
 Los socios **sin cédula registrada no aparecen en la lista**. No se borran: siguen en el sistema y se siguen usando para aprender del historial.
 

@@ -5,9 +5,94 @@
 
 ## ACTIVO
 
-_Sin requerimiento activo._
+_(ninguno)_
 
 ## TERMINADOS RECIENTEMENTE
+
+### R-006 — Ajustes de presentación de la lista (continuación de R-005): borrado de las listas de prueba, nombres cortos en "Listas anteriores", resumen con rango de fechas, sin columna Celular en pantalla · **DONE** 2026-09-29
+
+**Cierre:** Frontend 375 Vitest, `lint` 0, `build`; E2E 1/1; stack Docker verificado en el navegador (lista del 2026-09-29, 30 días, 25; Excel de 3 hojas con Celular y Cédula). Borrado de T4: 2026-09-30 01:50:06 UTC, `predicciones` 117 y `listas_priorizadas` 3, resto intacto ([09](docs/backend/09-esquema-base-de-datos.md)). Seguridad diferida al día 7 (05 §1). Sin ADR: operación puntual que no cambia la regla, registrada en [DEVELOPMENT_GUIDELINES §Excepciones](DEVELOPMENT_GUIDELINES.md).
+
+**Objetivo:** la base de Docker queda sin listas de prueba (borrado físico puntual y documentado) y la pantalla Lista se lee con nombres cortos, un resumen claro por rango de fechas y sin el celular.
+
+**Fuente:** petición del usuario (continuación de R-005) · `docs/frontend/01-arquitectura.md` §Lista priorizada, Excel e historial · `06-como-funciona-la-lista.md` §5 · `DEVELOPMENT_GUIDELINES.md` §Excepciones · `docs/backend/09-esquema-base-de-datos.md` §Retención.
+
+**Notas de alcance del planner**
+- No existe `products/P##-*.md`. Nada cae en `DEVELOPMENT_GUIDELINES.md` §Fuera de alcance. **Sin cambios en el backend ni en la API** (el celular sigue en la API y en el Excel). No se reentrena ni se recargan datos.
+- **Proceso (05 §1):** pruebas de los criterios de aceptación; sin TDD; revisión de seguridad diferida a la revisión única del día 7. Sin login: no hay pruebas de aislamiento.
+- **Excepción puntual a "nada crítico se borra físicamente"** (decisión explícita del usuario, 2026-09-29): son datos de prueba. Se borran **solo** `predicciones` y `listas_priorizadas` en la base del stack de Docker; **no** se tocan `socios`, `membresias`, `cargas`, `modelos`, `intentos_reentrenamiento`, `estado_sistema`, `campanias` ni `gestiones_retencion`. No es una regla nueva: el código sigue sin exponer `delete` sobre listas. No se crea ningún script versionado reutilizable; el SQL exacto queda escrito en la documentación (DOC-1).
+- **(B) Registrado, NO se implementa en R-006** (lo añade DOC-1 al cronograma): **D7-FE-01** · Mejora del diseño visual de la aplicación (jerarquía, espaciado, tipografía y color con los tokens de `shared/ui`, sin cambiar comportamiento).
+- **Decisiones del planner (reversibles; se avisan al usuario):**
+  - (a) Meses abreviados con una tabla fija `ene feb mar abr may jun jul ago sep oct nov dic` (no `Intl` `month: 'short'`, que en es-EC da "sept." y depende del ICU del navegador). Sin punto final.
+  - (b) Rango = `fechaGeneracion` … `fechaGeneracion + horizonteDias` (aritmética en UTC). Mismo año → "29 sep – 29 oct 2026"; distinto año → "20 dic 2026 – 10 ene 2027". Mismo mes → "1 oct – 15 oct 2026" (sin compactar). Separador " – " (en dash con espacios).
+  - (c) En "Listas anteriores" el número de prioritarios es `min(topK, totalItems)` (`GET /listas` no trae el conteo de `dentro_top_k`; con la priorización actual coinciden). Sin cambio de contrato.
+  - (d) El título "Lista del 29 de septiembre de 2026" no cambia. Los títulos de las dos tablas ("Socios prioritarios a contactar" / "Otros socios por vencer") tampoco.
+
+**Tareas**
+
+- [x] **T1** · `frontend` · Formato corto de fechas y rango
+  - Archivos: `Frontend/src/features/lista/components/formatoFechas.ts` (principal, nuevo: `fechaCorta(iso)`, `rangoFechas(isoDesde, dias)`), `Frontend/src/features/lista/components/formatoFechas.test.ts` (nuevo).
+  - Docs: `Documentation/docs/frontend/01-arquitectura.md` §Lista priorizada, Excel e historial; decisiones (a), (b).
+  - Aceptación:
+    - `fechaCorta("2026-09-29")` → `"29 sep 2026"`; `"2026-01-05"` → `"5 ene 2026"`.
+    - `rangoFechas("2026-09-29", 30)` → `"29 sep – 29 oct 2026"`; `("2026-12-20", 21)` → `"20 dic 2026 – 10 ene 2027"`; `("2026-10-01", 14)` → `"1 oct – 15 oct 2026"`; `("2026-02-28", 1)` → `"28 feb – 1 mar 2026"`.
+    - Mismo resultado con la zona del proceso en `America/Guayaquil` y en `UTC` (sin desplazamiento de día). Funciones puras, sin `Date.now()`.
+  - Pruebas: frontend (unitarias Vitest).
+
+- [x] **T2** · `frontend` · Nombres cortos en "Listas anteriores"
+  - Archivos: `Frontend/src/features/lista/components/HistorialListas.tsx` (principal: `etiquetaLista` usa `fechaCorta`), `Frontend/src/features/lista/components/HistorialListas.test.tsx`.
+  - Docs: `docs/frontend/01-arquitectura.md` §Lista priorizada, Excel e historial; decisión (c).
+  - Aceptación:
+    - Lista del 2026-09-29 con `topK` 25 y `totalItems` 30 → opción `"29 sep 2026 · 25 prioritarios"`. `topK` 1 → `"… · 1 prioritario"`. `topK` 25 y `totalItems` 3 → `"… · 3 prioritarios"`; `totalItems` 0 → `"… · 0 prioritarios"`.
+    - Las opciones no contienen "Lista del" ni "socios"; siguen de la más reciente a la más antigua; la etiqueta "Listas anteriores" se mantiene. Sin listas, el selector no se muestra (comportamiento actual).
+  - Pruebas: frontend.
+
+- [x] **T3** · `frontend` · Resumen con rango de fechas y sin columna Celular
+  - Archivos: `Frontend/src/features/lista/components/TablaLista.tsx` (principal), `Frontend/src/features/lista/components/TablaLista.test.tsx`, `Frontend/src/features/lista/pages/ListaPage.test.tsx`.
+  - Docs: `docs/frontend/01-arquitectura.md` §Lista priorizada, Excel e historial, §`shared/ui` (sin estilos nuevos); decisiones (b), (d).
+  - Aceptación (lista del 2026-09-29, horizonte 30, 30 ítems, 25 `dentroTopK`):
+    - Título "Lista del 29 de septiembre de 2026" (sin cambios).
+    - Resumen de exactamente dos líneas: "Rango de fechas: 29 sep – 29 oct 2026" y "Socios priorizados para campañas: 25" (= filas `dentroTopK`). Con 0 ítems → "Socios priorizados para campañas: 0".
+    - Ya **no** aparecen los textos "Socios por vencer en los próximos" ni "Socios prioritarios a contactar: " en el resumen (se elimina `textoPorVencer`).
+    - Columnas de ambas tablas: Prioridad, Nombre, Cédula, Plan, Vence el, Días para vencer, Nivel de riesgo, Motivos principales. No existe el encabezado "Celular" ni se renderiza ningún número de celular de los datos simulados.
+    - `Prediccion.celular` y el cliente API no cambian (`lista-api.test.ts` sigue en verde).
+  - Pruebas: frontend.
+
+- [x] **T4** · `infra-deploy` · Borrado físico puntual de las listas de prueba en el stack de Docker
+  - Archivos: ninguno de código. Operación manual sobre el servicio `db` (el developer pega solo comandos, conteos y códigos, sin datos personales).
+  - Docs: `docs/backend/10-docker.md` §Uso; `docs/backend/09-esquema-base-de-datos.md` §Retención; `.claude/rules/deploy.md`.
+  - Procedimiento: `docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1` con **una sola transacción**: `BEGIN;` → conteos previos → comprobar `SELECT count(*) FROM gestiones_retencion` = 0 (si no, `ROLLBACK` y `BLOCKED`) → `DELETE FROM predicciones;` → `DELETE FROM listas_priorizadas;` → conteos posteriores → `COMMIT;`. Credenciales tomadas del `.env` local, nunca escritas en el comando pegado ni en la documentación. Sin `TRUNCATE ... CASCADE`, sin `down -v`, sin reiniciar secuencias.
+  - Aceptación:
+    - Antes y después se registran los conteos de `socios`, `membresias`, `cargas`, `modelos`, `intentos_reentrenamiento`, `campanias`, `gestiones_retencion`, `estado_sistema`: **idénticos**.
+    - Después: `listas_priorizadas` = 0 y `predicciones` = 0. Se anotan cuántas filas se borraron de cada una y la fecha y hora.
+    - `GET /api/v1/sistema/estado` → `200` `LISTO`, modelo v1. `GET /api/v1/listas` → `200 []`. `GET /api/v1/listas/ultima` → `404`.
+  - Pruebas: verificación manual por comandos.
+
+- [x] **T5** · `infra-deploy` · Frontend reconstruido y verificación en el navegador
+  - Archivos: ninguno (salvo que falle algo del stack).
+  - Docs: `docs/backend/10-docker.md` §Uso; `.claude/rules/deploy.md`.
+  - Aceptación:
+    1. Suites: Frontend `npm test`, `npm run lint`, `npm run build` en verde; E2E Playwright en verde (si alguna aserción usa los textos antiguos, se ajusta en la misma tarea).
+    2. `docker compose up -d --build frontend` (sin `down -v`) → http://localhost:8080 carga; la pantalla Lista sin listas se muestra sin error y sin selector "Listas anteriores".
+    3. Generar la lista con los valores por defecto (hoy, 30 días, 25) → `201`; se ve "Lista del <hoy largo>", "Rango de fechas: <hoy corto> – <hoy+30 corto>", "Socios priorizados para campañas: <n>", sin columna Celular; "Listas anteriores" muestra "<d mmm aaaa> · <n> prioritarios".
+    4. El Excel de esa lista sigue teniendo la columna Celular y Cédula (hoja `top_{K}`).
+  - Pruebas: verificación del stack y navegador.
+
+- [x] **DOC-1** · (doc-agent) · Documentación
+  - **Registro del borrado** (qué: todas las filas de `listas_priorizadas` y `predicciones` del stack de Docker, con los conteos de T4; cuándo: fecha y hora de T4; por qué: datos de prueba, decisión explícita del usuario; cómo: el SQL exacto de T4 sin credenciales; qué no se tocó): nueva fila/nota en `DEVELOPMENT_GUIDELINES.md` §Excepciones como **excepción puntual y única** (no cambia la regla), nota en `docs/backend/09-esquema-base-de-datos.md` junto a la excepción de `deleted_at` ("Ninguna se borra" salvo la operación puntual de R-006), y línea en `ACTION_PLAN.md` §DECISIONES IMPORTANTES. El doc-agent decide si además merece ADR.
+  - `docs/frontend/01-arquitectura.md` §Lista priorizada: resumen (rango + priorizados), columnas sin Celular, opciones del historial "<d mmm aaaa> · <n> prioritarios", helper `formatoFechas.ts`, decisiones (a)–(d).
+  - `06-como-funciona-la-lista.md` §5 (qué datos se muestran: sin celular en pantalla, sí en el Excel; rango de fechas; socios priorizados para campañas) y §2 si nombra el resumen antiguo.
+  - `05-cronograma-semana.md`: nota "Ajustes posteriores (R-006)" tras la de R-005; añadir **D7-FE-01** (mejora del diseño visual, B, depende de todo el frontend, "Hecho cuando: revisión visual con el usuario y suites en verde") como pendiente en el Día 7.
+  - `ACTION_PLAN.md`: D7-FE-01 en PRÓXIMO; mover R-006 a TERMINADOS.
+
+**Dependencias**
+- T1 → T2 y T3 (T2 y T3 independientes entre sí). T4 es independiente del código y puede ir en cualquier momento antes de T5. T5 requiere T1–T4. DOC-1 al final, con los conteos y la hora de T4 y la salida de T5.
+- Externas: Docker Desktop con el stack levantado y el `.env` local (T4, T5).
+
+**Riesgos**
+1. **Borrado destructivo irreversible.** Un `DELETE` mal dirigido (otra tabla, otra base, `CASCADE`) perdería datos reales. Mitigación: una transacción con `ON_ERROR_STOP`, solo dos `DELETE` explícitos sin `CASCADE`, precondición `gestiones_retencion = 0` (además la FK bloquearía), conteos antes/después de las tablas que no se tocan y `COMMIT` solo si coinciden.
+2. **Desfase de día en el rango.** Construir fechas con `new Date('AAAA-MM-DD')` en hora local puede mostrar el día anterior en Ecuador. Mitigación: aritmética en UTC y pruebas con dos zonas (T1).
+3. **Pruebas con textos antiguos.** `ListaPage.test.tsx`, `TablaLista.test.tsx`, `HistorialListas.test.tsx` y posiblemente el E2E aseveran "Socios por vencer…", "Celular" y "Lista del … socios prioritarios". Mitigación: se actualizan en T2/T3 y se revisa el E2E en T5.
 
 ### R-005 — Ajustes de la lista priorizada tras el Día 3 (fecha ≥ hoy, horizonte ≤ 31, cédula en lugar de correo, sin socios sin cédula, pantalla para usuario no técnico) y guía funcional · **DONE** 2026-09-29
 
@@ -1260,8 +1345,16 @@ _Sin requerimiento activo._
 - 2026-09-29 · R-005 · `verificar_lista.py` conserva su ventana y trata a todos como "con cédula": la conciliación al 31-08-2026 ya solo se hace con el script → [12](docs/backend/12-modelo-y-listas.md).
 - 2026-09-29 · R-005 · La revisión de seguridad de R-005 (incluida la exposición de la cédula) se difiere a la revisión única del día 7 ([05 §1](05-cronograma-semana.md)).
 
+- 2026-09-30 · R-006 · Borrado físico puntual de las listas de prueba (`predicciones` 117, `listas_priorizadas` 3) en la base de Docker, por decisión explícita del usuario; excepción única que no cambia la regla → [DEVELOPMENT_GUIDELINES §Excepciones](DEVELOPMENT_GUIDELINES.md), [09](docs/backend/09-esquema-base-de-datos.md).
+- 2026-09-29 · R-006 · Fechas cortas con tabla fija de meses sin punto ("sep"), aritmética en UTC; un rango en el mismo mes no se compacta ("1 oct – 15 oct 2026") → [frontend/01](docs/frontend/01-arquitectura.md).
+- 2026-09-29 · R-006 · En "Listas anteriores", N prioritarios = `min(topK, totalItems)`, sin cambiar la API → [frontend/01](docs/frontend/01-arquitectura.md).
+- 2026-09-29 · R-006 · El celular sale de la pantalla y se mantiene en la API y el Excel → [06 §5](06-como-funciona-la-lista.md).
+- 2026-09-29 · R-006 · La revisión de seguridad de R-006 se difiere a la revisión única del día 7 ([05 §1](05-cronograma-semana.md)).
+
 ## PRÓXIMO
 
 Día 4 del [cronograma](05-cronograma-semana.md) (carga por plantilla CU-01 e integración real). Inicio y Lista ya funcionan contra la API real (adelanto de D4-FE-01).
 
 Registrado por R-005, sin implementar: **D4-FE-03** (botón de ayuda "¿Cómo funciona esta lista?" con [06](06-como-funciona-la-lista.md)) y **D6-BE-06 / D6-FE-04** (alerta en Inicio si no hay carga en el mes actual).
+
+Registrado por R-006, sin implementar: **D7-FE-01** (mejora del diseño visual de la aplicación con los tokens de `shared/ui`, sin cambiar comportamiento; a pedido del usuario) → [05 Día 7](05-cronograma-semana.md).

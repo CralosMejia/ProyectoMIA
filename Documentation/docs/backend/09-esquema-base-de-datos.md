@@ -23,6 +23,23 @@ PostgreSQL 16. Creado en R-002 (día 1 del [cronograma](../../05-cronograma-sema
 
 **Excepción de `deleted_at`** (sin borrado lógico): `modelos`, `listas_priorizadas`, `predicciones` (instantáneas inmutables, RT-07), `intentos_reentrenamiento` (auditoría append-only) y `estado_sistema` (fila única de control). Ninguna se borra: los repositorios no expondrán `Delete`.
 
+**Operación puntual de R-006 (única excepción, no cambia la regla).** El 2026-09-30 01:50:06 UTC, por decisión explícita del usuario (listas de prueba que dificultaban ver errores), se borraron físicamente todas las filas de `predicciones` (117) y `listas_priorizadas` (3) en la base de desarrollo del stack de Docker (servicio `db`, `POSTGRES_DB`). Se ejecutó con `docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1` (credenciales del `.env` local) en una sola transacción:
+
+```sql
+BEGIN;
+DO $$ BEGIN
+  IF (SELECT count(*) FROM gestiones_retencion) <> 0 THEN
+    RAISE EXCEPTION 'gestiones_retencion no está vacía';
+  END IF;
+END $$;
+DELETE FROM predicciones;
+DELETE FROM listas_priorizadas;
+-- verificación de conteos dentro de la transacción
+COMMIT;
+```
+
+Sin `CASCADE`, sin `TRUNCATE`, sin reiniciar secuencias y sin script versionado. Intactas (antes = después): `socios` 1410, `membresias` 2748, `cargas` 1, `modelos` 1, `intentos_reentrenamiento` 1, `estado_sistema` 1, `campanias` 0, `gestiones_retencion` 0. Después: `GET /listas` → `[]`, `GET /listas/ultima` → `404`, sistema `LISTO`. Registrada en [DEVELOPMENT_GUIDELINES §Excepciones](../../DEVELOPMENT_GUIDELINES.md).
+
 ## Tablas (10)
 
 ### Historial

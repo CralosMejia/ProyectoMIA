@@ -231,6 +231,16 @@ Petición del usuario tras revisar la lista. **Estado:** `DONE` (12 tareas de de
 - Revisión de seguridad no ejecutada: diferida a la revisión única del día 7 (§1); incluye la exposición de la cédula en la API y el Excel.
 - **Registrado para días siguientes (no implementado):** D4-FE-03 (botón de ayuda en la Lista) y D6-BE-06 / D6-FE-04 (alerta de datos del mes).
 
+#### Ajustes posteriores (R-006)
+
+Continuación de R-005, a petición del usuario. **Estado:** `DONE` (5 tareas + documentación). Sin cambios en el backend ni en la API.
+
+- **Listas de prueba borradas:** borrado físico puntual de `predicciones` (117) y `listas_priorizadas` (3) en la base de Docker, 2026-09-30 01:50:06 UTC; resto de tablas intacto. Excepción única: [DEVELOPMENT_GUIDELINES §Excepciones](DEVELOPMENT_GUIDELINES.md), [09](docs/backend/09-esquema-base-de-datos.md).
+- **Pantalla Lista:** resumen de dos líneas ("Rango de fechas: 29 sep – 29 oct 2026" y "Socios priorizados para campañas: 25"); sin columna Celular (sigue en la API y el Excel); "Listas anteriores" con nombres cortos ("29 sep 2026 · 25 prioritarios"). Detalle: [frontend/01-arquitectura](docs/frontend/01-arquitectura.md).
+- Pruebas: Frontend 375 Vitest, `lint` 0, `build`; E2E 1/1. Verificado en Docker (lista del 2026-09-29, 30 días, 25; Excel de 3 hojas con Celular y Cédula).
+- Revisión de seguridad no ejecutada: diferida a la revisión única del día 7 (§1).
+- **Registrado para el día 7 (no implementado):** D7-FE-01 (mejora del diseño visual).
+
 ---
 
 ### Día 4 · Carga por plantilla e integración real (CU-01)
@@ -331,6 +341,7 @@ Petición del usuario tras revisar la lista. **Estado:** `DONE` (12 tareas de de
 | D7-OP-03 | E2E Playwright del escenario principal: carga → lista → gestión → cierre → dashboard. | B | Todo | Prueba en verde. |
 | D7-OP-04 | Ensayo del escenario de demostración de `03` §21, con reloj simulado para CU-02 y CU-09. | A y B | D7-OP-01 | Ensayo completo sin fallos. |
 | D7-OP-05 | Documentación de cierre: `ACTION_PLAN.md`, ajustes en `03` si algo cambió, diferencias con el notebook y lista de lo diferido. | B | Todo | Documentos actualizados. |
+| D7-FE-01 | Mejora del diseño visual de la aplicación (jerarquía, espaciado, tipografía y color con los tokens de `shared/ui`, sin cambiar comportamiento) (añadida por R-006, a pedido del usuario; pendiente). | B | Todo el frontend | Revisión visual con el usuario y suites en verde. |
 
 ---
 
