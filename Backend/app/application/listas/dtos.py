@@ -78,6 +78,7 @@ class PrediccionDTO(BaseModel):
     nivel_riesgo: NivelRiesgo
     factores_principales: list[str]
     dentro_top_k: bool
+    gestion_id: int | None = Field(default=None, ge=1)
     gestion_estado: EstadoGestion | None = None
     campania_asignada: str | None = None
 

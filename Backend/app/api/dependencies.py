@@ -9,8 +9,20 @@ from typing import Annotated
 from fastapi import Depends, Request
 from sqlalchemy import Engine
 
+from app.application.campanias.gestionar_campanias import (
+    CrearCampania,
+    EditarCampania,
+    InactivarCampania,
+    ListarCampanias,
+)
+from app.application.campanias.ports import UnidadDeTrabajoCampanias
+from app.application.campanias.sugerir_campanias import SugerirCampanias
 from app.application.cargas.ports import LectorPlantilla, UnidadDeTrabajoCargas
 from app.application.cargas.procesar_carga import ConfirmarCarga, PrevisualizarCarga
+from app.application.gestiones.consultar_gestion import ConsultarGestion
+from app.application.gestiones.crear_gestion import CrearGestion
+from app.application.gestiones.ports import UnidadDeTrabajoGestiones
+from app.application.gestiones.registrar_resultado import RegistrarResultado
 from app.application.health.ports import DatabaseProbe
 from app.application.health.queries import GetHealthQueryHandler
 from app.application.listas.consultar_listas import ConsultarListas
@@ -36,6 +48,9 @@ from app.infrastructure.persistence.unit_of_work import (
 )
 from app.infrastructure.persistence.unit_of_work_cargas import SqlAlchemyUnidadDeTrabajoCargas
 from app.infrastructure.persistence.unit_of_work_listas import SqlAlchemyUnidadDeTrabajoListas
+from app.infrastructure.persistence.unit_of_work_retencion import (
+    SqlAlchemyUnidadDeTrabajoRetencion,
+)
 
 
 def get_engine(request: Request) -> Engine:
@@ -119,6 +134,69 @@ def get_consultar_listas(
     exportador: Annotated[ExportadorLista, Depends(get_exportador_lista)],
 ) -> ConsultarListas:
     return ConsultarListas(uow, exportador)
+
+
+# ---------------------------------------------------------------- campanias (CU-06, CU-07)
+
+
+def get_unidad_de_trabajo_retencion(
+    engine: Annotated[Engine, Depends(get_engine)],
+    clock: Annotated[Clock, Depends(get_clock)],
+) -> UnidadDeTrabajoCampanias:
+    return SqlAlchemyUnidadDeTrabajoRetencion(engine, clock)
+
+
+UnidadRetencion = Annotated[UnidadDeTrabajoCampanias, Depends(get_unidad_de_trabajo_retencion)]
+
+
+def get_listar_campanias(uow: UnidadRetencion) -> ListarCampanias:
+    return ListarCampanias(uow)
+
+
+def get_crear_campania(uow: UnidadRetencion) -> CrearCampania:
+    return CrearCampania(uow)
+
+
+def get_editar_campania(uow: UnidadRetencion) -> EditarCampania:
+    return EditarCampania(uow)
+
+
+def get_inactivar_campania(uow: UnidadRetencion) -> InactivarCampania:
+    return InactivarCampania(uow)
+
+
+def get_sugerir_campanias(uow: UnidadRetencion) -> SugerirCampanias:
+    return SugerirCampanias(uow)
+
+
+# ---------------------------------------------------------------- gestiones (CU-08, CU-10)
+
+
+def get_unidad_de_trabajo_gestiones(
+    engine: Annotated[Engine, Depends(get_engine)],
+    clock: Annotated[Clock, Depends(get_clock)],
+) -> UnidadDeTrabajoGestiones:
+    # La misma unidad de trabajo de retencion: gestiones y campanas en una transaccion.
+    return SqlAlchemyUnidadDeTrabajoRetencion(engine, clock)
+
+
+UnidadGestiones = Annotated[UnidadDeTrabajoGestiones, Depends(get_unidad_de_trabajo_gestiones)]
+
+
+def get_crear_gestion(
+    uow: UnidadGestiones, clock: Annotated[Clock, Depends(get_clock)]
+) -> CrearGestion:
+    return CrearGestion(uow, clock)
+
+
+def get_consultar_gestion(uow: UnidadGestiones) -> ConsultarGestion:
+    return ConsultarGestion(uow)
+
+
+def get_registrar_resultado(
+    uow: UnidadGestiones, clock: Annotated[Clock, Depends(get_clock)]
+) -> RegistrarResultado:
+    return RegistrarResultado(uow, clock)
 
 
 # ---------------------------------------------------------------- sistema (CU-03)

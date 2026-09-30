@@ -1,7 +1,8 @@
 """Generador del Excel de la lista priorizada (CU-12, R-008 T1), leyendo el archivo de vuelta.
 
 El Excel muestra lo mismo que la pantalla: hojas "Socios prioritarios a contactar", "Otros
-socios por vencer" y "Resumen"; columnas de la tabla, sin celular, score ni monto.
+socios por vencer" y "Resumen"; columnas de la tabla (incluidas "Gestión" y "Campaña" desde
+R-009 T15), sin celular, score ni monto.
 Datos 100 % sinteticos: ningun nombre, celular ni cedula real.
 """
 
@@ -19,7 +20,7 @@ import pytest
 from openpyxl import load_workbook
 
 from app.application.listas.ports import ExportadorLista, ItemLista, ListaDetalle
-from app.domain.common.enums import NivelRiesgo, Plan
+from app.domain.common.enums import EstadoGestion, NivelRiesgo, Plan
 from app.infrastructure.exportacion.excel_lista import (
     COLUMNAS,
     HOJA_OTROS,
@@ -43,13 +44,14 @@ ENCABEZADOS = [
     "Días para vencer",
     "Nivel de riesgo",
     "Motivos principales",
+    "Gestión",
+    "Campaña",
 ]
+# R-009 (j): "Gestion" y "Campana" dejan de estar prohibidas (sustituye el criterio de R-008 T1).
 PROHIBIDOS = (
     "Celular",
     "Score",
     "Monto",
-    "Estado de la gestion",
-    "Campania",
     "Top K",
     "Umbral",
     "Version del modelo",
@@ -212,6 +214,46 @@ def test_generar_row_values_match_the_screen() -> None:
     otros = leer(ExcelListaOpenpyxl().generar(lista_ficticia()))[HOJA_OTROS]
     assert otros["G2"].value == "Bajo"
     assert otros["F2"].value == 20
+
+
+def test_generar_gestion_and_campania_columns_use_the_screen_texts() -> None:
+    items = (
+        item(1),
+        item(
+            2,
+            gestion_id=9,
+            gestion_estado=EstadoGestion.PENDIENTE,
+            campania_asignada="Ejemplo: Renovación anticipada",
+        ),
+        item(3, gestion_id=10, gestion_estado=EstadoGestion.CERRADA),
+        item(4, gestion_id=11, gestion_estado=EstadoGestion.PENDIENTE, dentro_top_k=False),
+    )
+    libro = leer(ExcelListaOpenpyxl().generar(lista(items)))
+    hoja = libro[HOJA_PRIORITARIOS]
+
+    assert [(hoja[f"I{f}"].value, hoja[f"J{f}"].value) for f in (2, 3, 4)] == [
+        ("Sin gestión", "—"),
+        ("Pendiente", "Ejemplo: Renovación anticipada"),
+        ("Cerrada", "Sin campaña"),
+    ]
+    assert hoja.max_column == 10
+    otros = libro[HOJA_OTROS]
+    assert (otros["I2"].value, otros["J2"].value) == ("Pendiente", "Sin campaña")
+
+
+def test_generar_campaign_name_with_formula_is_neutralized_text() -> None:
+    items = (
+        item(
+            1,
+            gestion_id=9,
+            gestion_estado=EstadoGestion.PENDIENTE,
+            campania_asignada="=SUM(1)",
+        ),
+    )
+    hoja = leer(ExcelListaOpenpyxl().generar(lista(items)))[HOJA_PRIORITARIOS]
+
+    assert hoja["J2"].value == "'=SUM(1)"
+    assert hoja["J2"].data_type == "s"
 
 
 def test_generar_vence_el_is_a_date_with_dd_mm_yyyy_format() -> None:

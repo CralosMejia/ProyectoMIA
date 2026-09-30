@@ -109,6 +109,9 @@ class GestionRetencion(IdMixin, TimestampMixin, SoftDeleteMixin, Base):
     prediccion_id: Mapped[int] = mapped_column(BigInteger, _fk("predicciones.id"), nullable=False)
     membresia_id: Mapped[int] = mapped_column(BigInteger, _fk("membresias.id"), nullable=False)
     campania_id: Mapped[int | None] = mapped_column(BigInteger, _fk("campanias.id"), nullable=True)
+    # RN-08.2 (R-009 decision (c)): nombre de la campana al asignarla; editarla o inactivarla
+    # despues no cambia la gestion. Nulo si y solo si ``campania_id`` es nulo.
+    campania_nombre: Mapped[str | None] = mapped_column(Text, nullable=True)
     fecha_asignacion: Mapped[date] = mapped_column(Date, nullable=False)
     fecha_seguimiento: Mapped[date] = mapped_column(Date, nullable=False)
     estado: Mapped[str] = mapped_column(Text, nullable=False)
@@ -126,6 +129,9 @@ class GestionRetencion(IdMixin, TimestampMixin, SoftDeleteMixin, Base):
         check_in("campania_ofrecida", RESPUESTAS_OFRECIMIENTO),
         check_in("campania_aceptada", RESPUESTAS_ACEPTACION),
         check_in("renovo_declarado", RESPUESTAS_RENOVACION),
+        CheckConstraint(
+            "(campania_id IS NULL) = (campania_nombre IS NULL)", name="campania_nombre_coherente"
+        ),
         # RN-08.1: una sola gestion activa por ciclo de membresia.
         Index(
             "ux_gestiones_retencion_membresia_id",

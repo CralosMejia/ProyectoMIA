@@ -1,7 +1,7 @@
 """Migraciones ``0001`` (esquema), ``0002`` (fila de ``estado_sistema``), ``0003``
 (``membresias.socio_id NOT NULL``), ``0004`` (``membresias.fecha_actividad``), ``0005``
-(indice de socios sin cedula por nombre) y ``0006`` (``listas_priorizadas.nombre``) contra
-PostgreSQL 16.
+(indice de socios sin cedula por nombre), ``0006`` (``listas_priorizadas.nombre``), ``0007``
+(campanas de ejemplo) y ``0008`` (``gestiones_retencion.campania_nombre``) contra PostgreSQL 16.
 
 Sin login (RT-12): no hay ``user_id``; las pruebas de aislamiento entre usuarios no aplican.
 Cada prueba deja la base como la encontro: transaccion con rollback, o ciclo de migraciones
@@ -27,7 +27,7 @@ pytestmark = pytest.mark.integration
 BUSINESS_TABLES = set(Base.metadata.tables)
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 LITERAL = re.compile(r"'([A-Z0-9_]+)'")
-HEAD = "0006"
+HEAD = "0008"
 
 
 # ------------------------------------------------------------------ guarda de la BD de pruebas
@@ -582,6 +582,11 @@ def _conteos(engine: Engine) -> dict[str, int]:
         }
 
 
+def _conteos_sin_campanias(engine: Engine) -> dict[str, int]:
+    """Conteos salvo ``campanias``: subir hasta ``head`` vuelve a aplicar ``0007`` (ejemplos)."""
+    return {tabla: n for tabla, n in _conteos(engine).items() if tabla != "campanias"}
+
+
 def test_0006_nombre_is_not_null(migrated_engine: Engine) -> None:
     assert "nombre" in _columnas(migrated_engine, "listas_priorizadas")
     assert _is_nullable(migrated_engine, "listas_priorizadas", "nombre") is False
@@ -620,7 +625,7 @@ def test_0006_upgrade_fills_default_name_from_fecha_generacion(
             segunda = lista(
                 connection, con_nombre=False, version=2, fecha_generacion=date(2027, 1, 5)
             )
-        antes = _conteos(migrated_engine)
+        antes = _conteos_sin_campanias(migrated_engine)
 
         command.upgrade(alembic_config, "head")
 
@@ -631,7 +636,7 @@ def test_0006_upgrade_fills_default_name_from_fecha_generacion(
                 connection.execute(text("SELECT id, nombre FROM listas_priorizadas")).tuples().all()
             )
         assert nombres == {primera: "Lista del 29 sep 2026", segunda: "Lista del 5 ene 2027"}
-        assert _conteos(migrated_engine) == antes
+        assert _conteos_sin_campanias(migrated_engine) == antes
     finally:
         _vaciar_listas(migrated_engine)
         command.upgrade(alembic_config, "head")
@@ -648,6 +653,277 @@ def test_0006_downgrade_removes_column_and_upgrade_over_empty_base_restores_it(
         command.upgrade(alembic_config, "head")
     assert _revision_actual(migrated_engine) == HEAD
     assert _is_nullable(migrated_engine, "listas_priorizadas", "nombre") is False
+    command.check(alembic_config)
+
+
+# ------------------------------------------------------------------ 0007: campanas de ejemplo
+TODOS_LOS_PLANES = ["MENSUAL", "TRIMESTRAL", "SEMESTRAL", "ANUAL", "OTRO"]
+CAMPANIAS_EJEMPLO = [
+    (
+        "Ejemplo: Llamada personal antes del vencimiento",
+        "Llamar al socio antes de que venza su plan para recordarle sus avances y resolver dudas.",
+        ["ALTO"],
+        TODOS_LOS_PLANES,
+        1,
+    ),
+    (
+        "Ejemplo: Renovación anticipada",
+        "Ofrecer renovar antes del vencimiento con el beneficio que Mtabolic defina.",
+        ["ALTO", "MEDIO"],
+        ["MENSUAL", "TRIMESTRAL"],
+        2,
+    ),
+    (
+        "Ejemplo: Recordatorio de renovación",
+        "Enviar un recordatorio amable de la fecha de vencimiento.",
+        ["MEDIO", "BAJO"],
+        TODOS_LOS_PLANES,
+        3,
+    ),
+]
+NOMBRES_EJEMPLO = [c[0] for c in CAMPANIAS_EJEMPLO]
+
+
+def _campanias(engine: Engine) -> list[tuple[object, ...]]:
+    with engine.connect() as connection:
+        filas = connection.execute(
+            text(
+                "SELECT nombre, descripcion, niveles_riesgo, planes, prioridad, es_ejemplo, "
+                "activa, deleted_at IS NULL FROM campanias ORDER BY prioridad, id"
+            )
+        ).all()
+    return [tuple(f) for f in filas]
+
+
+def _nombres_ejemplo(engine: Engine) -> list[tuple[str, bool]]:
+    with engine.connect() as connection:
+        filas = connection.execute(
+            text(
+                "SELECT nombre, es_ejemplo FROM campanias WHERE nombre = ANY(:nombres) "
+                "ORDER BY nombre, id"
+            ),
+            {"nombres": NOMBRES_EJEMPLO},
+        ).all()
+    return [(str(f[0]), bool(f[1])) for f in filas]
+
+
+def test_0007_inserts_the_three_example_campaigns(migrated_engine: Engine) -> None:
+    esperado = [
+        (nombre, descripcion, niveles, planes, prioridad, True, True, True)
+        for nombre, descripcion, niveles, planes, prioridad in CAMPANIAS_EJEMPLO
+    ]
+
+    assert _campanias(migrated_engine) == esperado
+
+
+def test_0007_upgrade_skips_existing_name_and_downgrade_keeps_manual_campaign(
+    migrated_engine: Engine, alembic_config: Config
+) -> None:
+    command.downgrade(alembic_config, "0006")
+    manual_id: int | None = None
+    try:
+        assert _nombres_ejemplo(migrated_engine) == []
+        with migrated_engine.begin() as connection:
+            manual_id = campania(
+                connection, nombre="Ejemplo: Renovación anticipada", es_ejemplo=False
+            )
+        antes = _conteos_sin_campanias(migrated_engine)
+
+        command.upgrade(alembic_config, "head")
+
+        assert _nombres_ejemplo(migrated_engine) == [
+            ("Ejemplo: Llamada personal antes del vencimiento", True),
+            ("Ejemplo: Recordatorio de renovación", True),
+            ("Ejemplo: Renovación anticipada", False),
+        ]
+
+        command.downgrade(alembic_config, "0006")
+
+        assert _nombres_ejemplo(migrated_engine) == [("Ejemplo: Renovación anticipada", False)]
+        assert _conteos_sin_campanias(migrated_engine) == antes
+    finally:
+        if manual_id is not None:
+            with migrated_engine.begin() as connection:
+                connection.execute(text("DELETE FROM campanias WHERE id = :id"), {"id": manual_id})
+        command.upgrade(alembic_config, "head")
+    assert _revision_actual(migrated_engine) == HEAD
+    assert len(_campanias(migrated_engine)) == 3
+
+
+def test_0007_downgrade_with_gestion_using_example_fails_and_deletes_nothing(
+    migrated_engine: Engine, alembic_config: Config
+) -> None:
+    with migrated_engine.begin() as connection:
+        campania_id = connection.execute(
+            text("SELECT id FROM campanias WHERE es_ejemplo ORDER BY prioridad LIMIT 1")
+        ).scalar_one()
+        gestion_id = gestion(connection, membresia(connection))
+        connection.execute(
+            text(
+                "UPDATE gestiones_retencion SET campania_id = c.id, campania_nombre = c.nombre "
+                "FROM campanias c WHERE c.id = :c AND gestiones_retencion.id = :g"
+            ),
+            {"c": campania_id, "g": gestion_id},
+        )
+    antes = _conteos(migrated_engine)
+    try:
+        with pytest.raises(RuntimeError, match="gestiones que usan campanas de ejemplo"):
+            command.downgrade(alembic_config, "0006")
+
+        assert _revision_actual(migrated_engine) == HEAD
+        assert _conteos(migrated_engine) == antes
+        assert len(_campanias(migrated_engine)) == 3
+    finally:
+        _borrar_gestion_y_dependencias(migrated_engine, gestion_id)
+    assert _revision_actual(migrated_engine) == HEAD
+
+
+def _borrar_gestion_y_dependencias(engine: Engine, gestion_id: int) -> None:
+    """Borra la gestion de la prueba y las filas que creo ``gestion()`` para ella."""
+    with engine.begin() as connection:
+        ids = (
+            connection.execute(
+                text(
+                    "SELECT g.prediccion_id, p.lista_id, l.modelo_id, g.membresia_id, "
+                    "m.socio_id, m.carga_id FROM gestiones_retencion g "
+                    "JOIN predicciones p ON p.id = g.prediccion_id "
+                    "JOIN listas_priorizadas l ON l.id = p.lista_id "
+                    "JOIN membresias m ON m.id = g.membresia_id WHERE g.id = :g"
+                ),
+                {"g": gestion_id},
+            )
+            .mappings()
+            .one()
+        )
+        connection.execute(
+            text("DELETE FROM gestiones_retencion WHERE id = :id"), {"id": gestion_id}
+        )
+        for tabla, clave in (
+            ("predicciones", "prediccion_id"),
+            ("listas_priorizadas", "lista_id"),
+            ("modelos", "modelo_id"),
+            ("membresias", "membresia_id"),
+            ("socios", "socio_id"),
+            ("cargas", "carga_id"),
+        ):
+            connection.execute(
+                text(f"DELETE FROM {tabla} WHERE id = :id"),  # noqa: S608 - nombres fijos
+                {"id": ids[clave]},
+            )
+
+
+# ------------------------------------------------------------------ 0008: campania_nombre
+CHECK_NOMBRE_COHERENTE = "ck_gestiones_retencion_campania_nombre_coherente"
+
+
+def _gestion_nueva(conn: Connection, **values: object) -> None:
+    """INSERT directo de una gestion sobre la prediccion creada por ``gestion()``."""
+    membresia_id = membresia(conn)
+    gestion_id = gestion(conn, membresia_id)
+    prediccion_id = conn.execute(
+        text("SELECT prediccion_id FROM gestiones_retencion WHERE id = :g"), {"g": gestion_id}
+    ).scalar_one()
+    conn.execute(text("DELETE FROM gestiones_retencion WHERE id = :g"), {"g": gestion_id})
+    insert(
+        conn,
+        "gestiones_retencion",
+        {
+            "prediccion_id": prediccion_id,
+            "membresia_id": membresia_id,
+            "fecha_asignacion": NOW.date(),
+            "fecha_seguimiento": NOW.date(),
+            "estado": "PENDIENTE",
+            **values,
+        },
+    )
+
+
+def test_0008_campania_nombre_is_nullable(migrated_engine: Engine) -> None:
+    assert "campania_nombre" in _columnas(migrated_engine, "gestiones_retencion")
+    assert _is_nullable(migrated_engine, "gestiones_retencion", "campania_nombre") is True
+
+
+@pytest.mark.parametrize(
+    ("con_campania", "campania_nombre"),
+    [(True, None), (False, "Campaña sin id")],
+    ids=["campania-sin-nombre", "nombre-sin-campania"],
+)
+def test_gestion_with_incoherent_campania_nombre_is_rejected(
+    conn: Connection, con_campania: bool, campania_nombre: str | None
+) -> None:
+    campania_id = campania(conn, nombre="Campaña", es_ejemplo=False) if con_campania else None
+    with pytest.raises(IntegrityError, match=CHECK_NOMBRE_COHERENTE):
+        _gestion_nueva(conn, campania_id=campania_id, campania_nombre=campania_nombre)
+
+
+def test_gestion_with_coherent_campania_nombre_is_stored(conn: Connection) -> None:
+    campania_id = campania(conn, nombre="Campaña", es_ejemplo=False)
+    _gestion_nueva(conn, campania_id=campania_id, campania_nombre="Campaña")
+    _gestion_nueva(conn, campania_id=None, campania_nombre=None)
+
+
+def test_0008_upgrade_fills_campania_nombre_and_adds_check(
+    migrated_engine: Engine, alembic_config: Config
+) -> None:
+    command.downgrade(alembic_config, "0007")
+    gestiones: list[int] = []
+    campania_id: int | None = None
+    try:
+        assert _revision_actual(migrated_engine) == "0007"
+        assert "campania_nombre" not in _columnas(migrated_engine, "gestiones_retencion")
+        with migrated_engine.begin() as connection:
+            campania_id = campania(connection, nombre="Campaña manual", es_ejemplo=False)
+            con_campania = gestion(connection, membresia(connection))
+            sin_campania = gestion(connection, membresia(connection))
+            connection.execute(
+                text("UPDATE gestiones_retencion SET campania_id = :c WHERE id = :g"),
+                {"c": campania_id, "g": con_campania},
+            )
+            gestiones = [con_campania, sin_campania]
+        antes = _conteos(migrated_engine)
+
+        command.upgrade(alembic_config, "head")
+
+        assert _revision_actual(migrated_engine) == HEAD
+        with migrated_engine.connect() as connection:
+            nombres = dict(
+                connection.execute(text("SELECT id, campania_nombre FROM gestiones_retencion"))
+                .tuples()
+                .all()
+            )
+        assert nombres == {con_campania: "Campaña manual", sin_campania: None}
+        assert _conteos(migrated_engine) == antes
+        with (
+            migrated_engine.connect() as connection,
+            pytest.raises(IntegrityError, match=CHECK_NOMBRE_COHERENTE),
+        ):
+            connection.execute(
+                text("UPDATE gestiones_retencion SET campania_nombre = NULL WHERE id = :g"),
+                {"g": con_campania},
+            )
+    finally:
+        for gestion_id in gestiones:
+            _borrar_gestion_y_dependencias(migrated_engine, gestion_id)
+        if campania_id is not None:
+            with migrated_engine.begin() as connection:
+                connection.execute(
+                    text("DELETE FROM campanias WHERE id = :id"), {"id": campania_id}
+                )
+        command.upgrade(alembic_config, "head")
+    assert _revision_actual(migrated_engine) == HEAD
+
+
+def test_0008_downgrade_removes_column_and_upgrade_over_empty_base_restores_it(
+    migrated_engine: Engine, alembic_config: Config
+) -> None:
+    command.downgrade(alembic_config, "0007")
+    try:
+        assert _revision_actual(migrated_engine) == "0007"
+        assert "campania_nombre" not in _columnas(migrated_engine, "gestiones_retencion")
+    finally:
+        command.upgrade(alembic_config, "head")
+    assert _revision_actual(migrated_engine) == HEAD
+    assert "campania_nombre" in _columnas(migrated_engine, "gestiones_retencion")
     command.check(alembic_config)
 
 

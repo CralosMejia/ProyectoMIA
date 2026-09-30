@@ -9,12 +9,14 @@ Lecturas con SQLAlchemy Core (joins con ``modelos``, ``membresias`` y ``socios``
 es una instantanea inmutable (RN-04.5, RT-07): sus items se leen **sin** filtrar
 ``deleted_at`` de la membresia o del socio, para que un borrado logico posterior no altere
 una lista ya generada. ``listas_priorizadas`` y ``predicciones`` no tienen ``deleted_at``.
+Lo unico vivo de un item es la gestion de su ciclo (estado y campana al consultar), que llega
+en la misma consulta de items con un ``LEFT JOIN`` por ``membresia_id`` (sin N+1).
 """
 
 from collections.abc import Sequence
 from datetime import date, datetime
 
-from sqlalchemy import Row, func, insert, select
+from sqlalchemy import Row, and_, func, insert, select
 from sqlalchemy.orm import Session
 
 from app.application.listas.ports import (
@@ -25,10 +27,14 @@ from app.application.listas.ports import (
     NuevaPrediccion,
 )
 from app.domain.common.clock import Clock
-from app.domain.common.enums import NivelRiesgo, Plan
+from app.domain.common.enums import EstadoGestion, NivelRiesgo, Plan
 from app.infrastructure.persistence.models.historial import Carga, Membresia, Socio
 from app.infrastructure.persistence.models.modelo import Modelo
-from app.infrastructure.persistence.models.retencion import ListaPriorizada, Prediccion
+from app.infrastructure.persistence.models.retencion import (
+    GestionRetencion,
+    ListaPriorizada,
+    Prediccion,
+)
 
 
 def _vencimiento(valor: date | None) -> date:
@@ -55,6 +61,9 @@ def _item(fila: Row[tuple[object, ...]]) -> ItemLista:
         nivel_riesgo=NivelRiesgo(m["nivel_riesgo"]),
         factores_principales=[str(f) for f in m["factores_principales"]],
         dentro_top_k=m["dentro_top_k"],
+        gestion_id=m["gestion_id"],
+        gestion_estado=None if m["gestion_estado"] is None else EstadoGestion(m["gestion_estado"]),
+        campania_asignada=m["campania_asignada"],
     )
 
 
@@ -134,9 +143,21 @@ class SqlAlchemyListaRepository:
                 Prediccion.nivel_riesgo,
                 Prediccion.factores_principales,
                 Prediccion.dentro_top_k,
+                GestionRetencion.id.label("gestion_id"),
+                GestionRetencion.estado.label("gestion_estado"),
+                GestionRetencion.campania_nombre.label("campania_asignada"),
             )
             .join(Membresia, Membresia.id == Prediccion.membresia_id)
             .join(Socio, Socio.id == Membresia.socio_id)
+            # Gestion del ciclo (no de la prediccion): una sola por membresia no borrada
+            # (indice unico parcial), asi que el LEFT JOIN no duplica items (R-009 (i)).
+            .outerjoin(
+                GestionRetencion,
+                and_(
+                    GestionRetencion.membresia_id == Prediccion.membresia_id,
+                    GestionRetencion.deleted_at.is_(None),
+                ),
+            )
             .where(Prediccion.lista_id == lista_id)
             .order_by(Prediccion.prioridad, Prediccion.id)
         ).all()

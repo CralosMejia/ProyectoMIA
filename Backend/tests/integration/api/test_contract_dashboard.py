@@ -58,6 +58,16 @@ IMPLEMENTED_OPERATIONS = {
     ("get", "/api/v1/listas/ultima"),
     ("get", "/api/v1/listas/{lista_id}"),
     ("get", "/api/v1/listas/{lista_id}/excel"),
+    # R-009 T8: campanias y sugerencias.
+    ("get", "/api/v1/campanias"),
+    ("post", "/api/v1/campanias"),
+    ("put", "/api/v1/campanias/{campania_id}"),
+    ("post", "/api/v1/campanias/{campania_id}/inactivar"),
+    ("get", "/api/v1/predicciones/{prediccion_id}/campanias-sugeridas"),
+    # R-009 T12: gestiones (el filtro de pendientes y las alertas siguen en 501, dia 6).
+    ("post", "/api/v1/gestiones"),
+    ("get", "/api/v1/gestiones/{gestion_id}"),
+    ("put", "/api/v1/gestiones/{gestion_id}/resultado"),
 }
 
 

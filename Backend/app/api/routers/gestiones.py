@@ -1,13 +1,36 @@
 """Router del modulo gestiones: asignacion (CU-08), alertas (CU-09) y resultado (CU-10).
 
-Contrato publicado; la logica responde ``501`` hasta su dia del cronograma.
+Solo HTTP: valida la entrada, delega en los casos de uso y traduce sus errores a codigos de
+estado: ``404`` si la prediccion, la campana o la gestion no existen; ``409`` si el ciclo ya
+tiene gestion o la gestion esta cerrada; el resto de reglas de dominio (fecha fuera de rango,
+plazo terminado, campana que no aplica, resultado incoherente) -> ``422 domain_rule_violated``
+por el manejador global. ``GET /gestiones?filtro`` y ``GET /alertas`` siguen en ``501`` hasta
+el dia 6 del cronograma (R-009 decision (a)).
+
+Aislamiento entre usuarios: NO APLICA (RT-12, sin login; acceso restringido por IP, CU-00).
 """
 
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Path, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 
-from app.api.openapi import error_responses, raise_not_implemented, success_response
+from app.api.dependencies import get_consultar_gestion, get_crear_gestion, get_registrar_resultado
+from app.api.openapi import (
+    OpenApiResponses,
+    error_responses,
+    raise_not_implemented,
+    success_response,
+)
+from app.application.campanias.gestionar_campanias import (
+    MENSAJE_CAMPANIA_NO_EXISTE,
+    CampaniaNoExisteError,
+)
+from app.application.campanias.sugerir_campanias import (
+    MENSAJE_PREDICCION_NO_EXISTE,
+    PrediccionNoExisteError,
+)
+from app.application.gestiones.consultar_gestion import ConsultarGestion
+from app.application.gestiones.crear_gestion import CrearGestion
 from app.application.gestiones.dtos import (
     AlertasDTO,
     CrearGestionDTO,
@@ -16,6 +39,18 @@ from app.application.gestiones.dtos import (
     GestionResumenDTO,
     RegistrarResultadoDTO,
 )
+from app.application.gestiones.registrar_resultado import (
+    MENSAJE_GESTION_NO_EXISTE,
+    GestionNoExisteError,
+    RegistrarResultado,
+)
+from app.domain.gestiones.errores import (
+    MENSAJE_GESTION_CERRADA,
+    MENSAJE_GESTION_DUPLICADA,
+    GestionCerradaError,
+    GestionDuplicadaError,
+)
+from app.domain.gestiones.reglas import MENSAJE_NO_CONTACTADO
 
 router = APIRouter(tags=["gestiones"])
 
@@ -30,10 +65,10 @@ GESTION_EXAMPLE = {
     "modelo_version": "v1",
     "score": "0.81234567",
     "nivel_riesgo": "ALTO",
-    "campania_id": 3,
-    "campania_nombre": "Renovacion anticipada",
+    "campania_id": 2,
+    "campania_nombre": "Ejemplo: Renovación anticipada",
     "estado": "PENDIENTE",
-    "fecha_asignacion": "2026-09-28T15:30:00Z",
+    "fecha_asignacion": "2026-09-29T15:30:00Z",
     "fecha_seguimiento": "2026-10-30",
     "responsable": "Andrea",
     "contactado": None,
@@ -71,7 +106,74 @@ GESTIONES_RESUMEN_EXAMPLE = [
 ALERTAS_EXAMPLE = {"vencidas": 2, "hoy": 1, "proximos_7_dias": 5}
 
 _BAD_ID = "El identificador de la gestion no es valido."
-_GESTION_NO_EXISTE = "La gestion no existe."
+_MENSAJE_FECHA_FUERA = "La fecha de seguimiento debe estar entre 2026-09-29 y 2026-11-04."
+
+CREAR_REQUEST_EXAMPLES: dict[str, Any] = {
+    "con_campania": {
+        "summary": "Con campana sugerida",
+        "description": "La campana debe estar activa y aplicar al nivel y al plan del socio. "
+        "Fecha de seguimiento entre hoy y el vencimiento + 30 dias.",
+        "value": {
+            "prediccion_id": 1501,
+            "campania_id": 2,
+            "fecha_seguimiento": "2026-10-30",
+            "responsable": "Andrea",
+        },
+    },
+    "sin_campania": {
+        "summary": "No asignar campana",
+        "description": "``campania_id`` nulo: la gestion se crea sin campana.",
+        "value": {
+            "prediccion_id": 1501,
+            "campania_id": None,
+            "fecha_seguimiento": "2026-10-30",
+            "responsable": None,
+        },
+    },
+}
+RESULTADO_REQUEST_EXAMPLES: dict[str, Any] = {
+    "pendiente": {
+        "summary": "Contactado, aun sin renovar",
+        "description": "Renovo PENDIENTE: la gestion sigue abierta; ``fecha_seguimiento`` "
+        "reprograma el seguimiento (nula = se conserva).",
+        "value": {
+            "contactado": True,
+            "campania_ofrecida": "SI",
+            "campania_aceptada": "SI",
+            "renovo_declarado": "PENDIENTE",
+            "fecha_contacto": "2026-09-29",
+            "observaciones": "Acepta la propuesta; renovara la proxima semana.",
+            "responsable": "Andrea",
+            "fecha_seguimiento": "2026-10-27",
+        },
+    },
+    "cerrar": {
+        "summary": "Cerrar con Renovo No",
+        "description": "Renovo SI o NO cierra la gestion; ya no se puede modificar.",
+        "value": {
+            "contactado": False,
+            "campania_ofrecida": "NO_APLICA",
+            "campania_aceptada": "NO_APLICA",
+            "renovo_declarado": "NO",
+            "fecha_contacto": None,
+            "observaciones": None,
+            "responsable": "Andrea",
+            "fecha_seguimiento": None,
+        },
+    },
+}
+
+
+def _con_mensajes(responses: OpenApiResponses, mensajes: dict[int, str]) -> OpenApiResponses:
+    """Sustituye el ejemplo generico de cada codigo por el mensaje real de la operacion."""
+    for code, message in mensajes.items():
+        ejemplo = responses[code]["content"]["application/json"]
+        ejemplo["example"] = {"error": {**ejemplo["example"]["error"], "message": message}}
+    return responses
+
+
+def _error(codigo: int, mensaje: str) -> HTTPException:
+    return HTTPException(status_code=codigo, detail=mensaje)
 
 
 @router.post(
@@ -80,26 +182,43 @@ _GESTION_NO_EXISTE = "La gestion no existe."
     status_code=status.HTTP_201_CREATED,
     responses={
         **success_response(status.HTTP_201_CREATED, "Gestion creada.", GESTION_EXAMPLE),
-        **error_responses(
-            status.HTTP_400_BAD_REQUEST,
-            status.HTTP_403_FORBIDDEN,
-            status.HTTP_404_NOT_FOUND,
-            status.HTTP_409_CONFLICT,
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
-            status.HTTP_501_NOT_IMPLEMENTED,
-            descriptions={
-                status.HTTP_404_NOT_FOUND: "La prediccion o la campana no existen.",
-                status.HTTP_409_CONFLICT: "El ciclo de membresia ya tiene una gestion.",
-                status.HTTP_422_UNPROCESSABLE_CONTENT: (
-                    "La fecha de seguimiento esta fuera del rango de hoy al vencimiento + 30 dias."
-                ),
+        **_con_mensajes(
+            error_responses(
+                status.HTTP_400_BAD_REQUEST,
+                status.HTTP_403_FORBIDDEN,
+                status.HTTP_404_NOT_FOUND,
+                status.HTTP_409_CONFLICT,
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                descriptions={
+                    status.HTTP_404_NOT_FOUND: "La prediccion o la campana no existen.",
+                    status.HTTP_409_CONFLICT: MENSAJE_GESTION_DUPLICADA,
+                    status.HTTP_422_UNPROCESSABLE_CONTENT: (
+                        "Fecha de seguimiento fuera de [hoy, vencimiento + 30], plazo de "
+                        "seguimiento terminado o campana inactiva / que no aplica al socio."
+                    ),
+                },
+            ),
+            {
+                status.HTTP_404_NOT_FOUND: MENSAJE_PREDICCION_NO_EXISTE,
+                status.HTTP_409_CONFLICT: MENSAJE_GESTION_DUPLICADA,
+                status.HTTP_422_UNPROCESSABLE_CONTENT: _MENSAJE_FECHA_FUERA,
             },
         ),
     },
     summary="Asignar campana y crear el seguimiento",
 )
-def post_gestion(body: CrearGestionDTO) -> GestionDTO:
-    raise_not_implemented()
+def post_gestion(
+    body: Annotated[CrearGestionDTO, Body(openapi_examples=CREAR_REQUEST_EXAMPLES)],
+    crear: Annotated[CrearGestion, Depends(get_crear_gestion)],
+) -> GestionDTO:
+    try:
+        return crear.ejecutar(body)
+    except PrediccionNoExisteError:
+        raise _error(status.HTTP_404_NOT_FOUND, MENSAJE_PREDICCION_NO_EXISTE) from None
+    except CampaniaNoExisteError:
+        raise _error(status.HTTP_404_NOT_FOUND, MENSAJE_CAMPANIA_NO_EXISTE) from None
+    except GestionDuplicadaError:
+        raise _error(status.HTTP_409_CONFLICT, MENSAJE_GESTION_DUPLICADA) from None
 
 
 @router.get(
@@ -134,21 +253,29 @@ def get_gestiones(
     status_code=status.HTTP_200_OK,
     responses={
         **success_response(status.HTTP_200_OK, "Gestion.", GESTION_EXAMPLE),
-        **error_responses(
-            status.HTTP_400_BAD_REQUEST,
-            status.HTTP_403_FORBIDDEN,
-            status.HTTP_404_NOT_FOUND,
-            status.HTTP_501_NOT_IMPLEMENTED,
-            descriptions={
-                status.HTTP_400_BAD_REQUEST: _BAD_ID,
-                status.HTTP_404_NOT_FOUND: _GESTION_NO_EXISTE,
-            },
+        **_con_mensajes(
+            error_responses(
+                status.HTTP_400_BAD_REQUEST,
+                status.HTTP_403_FORBIDDEN,
+                status.HTTP_404_NOT_FOUND,
+                descriptions={
+                    status.HTTP_400_BAD_REQUEST: _BAD_ID,
+                    status.HTTP_404_NOT_FOUND: MENSAJE_GESTION_NO_EXISTE,
+                },
+            ),
+            {status.HTTP_404_NOT_FOUND: MENSAJE_GESTION_NO_EXISTE},
         ),
     },
     summary="Consultar una gestion",
 )
-def get_gestion(gestion_id: GestionId) -> GestionDTO:
-    raise_not_implemented()
+def get_gestion(
+    gestion_id: GestionId,
+    consultar: Annotated[ConsultarGestion, Depends(get_consultar_gestion)],
+) -> GestionDTO:
+    try:
+        return consultar.ejecutar(gestion_id)
+    except GestionNoExisteError:
+        raise _error(status.HTTP_404_NOT_FOUND, MENSAJE_GESTION_NO_EXISTE) from None
 
 
 @router.put(
@@ -159,26 +286,41 @@ def get_gestion(gestion_id: GestionId) -> GestionDTO:
         **success_response(
             status.HTTP_200_OK, "Resultado registrado.", GESTION_CON_RESULTADO_EXAMPLE
         ),
-        **error_responses(
-            status.HTTP_400_BAD_REQUEST,
-            status.HTTP_403_FORBIDDEN,
-            status.HTTP_404_NOT_FOUND,
-            status.HTTP_409_CONFLICT,
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
-            status.HTTP_501_NOT_IMPLEMENTED,
-            descriptions={
-                status.HTTP_404_NOT_FOUND: _GESTION_NO_EXISTE,
-                status.HTTP_409_CONFLICT: "La gestion esta cerrada y no se puede modificar.",
-                status.HTTP_422_UNPROCESSABLE_CONTENT: (
-                    "Respuestas incoherentes o fecha de seguimiento fuera de rango."
-                ),
+        **_con_mensajes(
+            error_responses(
+                status.HTTP_400_BAD_REQUEST,
+                status.HTTP_403_FORBIDDEN,
+                status.HTTP_404_NOT_FOUND,
+                status.HTTP_409_CONFLICT,
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                descriptions={
+                    status.HTTP_404_NOT_FOUND: MENSAJE_GESTION_NO_EXISTE,
+                    status.HTTP_409_CONFLICT: MENSAJE_GESTION_CERRADA,
+                    status.HTTP_422_UNPROCESSABLE_CONTENT: (
+                        "Respuestas incoherentes o fecha de seguimiento fuera de rango."
+                    ),
+                },
+            ),
+            {
+                status.HTTP_404_NOT_FOUND: MENSAJE_GESTION_NO_EXISTE,
+                status.HTTP_409_CONFLICT: MENSAJE_GESTION_CERRADA,
+                status.HTTP_422_UNPROCESSABLE_CONTENT: MENSAJE_NO_CONTACTADO,
             },
         ),
     },
     summary="Registrar el resultado del seguimiento",
 )
-def put_resultado_gestion(gestion_id: GestionId, body: RegistrarResultadoDTO) -> GestionDTO:
-    raise_not_implemented()
+def put_resultado_gestion(
+    gestion_id: GestionId,
+    body: Annotated[RegistrarResultadoDTO, Body(openapi_examples=RESULTADO_REQUEST_EXAMPLES)],
+    registrar: Annotated[RegistrarResultado, Depends(get_registrar_resultado)],
+) -> GestionDTO:
+    try:
+        return registrar.ejecutar(gestion_id, body)
+    except GestionNoExisteError:
+        raise _error(status.HTTP_404_NOT_FOUND, MENSAJE_GESTION_NO_EXISTE) from None
+    except GestionCerradaError:
+        raise _error(status.HTTP_409_CONFLICT, MENSAJE_GESTION_CERRADA) from None
 
 
 @router.get(

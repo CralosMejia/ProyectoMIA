@@ -72,6 +72,9 @@ def a_dto(lista: ListaDetalle, advertencia: bool) -> ListaPriorizadaDTO:
                 nivel_riesgo=item.nivel_riesgo,
                 factores_principales=list(item.factores_principales),
                 dentro_top_k=item.dentro_top_k,
+                gestion_id=item.gestion_id,
+                gestion_estado=item.gestion_estado,
+                campania_asignada=item.campania_asignada,
             )
             for item in lista.items
         ],

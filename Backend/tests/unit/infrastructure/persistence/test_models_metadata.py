@@ -528,5 +528,16 @@ def test_gestiones_retencion_columns() -> None:
     assert cerrada.nullable is True
 
 
+def test_gestiones_retencion_campania_nombre_is_nullable_text_coherent_with_campania_id() -> None:
+    """RN-08.2 (R-009 T4): instantanea del nombre, nula si y solo si no hay campana."""
+    t = "gestiones_retencion"
+    nombre = col(t, "campania_nombre")
+    assert isinstance(nombre.type, Text)
+    assert nombre.nullable is True
+    assert check_sql(t, "campania_nombre_coherente").replace(" ", "") == (
+        "(campania_idISNULL)=(campania_nombreISNULL)"
+    )
+
+
 def test_table_objects_are_sqlalchemy_tables() -> None:
     assert all(isinstance(t, Table) for t in TABLES.values())

@@ -68,6 +68,7 @@ CAMPOS_ITEM = {
     "nivel_riesgo",
     "factores_principales",
     "dentro_top_k",
+    "gestion_id",
     "gestion_estado",
     "campania_asignada",
 }
@@ -149,6 +150,7 @@ def test_post_listas_after_synthetic_migration_returns_201_with_frontend_contrac
         assert isinstance(item["factores_principales"], list)
         assert all(isinstance(f, str) for f in item["factores_principales"])
         assert isinstance(item["dentro_top_k"], bool)
+        assert item["gestion_id"] is None
         assert item["gestion_estado"] is None
         assert item["campania_asignada"] is None
     assert [i["prioridad"] for i in items] == list(range(1, len(items) + 1))

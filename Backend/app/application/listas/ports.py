@@ -17,7 +17,7 @@ from typing import Protocol, runtime_checkable
 
 from app.application.historial.ports import MembresiaRepository
 from app.application.modelo.ports import EstadoSistemaRepository, ModeloRepository
-from app.domain.common.enums import NivelRiesgo, Plan
+from app.domain.common.enums import EstadoGestion, NivelRiesgo, Plan
 from app.domain.listas.nombre import LONGITUD_MAXIMA_NOMBRE
 
 _CERO = Decimal(0)
@@ -67,7 +67,13 @@ class NuevaPrediccion:
 
 @dataclass(frozen=True, slots=True)
 class ItemLista:
-    """Una prediccion guardada con los datos del socio y de la membresia."""
+    """Una prediccion guardada con los datos del socio y de la membresia.
+
+    ``gestion_id``, ``gestion_estado`` y ``campania_asignada`` son los de la gestion no borrada
+    del **ciclo** (``membresia_id``) al momento de consultar, aunque se creara desde otra lista;
+    los tres nulos si el ciclo no tiene gestion. ``campania_asignada`` es la instantanea del
+    nombre (RN-08.2) y es nula si la gestion no tiene campana.
+    """
 
     prediccion_id: int
     membresia_id: int
@@ -83,6 +89,9 @@ class ItemLista:
     nivel_riesgo: NivelRiesgo
     factores_principales: list[str]
     dentro_top_k: bool
+    gestion_id: int | None = None
+    gestion_estado: EstadoGestion | None = None
+    campania_asignada: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

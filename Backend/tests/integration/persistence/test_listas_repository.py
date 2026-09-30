@@ -18,11 +18,18 @@ from sqlalchemy import Engine, event, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.application.gestiones.ports import NuevaGestion
 from app.application.historial.ports import NuevaCarga, NuevaMembresia, NuevoSocio
-from app.application.listas.ports import ListaRepository, NuevaLista, NuevaPrediccion
+from app.application.listas.ports import (
+    ListaDetalle,
+    ListaRepository,
+    NuevaLista,
+    NuevaPrediccion,
+)
 from app.application.modelo.ports import NuevoModelo
 from app.domain.common.enums import FormaPago, NivelRiesgo, OrigenMembresia, Plan, TipoCarga
 from app.infrastructure.persistence.repositories import listas as modulo_repositorio
+from app.infrastructure.persistence.repositories.gestiones import SqlAlchemyGestionRepository
 from app.infrastructure.persistence.repositories.historial import (
     SqlAlchemyCargaRepository,
     SqlAlchemyMembresiaRepository,
@@ -459,3 +466,135 @@ def test_listar_with_names_is_a_single_query(
 
     assert len(resumen) == 3
     assert len(consultas) == 1
+
+
+# ------------------------------------------------------------------ R-009 T14: gestion del ciclo
+def _gestion(
+    session: Session,
+    reloj: RelojAjustable,
+    prediccion_id: int,
+    membresia_id: int,
+    campania: str | None = None,
+) -> int:
+    campania_id = None
+    if campania is not None:
+        campania_id = session.execute(
+            text(
+                "INSERT INTO campanias (nombre, activa, niveles_riesgo, planes, prioridad, "
+                "es_ejemplo, created_at, updated_at) VALUES (:n, true, :niveles, :planes, 1, "
+                "false, :t, :t) RETURNING id"
+            ),
+            {"n": campania, "niveles": ["ALTO"], "planes": ["MENSUAL"], "t": INSTANTE},
+        ).scalar_one()
+    return SqlAlchemyGestionRepository(session, reloj).crear(
+        NuevaGestion(
+            prediccion_id=prediccion_id,
+            membresia_id=membresia_id,
+            campania_id=campania_id,
+            campania_nombre=campania,
+            fecha_asignacion=date(2026, 9, 1),
+            fecha_seguimiento=date(2026, 9, 20),
+            responsable=None,
+        )
+    )
+
+
+def _gestiones(detalle: ListaDetalle | None) -> list[tuple[int | None, str | None, str | None]]:
+    assert detalle is not None
+    return [
+        (
+            i.gestion_id,
+            None if i.gestion_estado is None else i.gestion_estado.value,
+            i.campania_asignada,
+        )
+        for i in detalle.items
+    ]
+
+
+def test_obtener_shows_the_cycle_gestion_in_every_list_that_contains_the_membership(
+    db_session: Session,
+    repo: SqlAlchemyListaRepository,
+    escenario: Escenario,
+    reloj: RelojAjustable,
+) -> None:
+    lista_1 = repo.crear(nueva_lista(escenario), predicciones(escenario)[-3:])
+    lista_2 = repo.crear(nueva_lista(escenario), predicciones(escenario)[-3:])
+    primera = repo.obtener(lista_1)
+    assert primera is not None
+    item_1, item_2, _ = primera.items
+    con_campania = _gestion(
+        db_session, reloj, item_1.prediccion_id, item_1.membresia_id, "Campaña sintetica"
+    )
+    sin_campania = _gestion(db_session, reloj, item_2.prediccion_id, item_2.membresia_id)
+    db_session.execute(
+        text("UPDATE gestiones_retencion SET estado = 'CERRADA', cerrada_en = :t WHERE id = :g"),
+        {"t": INSTANTE, "g": sin_campania},
+    )
+    esperado = [
+        (con_campania, "PENDIENTE", "Campaña sintetica"),
+        (sin_campania, "CERRADA", None),
+        (None, None, None),
+    ]
+
+    assert _gestiones(repo.obtener(lista_1)) == esperado
+    assert _gestiones(repo.obtener(lista_2)) == esperado
+    assert _gestiones(repo.ultima()) == esperado
+
+
+def test_obtener_ignores_gestion_with_deleted_at_and_keeps_campaign_snapshot(
+    db_session: Session,
+    repo: SqlAlchemyListaRepository,
+    escenario: Escenario,
+    reloj: RelojAjustable,
+) -> None:
+    lista_id = repo.crear(nueva_lista(escenario), predicciones(escenario)[-2:])
+    detalle = repo.obtener(lista_id)
+    assert detalle is not None
+    item_1, item_2 = detalle.items
+    borrada = _gestion(db_session, reloj, item_1.prediccion_id, item_1.membresia_id)
+    viva = _gestion(db_session, reloj, item_2.prediccion_id, item_2.membresia_id, "Original")
+    db_session.execute(
+        text("UPDATE gestiones_retencion SET deleted_at = :t WHERE id = :g"),
+        {"t": INSTANTE, "g": borrada},
+    )
+    db_session.execute(text("UPDATE campanias SET nombre = 'Renombrada' WHERE nombre = 'Original'"))
+
+    assert _gestiones(repo.obtener(lista_id)) == [
+        (None, None, None),
+        (viva, "PENDIENTE", "Original"),
+    ]
+    assert len(detalle.items) == 2
+
+
+def test_obtener_with_gestiones_reads_items_in_a_single_query(
+    db_session: Session,
+    repo: SqlAlchemyListaRepository,
+    escenario: Escenario,
+    reloj: RelojAjustable,
+    migrated_engine: Engine,
+) -> None:
+    lista_id = repo.crear(nueva_lista(escenario), predicciones(escenario))
+    detalle = repo.obtener(lista_id)
+    assert detalle is not None
+    for item in detalle.items[:5]:
+        _gestion(db_session, reloj, item.prediccion_id, item.membresia_id)
+    consultas: list[str] = []
+
+    def escuchar(
+        conn: object, cursor: object, sql: str, params: object, context: object, many: bool
+    ) -> None:
+        if sql.lstrip().upper().startswith("SELECT"):
+            consultas.append(sql)
+
+    event.listen(migrated_engine, "before_cursor_execute", escuchar)
+    try:
+        con_gestiones = repo.obtener(lista_id)
+    finally:
+        event.remove(migrated_engine, "before_cursor_execute", escuchar)
+
+    assert con_gestiones is not None
+    assert len(con_gestiones.items) == TOTAL
+    assert sum(i.gestion_id is not None for i in con_gestiones.items) == 5
+    # Cabecera + items: la gestion llega en la consulta de items (LEFT JOIN), sin N+1.
+    assert len(consultas) == 2
+    assert sum("gestiones_retencion" in c for c in consultas) == 1

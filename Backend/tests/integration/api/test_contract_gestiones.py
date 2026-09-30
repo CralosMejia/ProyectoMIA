@@ -1,4 +1,9 @@
-"""Contrato de ``gestiones`` y ``alertas`` (CU-08, CU-09, CU-10), publicados en ``501``.
+"""Contrato de ``gestiones`` y ``alertas`` (CU-08, CU-09, CU-10).
+
+``POST /gestiones``, ``GET /gestiones/{id}`` y ``PUT /gestiones/{id}/resultado`` son reales
+desde R-009 (T12); su comportamiento con datos se prueba en ``test_gestiones_api.py``. Aqui
+quedan la validacion de entrada, el ``404`` sin datos y el contrato OpenAPI.
+``GET /gestiones?filtro`` y ``GET /alertas`` siguen en ``501`` (dia 6).
 
 Aislamiento entre usuarios: NO APLICA. No hay login (RT-12): el acceso se controla por IP
 (CU-00) y no existe un propietario de datos por usuario.
@@ -8,6 +13,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import Engine
 
 from app.application.gestiones.dtos import (
     RESPUESTAS_ACEPTACION_DTO,
@@ -31,6 +37,8 @@ from tests.integration.api.contract_helpers import (
 
 pytestmark = pytest.mark.integration
 
+INEXISTENTE = 999_999
+
 GESTIONES_PATH = "/api/v1/gestiones"
 CREAR_BODY: dict[str, Any] = {
     "prediccion_id": 15,
@@ -50,14 +58,27 @@ RESULTADO_BODY: dict[str, Any] = {
 }
 
 
-def test_post_gestiones_valid_body_returns_501(contract_client: TestClient) -> None:
-    assert_not_implemented(contract_client.post(GESTIONES_PATH, json=CREAR_BODY))
+def assert_not_found(response: Any, message: str) -> None:
+    assert response.status_code == 404, response.text
+    assert response.json() == {"error": {"code": "not_found", "message": message}}
 
 
-def test_post_gestiones_without_campania_returns_501(contract_client: TestClient) -> None:
-    body = {"prediccion_id": 15, "fecha_seguimiento": "2026-10-25"}
+def test_post_gestiones_valid_body_unknown_prediccion_returns_404(
+    migrated_engine: Engine, contract_client: TestClient
+) -> None:
+    body = {**CREAR_BODY, "prediccion_id": INEXISTENTE}
 
-    assert_not_implemented(contract_client.post(GESTIONES_PATH, json=body))
+    response = contract_client.post(GESTIONES_PATH, json=body)
+
+    assert_not_found(response, "La prediccion no existe.")
+
+
+def test_post_gestiones_without_campania_unknown_prediccion_returns_404(
+    migrated_engine: Engine, contract_client: TestClient
+) -> None:
+    body = {"prediccion_id": INEXISTENTE, "fecha_seguimiento": "2026-10-25"}
+
+    assert_not_found(contract_client.post(GESTIONES_PATH, json=body), "La prediccion no existe.")
 
 
 @pytest.mark.parametrize(
@@ -78,18 +99,26 @@ def test_post_gestiones_invalid_body_returns_400(
     assert_validation_error(contract_client.post(GESTIONES_PATH, json=body))
 
 
-def test_get_gestion_returns_501(contract_client: TestClient) -> None:
-    assert_not_implemented(contract_client.get(f"{GESTIONES_PATH}/9"))
+def test_get_gestion_unknown_returns_404(
+    migrated_engine: Engine, contract_client: TestClient
+) -> None:
+    response = contract_client.get(f"{GESTIONES_PATH}/{INEXISTENTE}")
+
+    assert_not_found(response, "La gestion no existe.")
 
 
 def test_get_gestion_invalid_id_returns_400(contract_client: TestClient) -> None:
     assert_validation_error(contract_client.get(f"{GESTIONES_PATH}/abc"))
 
 
-def test_put_resultado_valid_body_returns_501(contract_client: TestClient) -> None:
-    response = contract_client.put(f"{GESTIONES_PATH}/9/resultado", json=RESULTADO_BODY)
+def test_put_resultado_valid_body_unknown_gestion_returns_404(
+    migrated_engine: Engine, contract_client: TestClient
+) -> None:
+    path = f"{GESTIONES_PATH}/{INEXISTENTE}/resultado"
 
-    assert_not_implemented(response)
+    response = contract_client.put(path, json=RESULTADO_BODY)
+
+    assert_not_found(response, "La gestion no existe.")
 
 
 @pytest.mark.parametrize(
@@ -141,17 +170,17 @@ def test_alertas_dto_rejects_negative_counters() -> None:
 
 def test_openapi_gestiones_operations_declare_examples(openapi_spec: dict[str, Any]) -> None:
     crear = assert_operation_contract(
-        openapi_spec, "post", GESTIONES_PATH, 201, (400, 403, 404, 409, 422, 501), GestionDTO
+        openapi_spec, "post", GESTIONES_PATH, 201, (400, 403, 404, 409, 422), GestionDTO
     )
     assert_operation_contract(
-        openapi_spec, "get", "/api/v1/gestiones/{gestion_id}", 200, (400, 403, 404, 501), GestionDTO
+        openapi_spec, "get", "/api/v1/gestiones/{gestion_id}", 200, (400, 403, 404), GestionDTO
     )
     resultado = assert_operation_contract(
         openapi_spec,
         "put",
         "/api/v1/gestiones/{gestion_id}/resultado",
         200,
-        (400, 403, 404, 409, 422, 501),
+        (400, 403, 404, 409, 422),
         GestionDTO,
     )
     assert_operation_contract(
@@ -166,22 +195,22 @@ def test_openapi_gestiones_operations_declare_examples(openapi_spec: dict[str, A
     assert schemas["RegistrarResultadoDTO"].get("examples")
 
 
-def test_post_gestiones_boundary_responsable_120_returns_501(
-    contract_client: TestClient,
+def test_post_gestiones_boundary_responsable_120_passes_validation(
+    migrated_engine: Engine, contract_client: TestClient
 ) -> None:
-    body = {**CREAR_BODY, "responsable": "x" * 120}
+    body = {**CREAR_BODY, "prediccion_id": INEXISTENTE, "responsable": "x" * 120}
 
-    assert_not_implemented(contract_client.post(GESTIONES_PATH, json=body))
+    assert_not_found(contract_client.post(GESTIONES_PATH, json=body), "La prediccion no existe.")
 
 
-def test_put_resultado_boundary_observaciones_500_returns_501(
-    contract_client: TestClient,
+def test_put_resultado_boundary_observaciones_500_passes_validation(
+    migrated_engine: Engine, contract_client: TestClient
 ) -> None:
     body = {**RESULTADO_BODY, "observaciones": "x" * 500}
 
-    response = contract_client.put(f"{GESTIONES_PATH}/9/resultado", json=body)
+    response = contract_client.put(f"{GESTIONES_PATH}/{INEXISTENTE}/resultado", json=body)
 
-    assert_not_implemented(response)
+    assert_not_found(response, "La gestion no existe.")
 
 
 def test_put_resultado_invalid_id_returns_400(contract_client: TestClient) -> None:

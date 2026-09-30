@@ -4,6 +4,12 @@ from typing import Annotated, Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from app.domain.campanias.campania import (
+    LONGITUD_MAXIMA_DESCRIPCION,
+    LONGITUD_MAXIMA_NOMBRE,
+    PRIORIDAD_MAXIMA,
+    PRIORIDAD_MINIMA,
+)
 from app.domain.common.enums import NivelRiesgo, Plan
 
 # Planes que admite una campana (todos salvo DIARIO); debe coincidir con PLANES_CAMPANIA.
@@ -11,9 +17,11 @@ PlanCampania = Literal[Plan.MENSUAL, Plan.TRIMESTRAL, Plan.SEMESTRAL, Plan.ANUAL
 PLANES_CAMPANIA_DTO: tuple[Plan, ...] = get_args(PlanCampania)
 
 NombreCampania = Annotated[
-    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=LONGITUD_MAXIMA_NOMBRE)
 ]
-DescripcionCampania = Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)]
+DescripcionCampania = Annotated[
+    str, StringConstraints(strip_whitespace=True, max_length=LONGITUD_MAXIMA_DESCRIPCION)
+]
 
 
 class CampaniaDTO(BaseModel):
@@ -30,7 +38,10 @@ class CampaniaDTO(BaseModel):
 
 
 class CampaniaEntradaDTO(BaseModel):
-    """Datos para crear o editar una campana. ``prioridad`` 1 es la mas prioritaria."""
+    """Datos para crear o editar una campana. ``prioridad`` 1 es la mas prioritaria (1..999).
+
+    Niveles y planes repetidos se aceptan y se guardan sin repetir, en orden canonico.
+    """
 
     model_config = ConfigDict(
         frozen=True,
@@ -38,11 +49,12 @@ class CampaniaEntradaDTO(BaseModel):
         json_schema_extra={
             "examples": [
                 {
-                    "nombre": "Renovacion anticipada",
-                    "descripcion": "10% de descuento si renueva antes del vencimiento.",
+                    "nombre": "Ejemplo: Renovación anticipada",
+                    "descripcion": "Ofrecer renovar antes del vencimiento con el beneficio "
+                    "que Mtabolic defina.",
                     "niveles_riesgo": ["ALTO", "MEDIO"],
                     "planes": ["MENSUAL", "TRIMESTRAL"],
-                    "prioridad": 1,
+                    "prioridad": 2,
                 }
             ]
         },
@@ -52,4 +64,4 @@ class CampaniaEntradaDTO(BaseModel):
     descripcion: DescripcionCampania | None = None
     niveles_riesgo: list[NivelRiesgo] = Field(min_length=1)
     planes: list[PlanCampania] = Field(min_length=1)
-    prioridad: int = Field(ge=1)
+    prioridad: int = Field(ge=PRIORIDAD_MINIMA, le=PRIORIDAD_MAXIMA)

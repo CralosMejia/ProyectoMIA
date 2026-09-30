@@ -4,7 +4,10 @@
   contactar`` (items ``dentro_top_k``), ``Otros socios por vencer`` (el resto; si no hay,
   solo encabezados) y ``Resumen`` con terminos amigables y el nombre de la lista. Las dos
   primeras por ``prioridad`` ascendente y con las columnas de la tabla de la pantalla: sin
-  celular, score, monto, estado de la gestion ni campania.
+  celular, score ni monto.
+- R-009 (j): columnas ``Gestión`` (``Sin gestión`` / ``Pendiente`` / ``Cerrada``) y
+  ``Campaña`` (nombre guardado en la gestion; ``Sin campaña`` si la gestion no tiene; ``—`` si
+  no hay gestion), con el estado al momento de descargar. El boton de accion no se exporta.
 - Motivos sin el aporte numerico final entre parentesis (misma regla que ``APORTE_FINAL`` de
   ``TablaLista.tsx``); sin motivos -> ``SIN_FACTORES``.
 - RN-12.1: todo ocurre en ``BytesIO``. openpyxl escribe cada hoja en un archivo temporal;
@@ -38,7 +41,7 @@ from openpyxl.worksheet._writer import (  # type: ignore[import-untyped]  # sin 
 from openpyxl.writer.excel import ExcelWriter  # type: ignore[import-untyped]  # sin stubs
 
 from app.application.listas.ports import ItemLista, ListaDetalle
-from app.domain.common.enums import NivelRiesgo
+from app.domain.common.enums import EstadoGestion, NivelRiesgo
 
 COLUMNAS: tuple[str, ...] = (
     "Prioridad",
@@ -49,7 +52,16 @@ COLUMNAS: tuple[str, ...] = (
     "Días para vencer",
     "Nivel de riesgo",
     "Motivos principales",
+    "Gestión",
+    "Campaña",
 )
+SIN_GESTION = "Sin gestión"
+SIN_CAMPANIA = "Sin campaña"
+SIN_DATO = "—"
+GESTION_TEXTO: dict[EstadoGestion, str] = {
+    EstadoGestion.PENDIENTE: "Pendiente",
+    EstadoGestion.CERRADA: "Cerrada",
+}
 SIN_FACTORES = "Sin factores de riesgo destacados"
 HOJA_PRIORITARIOS = "Socios prioritarios a contactar"
 HOJA_OTROS = "Otros socios por vencer"
@@ -80,6 +92,13 @@ def sin_aporte(factor: str) -> str:
 def motivos(factores: Sequence[str]) -> str:
     """Motivos unidos con ``"; "`` y sin aporte; sin motivos -> ``SIN_FACTORES``."""
     return _SEPARADOR_FACTORES.join(sin_aporte(f) for f in factores) or SIN_FACTORES
+
+
+def gestion_y_campania(item: ItemLista) -> tuple[str, str]:
+    """Textos de las columnas ``Gestión`` y ``Campaña``, los mismos que la pantalla."""
+    if item.gestion_estado is None:
+        return SIN_GESTION, SIN_DATO
+    return GESTION_TEXTO[item.gestion_estado], item.campania_asignada or SIN_CAMPANIA
 
 
 def _utc_sin_zona(instante: datetime) -> datetime:
@@ -172,6 +191,9 @@ class ExcelListaOpenpyxl:
             )
             self._texto(hoja, fila, 7, NIVEL_TEXTO[item.nivel_riesgo])
             self._texto(hoja, fila, 8, motivos(item.factores_principales))
+            gestion, campania = gestion_y_campania(item)
+            self._texto(hoja, fila, 9, gestion)
+            self._texto(hoja, fila, 10, campania)
 
     def _escribir_resumen(
         self,

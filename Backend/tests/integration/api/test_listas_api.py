@@ -93,6 +93,7 @@ def test_post_listas_returns_201_sorted_items_with_decimal_strings(
         "nivel_riesgo",
         "factores_principales",
         "dentro_top_k",
+        "gestion_id",
         "gestion_estado",
         "campania_asignada",
     }
@@ -176,6 +177,51 @@ def test_get_ultima_and_by_id_return_the_saved_list(
     assert por_id.status_code == 200
     assert ultima.json() == creada
     assert por_id.json() == creada
+
+
+def test_get_lista_and_ultima_return_the_gestion_of_each_item(
+    contract_client: TestClient, base_migrada: Engine
+) -> None:
+    """R-009 T14: la gestion del ciclo aparece en toda lista que contiene esa membresia."""
+    primera = contract_client.post(LISTAS, json=BODY).json()
+    con_campania, sin_campania, sin_gestion = primera["items"][:3]
+    assert (con_campania["gestion_id"], con_campania["gestion_estado"]) == (None, None)
+    nombre = (
+        "Ejemplo: Llamada personal antes del vencimiento"
+        if con_campania["nivel_riesgo"] == "ALTO"
+        else "Ejemplo: Recordatorio de renovación"
+    )
+    campanias = {c["nombre"]: c["id"] for c in contract_client.get("/api/v1/campanias").json()}
+    gestiones = [
+        contract_client.post(
+            "/api/v1/gestiones",
+            json={
+                "prediccion_id": item["prediccion_id"],
+                "campania_id": campania_id,
+                "fecha_seguimiento": "2026-09-05",
+            },
+        )
+        for item, campania_id in ((con_campania, campanias[nombre]), (sin_campania, None))
+    ]
+    assert [g.status_code for g in gestiones] == [201, 201]
+    segunda = contract_client.post(LISTAS, json=BODY).json()
+    esperado = {
+        con_campania["socio_nombre"]: (gestiones[0].json()["id"], "PENDIENTE", nombre),
+        sin_campania["socio_nombre"]: (gestiones[1].json()["id"], "PENDIENTE", None),
+        sin_gestion["socio_nombre"]: (None, None, None),
+    }
+
+    for ruta in (f"/{primera['id']}", f"/{segunda['id']}", "/ultima"):
+        respuesta = contract_client.get(f"{LISTAS}{ruta}")
+        assert respuesta.status_code == 200
+        items = respuesta.json()["items"]
+        assert len(items) == FILAS_ESPERADAS
+        vistos = {
+            i["socio_nombre"]: (i["gestion_id"], i["gestion_estado"], i["campania_asignada"])
+            for i in items
+            if i["socio_nombre"] in esperado
+        }
+        assert vistos == esperado
 
 
 @pytest.mark.parametrize(("ruta", "codigo"), [("/999999", 404), ("/abc", 400), ("/0", 400)])

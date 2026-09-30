@@ -35,6 +35,8 @@ ENCABEZADOS = [
     "Días para vencer",
     "Nivel de riesgo",
     "Motivos principales",
+    "Gestión",
+    "Campaña",
 ]
 
 
@@ -80,6 +82,9 @@ def test_get_excel_returns_xlsx_with_safe_filename(
     for hoja in libro.worksheets:
         textos = [str(v) for fila in hoja.iter_rows(values_only=True) for v in fila if v]
         assert not any("Celular" in t or "Score" in t for t in textos)
+    assert {(f[8], f[9]) for f in libro[HOJAS[0]].iter_rows(min_row=2, values_only=True)} == {
+        ("Sin gestión", "—")
+    }
     resumen = libro[HOJAS[2]]
     assert (resumen["A1"].value, resumen["B1"].value) == (
         "Nombre de la lista",
@@ -154,3 +159,39 @@ def test_get_excel_uses_the_list_name_and_keeps_api_fields(
     assert celda.data_type == "s"
     assert detalle["nombre"] == "=SUM(1)"
     assert {"celular", "score", "monto_cobrado"} <= set(detalle["items"][0])
+
+
+def test_get_excel_shows_gestion_state_at_download_time(
+    contract_client: TestClient, base_migrada: Engine
+) -> None:
+    """R-009 (j): el Excel lleva el estado de la gestion al momento de descargar."""
+    lista = contract_client.post(
+        LISTAS, json={"fecha_referencia": "2026-08-31", "horizonte_dias": 30, "top_k": 25}
+    ).json()
+    primero = lista["items"][0]
+    gestion = contract_client.post(
+        "/api/v1/gestiones",
+        json={"prediccion_id": primero["prediccion_id"], "fecha_seguimiento": "2026-09-05"},
+    )
+    assert gestion.status_code == 201, gestion.text
+
+    pendiente = load_workbook(
+        io.BytesIO(contract_client.get(f"{LISTAS}/{lista['id']}/excel").content)
+    )[HOJAS[0]]
+    cierre = contract_client.put(
+        f"/api/v1/gestiones/{gestion.json()['id']}/resultado",
+        json={
+            "contactado": False,
+            "campania_ofrecida": "NO_APLICA",
+            "campania_aceptada": "NO_APLICA",
+            "renovo_declarado": "NO",
+        },
+    )
+    assert cierre.status_code == 200, cierre.text
+    cerrada = load_workbook(
+        io.BytesIO(contract_client.get(f"{LISTAS}/{lista['id']}/excel").content)
+    )[HOJAS[0]]
+
+    assert (pendiente["I2"].value, pendiente["J2"].value) == ("Pendiente", "Sin campaña")
+    assert (cerrada["I2"].value, cerrada["J2"].value) == ("Cerrada", "Sin campaña")
+    assert (cerrada["I3"].value, cerrada["J3"].value) == ("Sin gestión", "—")

@@ -13,7 +13,7 @@ from app.application.listas.consultar_listas import ConsultarListas, a_dto, dato
 from app.application.listas.dtos import GenerarListaDTO, PrediccionDTO
 from app.application.listas.generar_lista import GenerarLista
 from app.application.listas.ports import ListaDetalle
-from app.domain.common.enums import NivelRiesgo
+from app.domain.common.enums import EstadoGestion, NivelRiesgo
 from tests.unit.application.listas.dobles import (
     Almacen,
     PredictorPorMonto,
@@ -202,3 +202,36 @@ def test_prediccion_dto_schema_has_cedula_and_no_correo() -> None:
 
     assert "correo" not in propiedades
     assert {t.get("type") for t in propiedades["cedula"]["anyOf"]} == {"string", "null"}
+
+
+def test_a_dto_maps_gestion_of_each_item() -> None:
+    """R-009 T13: gestion pendiente con campana, item sin gestion y gestion sin campana."""
+    almacen = almacen_con_socios()
+    lista_id = generar(almacen, top_k=5)
+    with unidad_de_trabajo(almacen)() as uow:
+        guardada = uow.listas.obtener(lista_id)
+    assert guardada is not None
+    assert len(guardada.items) >= 3
+    pendiente = replace(
+        guardada.items[0],
+        gestion_id=9,
+        gestion_estado=EstadoGestion.PENDIENTE,
+        campania_asignada="Ejemplo: Renovación anticipada",
+    )
+    sin_gestion = guardada.items[1]
+    sin_campania = replace(guardada.items[2], gestion_id=10, gestion_estado=EstadoGestion.CERRADA)
+
+    dto = a_dto(replace(guardada, items=(pendiente, sin_gestion, sin_campania)), advertencia=False)
+
+    items = dto.model_dump(mode="json")["items"]
+    assert [(i["gestion_id"], i["gestion_estado"], i["campania_asignada"]) for i in items] == [
+        (9, "PENDIENTE", "Ejemplo: Renovación anticipada"),
+        (None, None, None),
+        (10, "CERRADA", None),
+    ]
+
+
+def test_prediccion_dto_schema_has_nullable_gestion_id() -> None:
+    propiedades = PrediccionDTO.model_json_schema()["properties"]
+
+    assert {t.get("type") for t in propiedades["gestion_id"]["anyOf"]} == {"integer", "null"}

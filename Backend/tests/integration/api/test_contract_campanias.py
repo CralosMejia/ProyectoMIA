@@ -1,4 +1,7 @@
-"""Contrato de ``campanias`` y sugerencias (CU-06, CU-07), publicados en ``501``.
+"""Contrato de ``campanias`` y sugerencias (CU-06, CU-07), reales desde R-009 (T8).
+
+El comportamiento con base de datos se prueba en ``test_campanias_api.py``; aqui quedan la
+validacion de entrada (``400`` sin tocar la base) y el contrato OpenAPI.
 
 Aislamiento entre usuarios: NO APLICA. No hay login (RT-12): el acceso se controla por IP
 (CU-00) y no existe un propietario de datos por usuario.
@@ -12,7 +15,6 @@ from fastapi.testclient import TestClient
 from app.application.campanias.dtos import PLANES_CAMPANIA_DTO, CampaniaDTO
 from app.domain.common.enums import PLANES_CAMPANIA
 from tests.integration.api.contract_helpers import (
-    assert_not_implemented,
     assert_operation_contract,
     assert_validation_error,
     request_body_schema_name,
@@ -30,26 +32,6 @@ VALID_BODY: dict[str, Any] = {
 }
 
 
-def test_get_campanias_returns_501(contract_client: TestClient) -> None:
-    assert_not_implemented(contract_client.get(CAMPANIAS_PATH))
-
-
-def test_post_campanias_valid_body_returns_501(contract_client: TestClient) -> None:
-    assert_not_implemented(contract_client.post(CAMPANIAS_PATH, json=VALID_BODY))
-
-
-def test_put_campania_valid_body_returns_501(contract_client: TestClient) -> None:
-    assert_not_implemented(contract_client.put(f"{CAMPANIAS_PATH}/7", json=VALID_BODY))
-
-
-def test_post_inactivar_campania_returns_501(contract_client: TestClient) -> None:
-    assert_not_implemented(contract_client.post(f"{CAMPANIAS_PATH}/7/inactivar"))
-
-
-def test_get_campanias_sugeridas_returns_501(contract_client: TestClient) -> None:
-    assert_not_implemented(contract_client.get("/api/v1/predicciones/15/campanias-sugeridas"))
-
-
 @pytest.mark.parametrize(
     "override",
     [
@@ -62,6 +44,7 @@ def test_get_campanias_sugeridas_returns_501(contract_client: TestClient) -> Non
         {"nombre": "   "},
         {"nombre": "x" * 121},
         {"prioridad": 0},
+        {"prioridad": 1000},
     ],
 )
 def test_post_campanias_invalid_body_returns_400(
@@ -86,16 +69,16 @@ def test_planes_campania_dto_matches_domain_subset() -> None:
 
 def test_openapi_campanias_operations_declare_examples(openapi_spec: dict[str, Any]) -> None:
     lista = list[CampaniaDTO]
-    assert_operation_contract(openapi_spec, "get", CAMPANIAS_PATH, 200, (403, 501), lista)
+    assert_operation_contract(openapi_spec, "get", CAMPANIAS_PATH, 200, (403,), lista)
     post = assert_operation_contract(
-        openapi_spec, "post", CAMPANIAS_PATH, 201, (400, 403, 501), CampaniaDTO
+        openapi_spec, "post", CAMPANIAS_PATH, 201, (400, 403), CampaniaDTO
     )
     put = assert_operation_contract(
         openapi_spec,
         "put",
         "/api/v1/campanias/{campania_id}",
         200,
-        (400, 403, 404, 501),
+        (400, 403, 404),
         CampaniaDTO,
     )
     assert_operation_contract(
@@ -103,7 +86,7 @@ def test_openapi_campanias_operations_declare_examples(openapi_spec: dict[str, A
         "post",
         "/api/v1/campanias/{campania_id}/inactivar",
         200,
-        (400, 403, 404, 501),
+        (400, 403, 404),
         CampaniaDTO,
     )
     assert_operation_contract(
@@ -111,7 +94,7 @@ def test_openapi_campanias_operations_declare_examples(openapi_spec: dict[str, A
         "get",
         "/api/v1/predicciones/{prediccion_id}/campanias-sugeridas",
         200,
-        (400, 403, 404, 501),
+        (400, 403, 404),
         lista,
     )
 
@@ -123,15 +106,6 @@ def test_openapi_campanias_operations_declare_examples(openapi_spec: dict[str, A
 
 def test_openapi_campania_planes_exclude_diario(openapi_spec: dict[str, Any]) -> None:
     assert "DIARIO" not in str(openapi_spec["components"]["schemas"]["CampaniaEntradaDTO"])
-
-
-@pytest.mark.parametrize("override", [{"nombre": "x" * 120}, {"nombre": "x"}, {"prioridad": 1}])
-def test_post_campanias_boundary_valid_body_returns_501(
-    contract_client: TestClient, override: dict[str, Any]
-) -> None:
-    body = {**VALID_BODY, **override}
-
-    assert_not_implemented(contract_client.post(CAMPANIAS_PATH, json=body))
 
 
 def test_put_campania_invalid_body_returns_400(contract_client: TestClient) -> None:
