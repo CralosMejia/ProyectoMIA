@@ -1,9 +1,10 @@
 import { http, HttpResponse } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { ApiError } from '../../../core/http/api-error'
 import { server } from '../../../mocks/server'
 import type { CampaniaEntrada, PlanCampania } from '../types'
 import { crearCampania, editarCampania, inactivarCampania, listarCampanias } from './campanias-api'
+import { reiniciarCampaniasSimuladas } from './campanias-api.handlers'
 import source from './campanias-api.ts?raw'
 
 const ENTRADA: CampaniaEntrada = {
@@ -15,10 +16,14 @@ const ENTRADA: CampaniaEntrada = {
 }
 
 describe('campanias-api (contra MSW)', () => {
-  it('listarCampanias → 2 campañas de ejemplo en camelCase', async () => {
+  beforeEach(() => {
+    reiniciarCampaniasSimuladas()
+  })
+
+  it('listarCampanias → 3 campañas de ejemplo en camelCase', async () => {
     const campanias = await listarCampanias()
 
-    expect(campanias).toHaveLength(2)
+    expect(campanias).toHaveLength(3)
     expect(campanias.every((c) => c.esEjemplo)).toBe(true)
     expect(campanias[0]).toEqual({
       id: expect.any(Number),

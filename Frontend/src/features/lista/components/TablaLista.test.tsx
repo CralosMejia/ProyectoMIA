@@ -1,7 +1,8 @@
 import { cleanup, render, screen, within } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import userEvent from '@testing-library/user-event'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ListaPriorizada, Prediccion } from '../types'
-import { TablaLista } from './TablaLista'
+import { TablaLista, TITULO_OTROS, TITULO_PRIORITARIOS } from './TablaLista'
 import tablaSource from './TablaLista.tsx?raw'
 
 const COLUMNAS = [
@@ -13,6 +14,9 @@ const COLUMNAS = [
   'Días para vencer',
   'Nivel de riesgo',
   'Motivos principales',
+  'Gestión',
+  'Campaña',
+  'Acción',
 ]
 
 function item(prioridad: number, extra: Partial<Prediccion> = {}): Prediccion {
@@ -30,6 +34,7 @@ function item(prioridad: number, extra: Partial<Prediccion> = {}): Prediccion {
     nivelRiesgo: 'ALTO',
     factoresPrincipales: ['Plan: TRIMESTRAL (+0,09)', 'Ciclos previos: 1.234 (+0,12)'],
     dentroTopK: prioridad <= 2,
+    gestionId: null,
     gestionEstado: null,
     campaniaAsignada: null,
     ...extra,
@@ -208,6 +213,80 @@ describe('TablaLista', () => {
     expect(screen.getByText('Rango de fechas: 29 sep – 29 oct 2026')).toBeInTheDocument()
     expect(screen.getByText('Socios priorizados para campañas: 0')).toBeInTheDocument()
     expect(screen.getByText('No hay socios cuya membresía venza en esos días.')).toBeInTheDocument()
+  })
+
+  describe('gestion (D5-FE-03)', () => {
+    const TRES = [
+      item(1),
+      item(2, {
+        gestionId: 9,
+        gestionEstado: 'PENDIENTE',
+        campaniaAsignada: 'Ejemplo: Renovación anticipada',
+      }),
+      item(3, { gestionId: 10, gestionEstado: 'CERRADA', campaniaAsignada: null }),
+    ]
+
+    function celdas(nombreTabla: string, fila: number) {
+      const filas = tabla(nombreTabla).getAllByRole('row').slice(1)
+      return within(filas[fila] as HTMLElement).getAllByRole('cell')
+    }
+
+    it('columnas "Gestión" y "Campaña": sin gestion, pendiente con campaña y cerrada sin campaña', () => {
+      render(<TablaLista lista={lista(TRES)} />)
+
+      const textos = (nombreTabla: string, fila: number) =>
+        celdas(nombreTabla, fila)
+          .slice(8, 10)
+          .map((c) => c.textContent)
+      expect(textos(TITULO_PRIORITARIOS, 0)).toEqual(['Sin gestión', '—'])
+      expect(textos(TITULO_PRIORITARIOS, 1)).toEqual([
+        'Pendiente',
+        'Ejemplo: Renovación anticipada',
+      ])
+      expect(textos(TITULO_OTROS, 0)).toEqual(['Cerrada', 'Sin campaña'])
+    })
+
+    it('botones con la prioridad (sin el nombre del socio) en ambas tablas', () => {
+      render(<TablaLista lista={lista(TRES)} />)
+
+      expect(
+        tabla(TITULO_PRIORITARIOS).getByRole('button', { name: 'Gestionar prioridad 1' }),
+      ).toHaveTextContent(/^Gestionar$/)
+      expect(
+        tabla(TITULO_PRIORITARIOS).getByRole('button', { name: 'Registrar resultado prioridad 2' }),
+      ).toBeInTheDocument()
+      expect(
+        tabla(TITULO_OTROS).getByRole('button', { name: 'Ver gestión prioridad 3' }),
+      ).toBeInTheDocument()
+      for (const boton of screen.getAllByRole('button')) {
+        expect(boton.getAttribute('aria-label')).not.toMatch(/Socio Ficticio/)
+      }
+    })
+
+    it('el boton emite onGestionar con la prediccion de su fila', async () => {
+      const user = userEvent.setup()
+      const onGestionar = vi.fn()
+      render(<TablaLista lista={lista(TRES)} onGestionar={onGestionar} />)
+
+      await user.click(screen.getByRole('button', { name: 'Ver gestión prioridad 3' }))
+
+      expect(onGestionar).toHaveBeenCalledTimes(1)
+      expect(onGestionar).toHaveBeenCalledWith(TRES[2])
+    })
+
+    it('nombre de campaña con HTML → texto literal', () => {
+      render(
+        <TablaLista
+          lista={lista([
+            item(1, { gestionId: 1, gestionEstado: 'PENDIENTE', campaniaAsignada: '<b>x</b>' }),
+          ])}
+        />,
+      )
+
+      const celda = celdas(TITULO_PRIORITARIOS, 0)[9] as HTMLElement
+      expect(celda.textContent).toBe('<b>x</b>')
+      expect(celda.querySelector('b')).toBeNull()
+    })
   })
 
   it('arquitectura: presentacional y sin convertir decimales a numero', () => {

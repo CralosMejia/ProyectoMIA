@@ -3,7 +3,12 @@ import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { server } from '../../../mocks/server'
-import { escenariosLista } from '../api/lista-api.handlers'
+import {
+  escenariosGestion,
+  escenariosLista,
+  MENSAJE_GESTION_DUPLICADA,
+  simularGestiones,
+} from '../api/lista-api.handlers'
 import ListaPage from './ListaPage'
 import pageSource from './ListaPage.tsx?raw'
 import tablaSource from '../components/TablaLista.tsx?raw'
@@ -126,7 +131,14 @@ describe('ListaPage', () => {
       'Días para vencer',
       'Nivel de riesgo',
       'Motivos principales',
+      'Gestión',
+      'Campaña',
+      'Acción',
     ])
+    const otrosCabeceras = (await tablaCargada(OTROS))
+      .getAllByRole('columnheader')
+      .map((th) => th.textContent)
+    expect(otrosCabeceras).toEqual(cabeceras)
 
     const filas = tabla.getAllByRole('row').slice(1)
     const primera = within(filas[0] as HTMLElement)
@@ -549,6 +561,120 @@ describe('ListaPage', () => {
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(ayuda).toHaveFocus()
+  })
+
+  describe('gestion desde la fila (D5-FE-02, D5-FE-03)', () => {
+    /** Celdas "Gestión" y "Campaña" de la fila con esa prioridad (tabla de prioritarios). */
+    async function gestionDeLaFila(prioridad: number): Promise<string[]> {
+      const fila = (await filasDe(PRIORITARIOS))[prioridad - 1] as HTMLElement
+      return within(fila)
+        .getAllByRole('cell')
+        .slice(8, 10)
+        .map((c) => c.textContent ?? '')
+    }
+
+    it('estado inicial de las filas: pendiente con campaña, cerrada sin campaña y sin gestion', async () => {
+      render(<ListaPage />)
+
+      expect(await gestionDeLaFila(1)).toEqual(['Pendiente', 'Ejemplo: Renovación anticipada'])
+      expect(await gestionDeLaFila(2)).toEqual(['Cerrada', 'Sin campaña'])
+      expect(await gestionDeLaFila(3)).toEqual(['Sin gestión', '—'])
+      const tabla = await tablaCargada()
+      expect(
+        tabla.getByRole('button', { name: 'Registrar resultado prioridad 1' }),
+      ).toBeInTheDocument()
+      expect(tabla.getByRole('button', { name: 'Ver gestión prioridad 2' })).toBeInTheDocument()
+      expect(tabla.getByRole('button', { name: 'Gestionar prioridad 3' })).toBeInTheDocument()
+      expect(
+        (await tablaCargada(OTROS)).getByRole('button', { name: 'Gestionar prioridad 26' }),
+      ).toBeInTheDocument()
+    })
+
+    it('Gestionar → sugeridas → Crear gestión → parte 2; al cerrar la fila muestra "Pendiente"', async () => {
+      server.use(...simularGestiones())
+      const user = userEvent.setup()
+      render(<ListaPage />)
+      const boton = (await tablaCargada()).getByRole('button', { name: 'Gestionar prioridad 3' })
+
+      await user.click(boton)
+      const dialogo = within(
+        await screen.findByRole('dialog', { name: 'Gestión de la prioridad 3' }),
+      )
+      const campania = await dialogo.findByRole('radio', { name: 'Ejemplo: Renovación anticipada' })
+      expect(dialogo.getByRole('radio', { name: 'No asignar campaña' })).not.toBeChecked()
+      // Vencimiento simulado 2026-10-03: sugerida = vencimiento + 25.
+      expect(dialogo.getByLabelText('Fecha de seguimiento')).toHaveValue('2026-10-28')
+      await user.click(campania)
+      await user.click(dialogo.getByRole('button', { name: 'Crear gestión' }))
+
+      expect(
+        await dialogo.findByRole('group', { name: '¿Se contactó al socio?' }),
+      ).toBeInTheDocument()
+      expect(dialogo.getByText('Ejemplo: Renovación anticipada')).toBeInTheDocument()
+      await user.click(dialogo.getByRole('button', { name: 'Cerrar' }))
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      await waitFor(async () =>
+        expect(await gestionDeLaFila(3)).toEqual(['Pendiente', 'Ejemplo: Renovación anticipada']),
+      )
+      expect(
+        (await tablaCargada()).getByRole('button', { name: 'Registrar resultado prioridad 3' }),
+      ).toHaveFocus()
+    })
+
+    it('Registrar resultado con Renovó = No → la fila pasa a "Cerrada"', async () => {
+      server.use(...simularGestiones())
+      const user = userEvent.setup()
+      render(<ListaPage />)
+      await user.click(
+        (await tablaCargada()).getByRole('button', { name: 'Registrar resultado prioridad 1' }),
+      )
+      const dialogo = within(await screen.findByRole('dialog'))
+      const contactado = within(
+        await dialogo.findByRole('group', { name: '¿Se contactó al socio?' }),
+      )
+
+      await user.click(contactado.getByRole('radio', { name: 'No' }))
+      await user.click(
+        within(dialogo.getByRole('group', { name: '¿Renovó?' })).getByRole('radio', { name: 'No' }),
+      )
+      await user.click(dialogo.getByRole('button', { name: 'Guardar resultado' }))
+
+      expect(await dialogo.findByText('Gestión cerrada: no se puede modificar.')).toBeInTheDocument()
+      expect(dialogo.queryByRole('button', { name: 'Guardar resultado' })).not.toBeInTheDocument()
+      await waitFor(async () => expect((await gestionDeLaFila(1))[0]).toBe('Cerrada'))
+    })
+
+    it('409 del servidor al crear → ErrorAlert con su mensaje y el formulario sigue abierto', async () => {
+      server.use(escenariosGestion.duplicada)
+      const user = userEvent.setup()
+      render(<ListaPage />)
+      await user.click(
+        (await tablaCargada()).getByRole('button', { name: 'Gestionar prioridad 3' }),
+      )
+      const dialogo = within(await screen.findByRole('dialog'))
+
+      await user.click(await dialogo.findByRole('radio', { name: 'No asignar campaña' }))
+      await user.click(dialogo.getByRole('button', { name: 'Crear gestión' }))
+
+      expect(await dialogo.findByRole('alert')).toHaveTextContent(MENSAJE_GESTION_DUPLICADA)
+      expect(dialogo.getByRole('button', { name: 'Crear gestión' })).toBeEnabled()
+    })
+
+    it('Ver gestión (cerrada) → solo lectura, sin guardar', async () => {
+      const user = userEvent.setup()
+      render(<ListaPage />)
+      await user.click(
+        (await tablaCargada()).getByRole('button', { name: 'Ver gestión prioridad 2' }),
+      )
+      const dialogo = within(
+        await screen.findByRole('dialog', { name: 'Gestión de la prioridad 2' }),
+      )
+
+      expect(await dialogo.findByText('Gestión cerrada: no se puede modificar.')).toBeInTheDocument()
+      expect(dialogo.queryByRole('button', { name: 'Guardar resultado' })).not.toBeInTheDocument()
+      for (const radio of dialogo.getAllByRole('radio')) expect(radio).toBeDisabled()
+    })
   })
 
   it('arquitectura: la pagina no importa api/ ni core/http ni usa fetch', () => {

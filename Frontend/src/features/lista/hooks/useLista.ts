@@ -66,6 +66,8 @@ export interface UseListaResult {
   error: string | null
   generar: () => void
   seleccionar: (id: number) => void
+  /** Vuelve a pedir la lista mostrada sin ocultarla (p. ej. tras guardar una gestion). */
+  recargar: () => void
 }
 
 function toMessage(error: unknown): string {
@@ -302,6 +304,22 @@ export function useLista({ onGenerada }: UseListaOptions = {}): UseListaResult {
     )
   }
 
+  const recargar = () => {
+    if (generandoRef.current || lista === null) return
+    const id = lista.id
+    const controller = nuevaPeticion()
+    obtenerLista(id, controller.signal).then(
+      (actualizada) => {
+        if (controller.signal.aborted) return
+        setLista(actualizada)
+      },
+      (reason: unknown) => {
+        if (controller.signal.aborted) return
+        setError(toMessage(reason))
+      },
+    )
+  }
+
   return {
     parametros,
     fechaMinima: hoyLocal(),
@@ -317,5 +335,6 @@ export function useLista({ onGenerada }: UseListaOptions = {}): UseListaResult {
     error,
     generar,
     seleccionar,
+    recargar,
   }
 }

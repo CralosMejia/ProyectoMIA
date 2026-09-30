@@ -70,6 +70,7 @@ interface PrediccionResponse {
   nivel_riesgo: NivelRiesgo
   factores_principales: string[]
   dentro_top_k: boolean
+  gestion_id: number | null
   gestion_estado: EstadoGestion | null
   campania_asignada: string | null
 }
@@ -160,6 +161,7 @@ function toPrediccion(raw: PrediccionResponse): Prediccion {
     nivelRiesgo: raw.nivel_riesgo,
     factoresPrincipales: raw.factores_principales,
     dentroTopK: raw.dentro_top_k,
+    gestionId: raw.gestion_id ?? null,
     gestionEstado: raw.gestion_estado ?? null,
     campaniaAsignada: raw.campania_asignada ?? null,
   }

@@ -17,7 +17,13 @@ import {
   registrarResultado,
   SistemaNoListoError,
 } from './lista-api'
-import { escenariosLista } from './lista-api.handlers'
+import {
+  escenariosGestion,
+  escenariosLista,
+  GESTION_CERRADA_ID,
+  GESTION_PENDIENTE_ID,
+  MENSAJE_GESTION_CERRADA,
+} from './lista-api.handlers'
 import source from './lista-api.ts?raw'
 
 const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -105,6 +111,7 @@ describe('lista-api (contra MSW)', () => {
               nivel_riesgo: 'BAJO',
               factores_principales: ['Pocas renovaciones previas'],
               dentro_top_k: true,
+              gestion_id: 9,
               gestion_estado: 'PENDIENTE',
               campania_asignada: 'Renovacion anticipada',
             },
@@ -130,6 +137,7 @@ describe('lista-api (contra MSW)', () => {
       nivelRiesgo: 'BAJO',
       factoresPrincipales: ['Pocas renovaciones previas'],
       dentroTopK: true,
+      gestionId: 9,
       gestionEstado: 'PENDIENTE',
       campaniaAsignada: 'Renovacion anticipada',
     })
@@ -150,6 +158,7 @@ describe('lista-api (contra MSW)', () => {
       nivel_riesgo: 'MEDIO',
       factores_principales: [],
       dentro_top_k: true,
+      gestion_id: null,
       gestion_estado: null,
       campania_asignada: null,
     })
@@ -173,6 +182,7 @@ describe('lista-api (contra MSW)', () => {
     const lista = await obtenerLista(8)
 
     expect(lista.items.map((i) => i.cedula)).toEqual(['0012345678', null])
+    expect(lista.items.map((i) => i.gestionId)).toEqual([null, null])
     for (const i of lista.items) expect(Object.keys(i)).not.toContain('correo')
   })
 
@@ -539,6 +549,53 @@ describe('lista-api (contra MSW)', () => {
     expect(gestion.fechaCierre).toBeInstanceOf(Date)
   })
 
+  it('handlers: la ultima lista trae gestion pendiente (con campaña), cerrada (sin) y sin gestion', async () => {
+    const lista = await obtenerUltima()
+
+    expect(
+      lista?.items.slice(0, 3).map((i) => [i.gestionId, i.gestionEstado, i.campaniaAsignada]),
+    ).toEqual([
+      [GESTION_PENDIENTE_ID, 'PENDIENTE', 'Ejemplo: Renovación anticipada'],
+      [GESTION_CERRADA_ID, 'CERRADA', null],
+      [null, null, null],
+    ])
+  })
+
+  it('crearGestion con 422 → ApiError 422 con el mensaje del servidor', async () => {
+    server.use(escenariosGestion.fechaFueraDeRango)
+
+    const error = await crearGestion({ prediccionId: 1503, fechaSeguimiento: '2026-11-05' }).catch(
+      (e: unknown) => e,
+    )
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({
+      status: 422,
+      message: 'La fecha de seguimiento debe estar entre 2026-09-29 y 2026-11-04.',
+    })
+  })
+
+  it('registrarResultado de una gestion cerrada → ApiError 409 con el mensaje del servidor', async () => {
+    const error = await registrarResultado(GESTION_CERRADA_ID, {
+      contactado: false,
+      campaniaOfrecida: 'NO_APLICA',
+      campaniaAceptada: 'NO_APLICA',
+      renovoDeclarado: 'PENDIENTE',
+    }).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({ status: 409, message: MENSAJE_GESTION_CERRADA })
+  })
+
+  it('getGestion de la cerrada → estado CERRADA con fecha de cierre; inexistente → 404', async () => {
+    const cerrada = await getGestion(GESTION_CERRADA_ID)
+    expect(cerrada).toMatchObject({ estado: 'CERRADA', campaniaId: null, renovoDeclarado: 'NO' })
+    expect(cerrada.fechaCierre).toBeInstanceOf(Date)
+
+    const error = await getGestion(999).catch((e: unknown) => e)
+    expect(error).toMatchObject({ status: 404 })
+  })
+
   it('getGestion → la gestion por id', async () => {
     await expect(getGestion(9)).resolves.toMatchObject({ id: 9, socioNombre: expect.any(String) })
   })
@@ -630,7 +687,7 @@ describe('lista-api (contra MSW)', () => {
       ['../types.ts', '../hooks/*.ts', '../components/*.tsx', '../pages/*.tsx', '!../**/*.test.*'],
       { query: '?raw', import: 'default', eager: true },
     ) as Record<string, string>
-    const campos = /\b(prediccion_id|socio_nombre|fecha_vencimiento|dias_para_vencer|monto_cobrado|nivel_riesgo|factores_principales|dentro_top_k|gestion_estado|campania_asignada|modelo_version|fecha_generacion|creada_en|horizonte_dias|top_k|umbral_alto|umbral_medio|advertencia_datos_antiguos|total_items|fecha_referencia)\b/
+    const campos = /\b(prediccion_id|socio_nombre|fecha_vencimiento|dias_para_vencer|monto_cobrado|nivel_riesgo|factores_principales|dentro_top_k|gestion_id|gestion_estado|campania_id|fecha_seguimiento|campania_asignada|modelo_version|fecha_generacion|creada_en|horizonte_dias|top_k|umbral_alto|umbral_medio|advertencia_datos_antiguos|total_items|fecha_referencia)\b/
 
     expect(Object.keys(fuera).length).toBeGreaterThanOrEqual(8)
     for (const [ruta, codigo] of Object.entries(fuera)) {

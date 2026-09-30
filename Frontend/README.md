@@ -40,6 +40,10 @@ docker compose -p mtabolic-e2e --env-file .env.e2e down -v
 
 La plantilla se genera en cada ejecución con `exceljs` (`devDependency`) y cédulas únicas, así que la prueba se puede repetir sin `down -v`. Tarda unos 10 s. Detalle del stack: `Documentation/docs/backend/10-docker.md` §Stack E2E aislado.
 
+### E2E campañas → gestión (`e2e/campanias-gestion.spec.ts`)
+
+Crea una campaña y una gestión, así que sigue la misma regla: **solo** contra el stack aislado (`E2E_BASE_URL=http://localhost:8081`, mismos comandos de arriba); contra `8080` se salta solo. Recorre: Campañas (3 de ejemplo, crea una) → Lista (genera, "Gestionar", crea la gestión, registra el resultado hasta "Cerrada") → Excel con la columna "Gestión". Con el stack aislado, `npx playwright test` ejecuta los 3 E2E (`health`, `carga-lista-excel`, `campanias-gestion`); contra `8080` solo `health`.
+
 ## Variables
 
 `VITE_API_BASE_URL` (opcional, por defecto vacío = mismo origen). `VITE_API_MOCKS` (opcional; solo el valor exacto `true` activa MSW en el navegador, y solo en desarrollo). Las variables `VITE_*` son públicas: nunca contienen secretos.

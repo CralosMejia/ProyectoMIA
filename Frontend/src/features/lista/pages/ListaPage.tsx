@@ -3,9 +3,11 @@ import { ErrorAlert } from '../../../shared/ui/ErrorAlert'
 import { LoadingIndicator } from '../../../shared/ui/LoadingIndicator'
 import { AyudaLista } from '../components/AyudaLista'
 import { DescargarExcelButton } from '../components/DescargarExcelButton'
+import { FormularioGestion } from '../components/FormularioGestion'
 import { HistorialListas } from '../components/HistorialListas'
 import { TablaLista } from '../components/TablaLista'
 import { useDescargarExcel } from '../hooks/useDescargarExcel'
+import { useGestion } from '../hooks/useGestion'
 import { useHistorialListas } from '../hooks/useHistorialListas'
 import { type CampoParametro, useLista } from '../hooks/useLista'
 
@@ -77,11 +79,16 @@ function Campo({
   )
 }
 
-/** Pagina de ruta: conecta los hooks de lista, historial y Excel con los componentes (CU-04/05/12). */
+/**
+ * Pagina de ruta: conecta los hooks de lista, historial, Excel y gestion con los componentes
+ * (CU-04/05/12 y CU-07/08/10 desde la fila de cada socio).
+ */
 export default function ListaPage() {
   const historial = useHistorialListas()
   const vista = useLista({ onGenerada: historial.refrescar })
   const excel = useDescargarExcel()
+  // Tras crear la gestion o registrar su resultado se recarga la lista para ver las columnas.
+  const gestion = useGestion({ onGuardada: vista.recargar })
   const { parametros, errores, lista } = vista
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -193,8 +200,23 @@ export default function ListaPage() {
             error={excel.error}
             onDescargar={(id) => excel.descargar(id, lista.fechaGeneracion)}
           />
-          <TablaLista lista={lista} />
+          <TablaLista lista={lista} onGestionar={gestion.abrir} />
         </>
+      )}
+
+      {gestion.prediccion && (
+        <FormularioGestion
+          prediccion={gestion.prediccion}
+          hoy={gestion.hoy}
+          estado={gestion.estado}
+          sugeridas={gestion.sugeridas}
+          gestion={gestion.gestion}
+          error={gestion.error}
+          onCrear={gestion.crear}
+          onRegistrar={gestion.registrar}
+          onCerrar={gestion.cerrar}
+          onReintentar={gestion.reintentar}
+        />
       )}
     </section>
   )

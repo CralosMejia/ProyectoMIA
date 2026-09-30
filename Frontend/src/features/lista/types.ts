@@ -44,7 +44,10 @@ export interface Prediccion {
   nivelRiesgo: NivelRiesgo
   factoresPrincipales: string[]
   dentroTopK: boolean
+  /** Gestion del ciclo (la misma aunque la membresia este en varias listas); `null` si no hay. */
+  gestionId: number | null
   gestionEstado: EstadoGestion | null
+  /** Nombre de la campaña al asignarla; `null` sin gestion o gestion sin campaña. */
   campaniaAsignada: string | null
 }
 
@@ -95,6 +98,9 @@ export interface CrearGestionParams {
   fechaSeguimiento: string
   responsable?: string | null
 }
+
+/** Datos del formulario de CU-08 (la prediccion la aporta la ventana abierta). */
+export type DatosNuevaGestion = Omit<CrearGestionParams, 'prediccionId'>
 
 /** CU-10. `renovoDeclarado` SI/NO cierra la gestion. */
 export interface ResultadoGestionParams {
