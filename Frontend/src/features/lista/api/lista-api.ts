@@ -318,7 +318,10 @@ export async function getCampaniasSugeridas(
   }))
 }
 
-/** CU-08: asigna una gestion (con o sin campaña) a un socio de la lista. */
+/**
+ * CU-08: asigna una gestion a un socio de la lista. Sin campaña no hay fecha de seguimiento
+ * (`null`) y el servidor devuelve la gestion ya cerrada, sin resultado que registrar.
+ */
 export async function crearGestion(
   params: CrearGestionParams,
   signal?: AbortSignal,
@@ -326,7 +329,7 @@ export async function crearGestion(
   const body = {
     prediccion_id: params.prediccionId,
     campania_id: params.campaniaId ?? null,
-    fecha_seguimiento: params.fechaSeguimiento,
+    fecha_seguimiento: params.fechaSeguimiento ?? null,
     responsable: params.responsable ?? null,
   }
   return toGestion(await httpPost<GestionResponse>(GESTIONES_PATH, body, { signal }))

@@ -37,6 +37,8 @@ describe('AyudaLista', () => {
       'Socios prioritarios a contactar',
       'Niveles de riesgo: alto, medio y bajo',
       'Motivos',
+      'Campañas',
+      'Gestionar a un socio',
     ])
     const texto = dialogo.textContent ?? ''
     expect(texto).toMatch(/alto/)
@@ -101,7 +103,78 @@ describe('AyudaLista', () => {
     await user.click(boton())
 
     const dialogo = screen.getByRole('dialog', { name: BOTON })
-    expect(within(dialogo).getAllByRole('heading', { level: 3 })).toHaveLength(4)
+    expect(within(dialogo).getAllByRole('heading', { level: 3 })).toHaveLength(6)
+  })
+
+  /** Texto de la seccion con ese titulo (espacios y saltos de linea colapsados). */
+  async function textoDeLaSeccion(titulo: string): Promise<string> {
+    const user = userEvent.setup()
+    render(<AyudaLista />)
+    await user.click(boton())
+    const seccion = within(screen.getByRole('dialog'))
+      .getByRole('heading', { level: 3, name: titulo })
+      .closest('section')
+    return (seccion?.textContent ?? '').replace(/\s+/g, ' ')
+  }
+
+  it('seccion "Campañas": donde se administran, que se puede hacer y para que sirve cada dato', async () => {
+    const texto = await textoDeLaSeccion('Campañas')
+
+    expect(texto).toMatch(/Se crean y administran en la página «Campañas»/)
+    expect(texto).toMatch(/crear una campaña, editarla, inactivarla y volver a activarla/)
+    expect(texto).toMatch(/Las campañas no se borran/)
+    expect(texto).toMatch(
+      /Los niveles de riesgo y los planes que marcas en una campaña deciden a qué socios se les sugiere/,
+    )
+    expect(texto).toMatch(/La prioridad ordena las sugerencias: la campaña con prioridad 1 sale primero/)
+    expect(texto).toMatch(/Una campaña inactiva deja de sugerirse hasta que la actives de nuevo/)
+  })
+
+  it('seccion "Gestionar a un socio": boton, campaña, seguimiento, preguntas y fecha del contacto', async () => {
+    const texto = await textoDeLaSeccion('Gestionar a un socio')
+
+    expect(texto).toMatch(/En la fila de cada socio está el botón «Gestionar»/)
+    expect(texto).toMatch(/una de las campañas sugeridas para ese socio o «No asignar campaña»/)
+    expect(texto).toMatch(/La fecha de seguimiento es el día en que volverás a revisar a ese socio/)
+    expect(texto).toMatch(/«Registrar resultado»/)
+    for (const pregunta of [
+      '¿Se contactó al socio?',
+      '¿Se ofreció la campaña?',
+      '¿Aceptó la campaña?',
+      '¿Renovó?',
+    ]) {
+      expect(texto).toContain(`«${pregunta}»: `)
+    }
+    expect(texto).toMatch(/«Sí» o «No» cierran la gestión/)
+    expect(texto).toMatch(/«Pendiente» la deja abierta/)
+    expect(texto).toMatch(
+      /La fecha del contacto debe estar entre el día en que se creó la gestión y hoy/,
+    )
+    expect(texto).toMatch(
+      /Si eliges «No asignar campaña», la gestión queda cerrada desde el inicio.*solo se puede consultar/,
+    )
+  })
+
+  it('las secciones nuevas tampoco usan palabras tecnicas ni codigos', async () => {
+    const user = userEvent.setup()
+    render(<AyudaLista />)
+
+    await user.click(boton())
+
+    const texto = screen.getByRole('dialog').textContent ?? ''
+    for (const prohibida of [
+      'API',
+      'endpoint',
+      'null',
+      'PENDIENTE',
+      'CERRADA',
+      'NO_APLICA',
+      '409',
+      '422',
+    ]) {
+      expect(texto).not.toContain(prohibida)
+    }
+    expect(texto).not.toMatch(/\bestado\b/i)
   })
 
   it('arquitectura: reutiliza el Modal de shared/ui y no llama a api/ ni hooks del feature', () => {

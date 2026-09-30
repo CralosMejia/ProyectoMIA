@@ -43,7 +43,10 @@ export interface UseGestionResult {
   abrir: (prediccion: Prediccion) => void
   reintentar: () => void
   cerrar: () => void
-  /** Crea la gestion; devuelve la creada o `null` si fallo o ya habia un envio en curso. */
+  /**
+   * Crea la gestion; devuelve la creada o `null` si fallo o ya habia un envio en curso. Si nace
+   * cerrada (sin campaña), la ventana se cierra en vez de pasar al resultado.
+   */
   crear: (datos: DatosNuevaGestion) => Promise<Gestion | null>
   /** Registra el resultado; devuelve la gestion o `null` si fallo o ya habia un envio en curso. */
   registrar: (datos: ResultadoGestionParams) => Promise<Gestion | null>
@@ -134,6 +137,7 @@ export function useGestion({ onGuardada }: UseGestionOptions = {}): UseGestionRe
 
   const enviar = async (
     peticion: (signal: AbortSignal) => Promise<Gestion>,
+    cerrarSiNaceCerrada = false,
   ): Promise<Gestion | null> => {
     if (enviandoRef.current) return null
     enviandoRef.current = true
@@ -143,8 +147,13 @@ export function useGestion({ onGuardada }: UseGestionOptions = {}): UseGestionRe
     try {
       const guardada = await peticion(signal)
       if (signal.aborted) return null
-      setGestion(guardada)
-      setEstado('listo')
+      if (cerrarSiNaceCerrada && guardada.estado === 'CERRADA') {
+        // Sin campaña no hay resultado que registrar: la ventana se cierra sin pasar a la parte 2.
+        cerrar()
+      } else {
+        setGestion(guardada)
+        setEstado('listo')
+      }
       onGuardada?.(guardada)
       return guardada
     } catch (reason: unknown) {
@@ -160,7 +169,7 @@ export function useGestion({ onGuardada }: UseGestionOptions = {}): UseGestionRe
   const crear = (datos: DatosNuevaGestion): Promise<Gestion | null> => {
     if (prediccion === null) return Promise.resolve(null)
     const prediccionId = prediccion.prediccionId
-    return enviar((signal) => crearGestion({ ...datos, prediccionId }, signal))
+    return enviar((signal) => crearGestion({ ...datos, prediccionId }, signal), true)
   }
 
   const registrar = (datos: ResultadoGestionParams): Promise<Gestion | null> => {

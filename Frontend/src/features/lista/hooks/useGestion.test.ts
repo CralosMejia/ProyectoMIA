@@ -149,7 +149,60 @@ describe('useGestion', () => {
     expect(creada).toMatchObject({ prediccionId: 1503, campaniaId: 2, estado: 'PENDIENTE' })
     expect(result.current.gestion).toBe(creada)
     expect(result.current.estado).toBe('listo')
+    // Con campaña la ventana sigue abierta, en la parte 2.
+    expect(result.current.prediccion).not.toBeNull()
     expect(onGuardada).toHaveBeenCalledWith(creada)
+  })
+
+  it('crear sin campaña → la gestion nace cerrada: la ventana se cierra y avisa a onGuardada una vez', async () => {
+    const onGuardada = vi.fn()
+    const gestiones: unknown[] = []
+    const { result } = renderHook(() => {
+      const ventana = useGestion({ onGuardada })
+      // Cada render: la gestion nunca debe llegar a la ventana (no se pinta la parte 2).
+      gestiones.push(ventana.gestion)
+      return ventana
+    })
+    act(() => result.current.abrir(prediccion()))
+    await waitFor(() => expect(result.current.estado).toBe('listo'))
+
+    let creada: unknown
+    await act(async () => {
+      creada = await result.current.crear({
+        campaniaId: null,
+        fechaSeguimiento: null,
+        responsable: null,
+      })
+    })
+
+    expect(creada).toMatchObject({ prediccionId: 1503, campaniaId: null, estado: 'CERRADA' })
+    expect(result.current.prediccion).toBeNull()
+    expect(result.current.estado).toBe('inactivo')
+    expect(result.current.gestion).toBeNull()
+    expect(result.current.error).toBeNull()
+    expect(gestiones.every((g) => g === null)).toBe(true)
+    expect(onGuardada).toHaveBeenCalledTimes(1)
+    expect(onGuardada).toHaveBeenCalledWith(creada)
+  })
+
+  it('tras crear sin campaña se puede abrir y crear la gestion de otro socio', async () => {
+    const posts = contar('post', '*/api/v1/gestiones')
+    const { result } = renderHook(() => useGestion())
+    act(() => result.current.abrir(prediccion()))
+    await waitFor(() => expect(result.current.estado).toBe('listo'))
+    await act(async () => {
+      await result.current.crear({ campaniaId: null, fechaSeguimiento: null, responsable: null })
+    })
+
+    act(() => result.current.abrir(prediccion({ prediccionId: 1504, prioridad: 4 })))
+    await waitFor(() => expect(result.current.estado).toBe('listo'))
+    await act(async () => {
+      await result.current.crear({ campaniaId: 2, fechaSeguimiento: '2026-10-30' })
+    })
+
+    expect(posts.llamadas).toBe(2)
+    expect(result.current.prediccion?.prediccionId).toBe(1504)
+    expect(result.current.gestion).toMatchObject({ estado: 'PENDIENTE', campaniaId: 2 })
   })
 
   it.each([

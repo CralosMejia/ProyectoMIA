@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ApiError } from '../../../core/http/api-error'
 import {
+  activarCampania,
   crearCampania,
   editarCampania,
   inactivarCampania,
@@ -17,7 +18,7 @@ export interface UseCampaniasResult {
   cargando: boolean
   /** Error al consultar la lista. */
   errorCarga: string | null
-  /** Error de la última operación (crear, editar o inactivar), con el mensaje del servidor. */
+  /** Error de la última operación (crear, editar, inactivar o activar), con el mensaje del servidor. */
   error: string | null
   guardando: boolean
   recargar: () => void
@@ -25,6 +26,7 @@ export interface UseCampaniasResult {
   crear: (entrada: CampaniaEntrada) => Promise<boolean>
   editar: (id: number, entrada: CampaniaEntrada) => Promise<boolean>
   inactivar: (id: number) => Promise<boolean>
+  activar: (id: number) => Promise<boolean>
   limpiarError: () => void
 }
 
@@ -121,6 +123,15 @@ export function useCampanias(): UseCampaniasResult {
       },
     )
 
+  /** Vuelve a activar una inactiva; la fila se actualiza en su sitio, igual que al inactivar. */
+  const activar = (id: number) =>
+    ejecutar(
+      (signal) => activarCampania(id, signal),
+      (activa) => {
+        setCampanias((actuales) => actuales.map((c) => (c.id === activa.id ? activa : c)))
+      },
+    )
+
   const limpiarError = () => {
     setError(null)
   }
@@ -135,6 +146,7 @@ export function useCampanias(): UseCampaniasResult {
     crear,
     editar,
     inactivar,
+    activar,
     limpiarError,
   }
 }

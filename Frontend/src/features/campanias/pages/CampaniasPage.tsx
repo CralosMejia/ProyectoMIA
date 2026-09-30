@@ -71,6 +71,7 @@ export default function CampaniasPage() {
           deshabilitado={vista.guardando}
           onEditar={(campania) => abrir({ tipo: 'editar', campania })}
           onInactivar={(campania) => abrir({ tipo: 'inactivar', campania })}
+          onActivar={(campania) => void vista.activar(campania.id)}
         />
       )}
 

@@ -263,6 +263,19 @@ describe('TablaLista', () => {
       }
     })
 
+    it('fila cerrada sin campaña: la unica accion es "Ver gestión"', () => {
+      render(<TablaLista lista={lista(TRES)} />)
+
+      const fila = tabla(TITULO_OTROS).getAllByRole('row')[1] as HTMLElement
+      expect(
+        within(fila)
+          .getAllByRole('button')
+          .map((b) => [b.getAttribute('aria-label'), b.textContent]),
+      ).toEqual([['Ver gestión prioridad 3', 'Ver gestión']])
+      expect(within(fila).queryByRole('button', { name: /Registrar resultado/ })).not.toBeInTheDocument()
+      expect(within(fila).queryByRole('button', { name: /^Gestionar/ })).not.toBeInTheDocument()
+    })
+
     it('el boton emite onGestionar con la prediccion de su fila', async () => {
       const user = userEvent.setup()
       const onGestionar = vi.fn()

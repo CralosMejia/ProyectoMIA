@@ -10,16 +10,18 @@ export interface TablaCampaniasProps {
   deshabilitado: boolean
   onEditar: (campania: Campania) => void
   onInactivar: (campania: Campania) => void
+  onActivar: (campania: Campania) => void
 }
 
 const BOTON = 'rounded-pill border border-ink/20 px-3 py-1 text-sm font-medium disabled:opacity-50'
 
-/** Tabla de campañas (CU-06): sin botón de eliminar; las inactivas solo se editan. */
+/** Tabla de campañas (CU-06): sin botón de eliminar; las inactivas se editan o se activan. */
 export function TablaCampanias({
   campanias,
   deshabilitado,
   onEditar,
   onInactivar,
+  onActivar,
 }: TablaCampaniasProps) {
   const columnas: DataTableColumn<Fila>[] = [
     {
@@ -55,7 +57,7 @@ export function TablaCampanias({
           >
             Editar
           </button>
-          {c.activa && (
+          {c.activa ? (
             <button
               type="button"
               aria-label={`Inactivar ${c.nombre}`}
@@ -64,6 +66,16 @@ export function TablaCampanias({
               className={BOTON}
             >
               Inactivar
+            </button>
+          ) : (
+            <button
+              type="button"
+              aria-label={`Activar ${c.nombre}`}
+              disabled={deshabilitado}
+              onClick={() => onActivar(c)}
+              className={BOTON}
+            >
+              Activar
             </button>
           )}
         </span>

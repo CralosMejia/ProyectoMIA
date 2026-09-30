@@ -217,6 +217,103 @@ describe('CampaniasPage', () => {
     expect(within(tr).getByRole('button', { name: `Editar ${EJEMPLO_1}` })).toBeInTheDocument()
   })
 
+  /** Deja la campaña inactiva pasando por la confirmación. */
+  async function inactivar(user: ReturnType<typeof userEvent.setup>, nombre: string) {
+    await user.click(screen.getByRole('button', { name: `Inactivar ${nombre}` }))
+    await user.click(
+      within(screen.getByRole('dialog', { name: 'Inactivar campaña' })).getByRole('button', {
+        name: 'Inactivar',
+      }),
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  }
+
+  it('fila inactiva: botón "Activar <nombre>" y no "Inactivar"; fila activa: al revés', async () => {
+    const { user, tabla } = await renderPagina()
+    await inactivar(user, EJEMPLO_1)
+
+    const inactiva = fila(tabla, EJEMPLO_1)
+    expect(within(inactiva).getByRole('button', { name: `Activar ${EJEMPLO_1}` })).toHaveTextContent(
+      'Activar',
+    )
+    expect(
+      within(inactiva).queryByRole('button', { name: `Inactivar ${EJEMPLO_1}` }),
+    ).not.toBeInTheDocument()
+    expect(within(inactiva).getByRole('button', { name: `Editar ${EJEMPLO_1}` })).toBeInTheDocument()
+
+    const activa = fila(tabla, EJEMPLO_2)
+    expect(within(activa).getByRole('button', { name: `Inactivar ${EJEMPLO_2}` })).toBeInTheDocument()
+    expect(
+      within(activa).queryByRole('button', { name: `Activar ${EJEMPLO_2}` }),
+    ).not.toBeInTheDocument()
+    expect(within(activa).getByRole('button', { name: `Editar ${EJEMPLO_2}` })).toBeInTheDocument()
+  })
+
+  it('"Activar" no pide confirmación: la fila pasa a "Activa" y el botón a "Inactivar"', async () => {
+    const { user, tabla } = await renderPagina()
+    await inactivar(user, EJEMPLO_1)
+    let llamadas = 0
+    server.use(
+      http.post(`${CAMPANIAS_PATH}/:id/activar`, () => {
+        llamadas += 1
+        return undefined
+      }),
+    )
+
+    await user.click(within(tabla).getByRole('button', { name: `Activar ${EJEMPLO_1}` }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    const tr = fila(tabla, EJEMPLO_1)
+    expect(
+      await within(tr).findByRole('button', { name: `Inactivar ${EJEMPLO_1}` }),
+    ).toBeInTheDocument()
+    expect(within(tr).getByText('Activa')).toBeInTheDocument()
+    expect(within(tr).queryByText('Inactiva')).not.toBeInTheDocument()
+    expect(within(tr).queryByRole('button', { name: `Activar ${EJEMPLO_1}` })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(llamadas).toBe(1)
+  })
+
+  it('mientras se activa, los botones de la tabla quedan deshabilitados', async () => {
+    const { user, tabla } = await renderPagina()
+    await inactivar(user, EJEMPLO_1)
+    server.use(
+      http.post(`${CAMPANIAS_PATH}/:id/activar`, async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        return undefined
+      }),
+    )
+
+    await user.click(within(tabla).getByRole('button', { name: `Activar ${EJEMPLO_1}` }))
+
+    expect(within(tabla).getByRole('button', { name: `Activar ${EJEMPLO_1}` })).toBeDisabled()
+    expect(within(tabla).getByRole('button', { name: `Editar ${EJEMPLO_2}` })).toBeDisabled()
+    expect(within(tabla).getByRole('button', { name: `Inactivar ${EJEMPLO_2}` })).toBeDisabled()
+    expect(
+      await within(tabla).findByRole('button', { name: `Inactivar ${EJEMPLO_1}` }),
+    ).toBeEnabled()
+  })
+
+  it('error al activar → se ve el mensaje y la fila sigue "Inactiva"', async () => {
+    const { user, tabla } = await renderPagina()
+    await inactivar(user, EJEMPLO_1)
+    server.use(
+      http.post(`${CAMPANIAS_PATH}/:id/activar`, () =>
+        HttpResponse.json(
+          { error: { code: 'not_found', message: 'La campana no existe.' } },
+          { status: 404 },
+        ),
+      ),
+    )
+
+    await user.click(within(tabla).getByRole('button', { name: `Activar ${EJEMPLO_1}` }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('La campana no existe.')
+    const tr = fila(tabla, EJEMPLO_1)
+    expect(within(tr).getByText('Inactiva')).toBeInTheDocument()
+    expect(within(tr).getByRole('button', { name: `Activar ${EJEMPLO_1}` })).toBeEnabled()
+  })
+
   it('cancelar la confirmación no inactiva', async () => {
     const { user, tabla } = await renderPagina()
     const contador = { llamadas: 0 }

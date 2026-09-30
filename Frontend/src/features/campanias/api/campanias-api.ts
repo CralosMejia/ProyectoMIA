@@ -65,3 +65,10 @@ export async function inactivarCampania(id: number, signal?: AbortSignal): Promi
     await httpPost<CampaniaResponse>(`${CAMPANIAS_PATH}/${id}/inactivar`, null, { signal }),
   )
 }
+
+/** Vuelve a activar una campaña inactiva: se sugiere de nuevo a los socios compatibles. */
+export async function activarCampania(id: number, signal?: AbortSignal): Promise<Campania> {
+  return toCampania(
+    await httpPost<CampaniaResponse>(`${CAMPANIAS_PATH}/${id}/activar`, null, { signal }),
+  )
+}

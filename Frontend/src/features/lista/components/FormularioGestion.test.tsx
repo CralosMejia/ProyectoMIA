@@ -150,7 +150,8 @@ describe('FormularioGestion', () => {
     it('fecha 2026-11-05 → mensaje con el rango, enlazado al campo, sin enviar', async () => {
       const user = userEvent.setup()
       const { onCrear } = renderFormulario()
-      await user.click(screen.getByRole('radio', { name: 'No asignar campaña' }))
+      // Con campaña: sin campaña el campo de fecha no existe (R-010).
+      await user.click(screen.getByRole('radio', { name: 'Ejemplo: Renovación anticipada' }))
       const fecha = screen.getByLabelText('Fecha de seguimiento')
       fireEvent.change(fecha, { target: { value: '2026-11-05' } })
 
@@ -190,18 +191,65 @@ describe('FormularioGestion', () => {
       })
     })
 
-    it('"No asignar campaña" y responsable vacio → campaniaId y responsable null', async () => {
+    it('con campaña y responsable vacio → responsable null', async () => {
       const user = userEvent.setup()
       const { onCrear } = renderFormulario()
 
-      await user.click(screen.getByRole('radio', { name: 'No asignar campaña' }))
+      await user.click(screen.getByRole('radio', { name: 'Ejemplo: Renovación anticipada' }))
+      await user.type(screen.getByLabelText('Responsable (opcional)'), '   ')
       await user.click(screen.getByRole('button', { name: 'Crear gestión' }))
 
       expect(onCrear).toHaveBeenCalledWith({
-        campaniaId: null,
+        campaniaId: 2,
         fechaSeguimiento: '2026-10-30',
         responsable: null,
       })
+    })
+
+    it('"No asignar campaña" → emite campaniaId, fechaSeguimiento y responsable null', async () => {
+      const user = userEvent.setup()
+      const { onCrear } = renderFormulario()
+
+      // Lo escrito antes de elegir "No asignar campaña" no viaja.
+      await user.type(screen.getByLabelText('Responsable (opcional)'), 'Andrea')
+      await user.click(screen.getByRole('radio', { name: 'No asignar campaña' }))
+      await user.click(screen.getByRole('button', { name: 'Crear gestión' }))
+
+      expect(onCrear).toHaveBeenCalledTimes(1)
+      expect(onCrear).toHaveBeenCalledWith({
+        campaniaId: null,
+        fechaSeguimiento: null,
+        responsable: null,
+      })
+    })
+
+    it('"No asignar campaña" oculta fecha y responsable y muestra el aviso; con campaña vuelven', async () => {
+      const user = userEvent.setup()
+      renderFormulario()
+      const aviso = 'Sin campaña, la gestión queda cerrada y no tendrá seguimiento.'
+      expect(screen.queryByText(aviso)).not.toBeInTheDocument()
+
+      await user.click(screen.getByRole('radio', { name: 'No asignar campaña' }))
+
+      expect(screen.queryByLabelText('Fecha de seguimiento')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Responsable (opcional)')).not.toBeInTheDocument()
+      expect(screen.getByText(aviso)).toBeInTheDocument()
+
+      await user.click(screen.getByRole('radio', { name: 'Ejemplo: Renovación anticipada' }))
+
+      expect(screen.getByLabelText('Fecha de seguimiento')).toHaveValue('2026-10-30')
+      expect(screen.getByLabelText('Responsable (opcional)')).toBeInTheDocument()
+      expect(screen.queryByText(aviso)).not.toBeInTheDocument()
+    })
+
+    it('sin sugerencias → "No asignar campaña" marcada: sin fecha ni responsable y con el aviso', () => {
+      renderFormulario({ sugeridas: [] })
+
+      expect(screen.queryByLabelText('Fecha de seguimiento')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Responsable (opcional)')).not.toBeInTheDocument()
+      expect(
+        screen.getByText('Sin campaña, la gestión queda cerrada y no tendrá seguimiento.'),
+      ).toBeInTheDocument()
     })
 
     it('plazo terminado → mensaje y "Crear gestión" deshabilitado', () => {
@@ -209,6 +257,30 @@ describe('FormularioGestion', () => {
 
       expect(screen.getByText('El plazo de seguimiento de este ciclo ya terminó.')).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Crear gestión' })).toBeDisabled()
+    })
+
+    it('plazo terminado → "Crear gestión" solo se habilita con "No asignar campaña" y crea sin fecha', async () => {
+      const user = userEvent.setup()
+      const { onCrear } = renderFormulario({
+        prediccion: { ...PREDICCION, fechaVencimiento: '2026-08-29' },
+      })
+      const crear = screen.getByRole('button', { name: 'Crear gestión' })
+
+      await user.click(screen.getByRole('radio', { name: 'Ejemplo: Renovación anticipada' }))
+      expect(crear).toBeDisabled()
+
+      await user.click(screen.getByRole('radio', { name: 'No asignar campaña' }))
+      expect(crear).toBeEnabled()
+      expect(
+        screen.queryByText('El plazo de seguimiento de este ciclo ya terminó.'),
+      ).not.toBeInTheDocument()
+      await user.click(crear)
+
+      expect(onCrear).toHaveBeenCalledWith({
+        campaniaId: null,
+        fechaSeguimiento: null,
+        responsable: null,
+      })
     })
 
     it('enviando → "Crear gestión" deshabilitado; error del servidor → ErrorAlert', () => {
@@ -381,6 +453,31 @@ describe('FormularioGestion', () => {
     for (const campo of campos) expect(campo).toBeDisabled()
     expect(grupo('¿Renovó?').getByRole('radio', { name: 'No' })).toBeChecked()
     expect(screen.getByLabelText('Observaciones')).toHaveValue('Se muda de ciudad.')
+  })
+
+  it('gestion cerrada sin campaña → solo "No se le asignó campaña": sin preguntas, campos ni guardar', () => {
+    const { dialogo } = renderFormulario({
+      gestion: gestion({
+        estado: 'CERRADA',
+        campaniaId: null,
+        campaniaNombre: null,
+        responsable: null,
+        fechaSeguimiento: '2026-09-28',
+        fechaCierre: new Date(2026, 8, 28, 10, 0, 0),
+      }),
+    })
+
+    expect(dialogo.getByText('No se le asignó campaña')).toBeInTheDocument()
+    expect(screen.queryByRole('form', { name: 'Resultado del seguimiento' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('form', { name: 'Nueva gestión' })).not.toBeInTheDocument()
+    expect(dialogo.queryAllByRole('radio')).toHaveLength(0)
+    expect(dialogo.queryAllByRole('textbox')).toHaveLength(0)
+    expect(dialogo.queryAllByRole('group')).toHaveLength(0)
+    expect(document.querySelectorAll('input, textarea, select')).toHaveLength(0)
+    expect(dialogo.queryByRole('button', { name: 'Guardar resultado' })).not.toBeInTheDocument()
+    expect(dialogo.queryByRole('button', { name: 'Crear gestión' })).not.toBeInTheDocument()
+    expect(dialogo.getAllByRole('button').map((b) => b.textContent)).toEqual(['Cerrar'])
+    expect(dialogo.queryByText('Gestión cerrada: no se puede modificar.')).not.toBeInTheDocument()
   })
 
   describe('accesibilidad y foco', () => {

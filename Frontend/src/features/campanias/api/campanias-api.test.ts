@@ -3,8 +3,14 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { ApiError } from '../../../core/http/api-error'
 import { server } from '../../../mocks/server'
 import type { CampaniaEntrada, PlanCampania } from '../types'
-import { crearCampania, editarCampania, inactivarCampania, listarCampanias } from './campanias-api'
-import { reiniciarCampaniasSimuladas } from './campanias-api.handlers'
+import {
+  activarCampania,
+  crearCampania,
+  editarCampania,
+  inactivarCampania,
+  listarCampanias,
+} from './campanias-api'
+import { MENSAJE_NO_EXISTE, reiniciarCampaniasSimuladas } from './campanias-api.handlers'
 import source from './campanias-api.ts?raw'
 
 const ENTRADA: CampaniaEntrada = {
@@ -107,6 +113,47 @@ describe('campanias-api (contra MSW)', () => {
 
     expect(method).toBe('POST')
     expect(campania).toMatchObject({ id: 3, activa: false })
+  })
+
+  it('activarCampania hace POST /campanias/{id}/activar sin cuerpo y devuelve activa true', async () => {
+    await inactivarCampania(3)
+    let method = ''
+    let cuerpo = 'sin leer'
+    server.use(
+      http.post('*/api/v1/campanias/3/activar', async ({ request }) => {
+        method = request.method
+        cuerpo = await request.clone().text()
+        return undefined
+      }),
+    )
+
+    const campania = await activarCampania(3)
+
+    expect(method).toBe('POST')
+    expect(['', 'null']).toContain(cuerpo)
+    expect(campania).toMatchObject({ id: 3, activa: true, esEjemplo: true })
+    expect((await listarCampanias()).find((c) => c.id === 3)?.activa).toBe(true)
+  })
+
+  it('activarCampania sobre una ya activa → 200 sin cambios (idempotente)', async () => {
+    const campania = await activarCampania(1)
+
+    expect(campania).toMatchObject({ id: 1, activa: true, esEjemplo: true })
+  })
+
+  it('activarCampania de una inexistente → ApiError 404 con el mensaje del servidor', async () => {
+    const error = await activarCampania(999).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect((error as ApiError).status).toBe(404)
+    expect((error as ApiError).message).toBe(MENSAJE_NO_EXISTE)
+  })
+
+  it('activarCampania propaga la señal de cancelación', async () => {
+    const controller = new AbortController()
+    controller.abort()
+
+    await expect(activarCampania(3, controller.signal)).rejects.toBeDefined()
   })
 
   it('400 simulado → ApiError 400 con el mensaje del servidor', async () => {

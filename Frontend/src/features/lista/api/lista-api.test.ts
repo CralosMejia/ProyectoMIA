@@ -497,6 +497,71 @@ describe('lista-api (contra MSW)', () => {
     })
   })
 
+  it('crearGestion sin campaña ni fecha → envia fecha_seguimiento null y devuelve la gestion cerrada', async () => {
+    let body: unknown = null
+    server.use(
+      http.post('*/api/v1/gestiones', async ({ request }) => {
+        body = await request.clone().json()
+        return undefined
+      }),
+    )
+
+    const gestion = await crearGestion({
+      prediccionId: 1503,
+      campaniaId: null,
+      fechaSeguimiento: null,
+      responsable: null,
+    })
+
+    expect(body).toEqual({
+      prediccion_id: 1503,
+      campania_id: null,
+      fecha_seguimiento: null,
+      responsable: null,
+    })
+    expect(gestion).toMatchObject({
+      prediccionId: 1503,
+      estado: 'CERRADA',
+      campaniaId: null,
+      campaniaNombre: null,
+      responsable: null,
+      contactado: null,
+      campaniaOfrecida: null,
+      campaniaAceptada: null,
+      renovoDeclarado: null,
+      fechaContacto: null,
+      observaciones: null,
+    })
+    expect(gestion.fechaCierre).toBeInstanceOf(Date)
+  })
+
+  it('crearGestion con campaña y sin fecha → ApiError 400 (la fecha sigue siendo obligatoria)', async () => {
+    const error = await crearGestion({
+      prediccionId: 1503,
+      campaniaId: 2,
+      fechaSeguimiento: null,
+    }).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({ status: 400 })
+  })
+
+  it('registrarResultado sobre la gestion sin campaña → ApiError 409 con el mensaje del servidor', async () => {
+    const sinCampania = await getGestion(GESTION_CERRADA_ID)
+    expect(sinCampania).toMatchObject({ estado: 'CERRADA', campaniaId: null })
+
+    const error = await registrarResultado(sinCampania.id, {
+      contactado: true,
+      campaniaOfrecida: 'NO_APLICA',
+      campaniaAceptada: 'NO_APLICA',
+      renovoDeclarado: 'NO',
+      fechaContacto: '2026-09-28',
+    }).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({ status: 409, message: MENSAJE_GESTION_CERRADA })
+  })
+
   it('crearGestion con 409 → ApiError 409', async () => {
     server.use(
       http.post('*/api/v1/gestiones', () =>
@@ -589,7 +654,13 @@ describe('lista-api (contra MSW)', () => {
 
   it('getGestion de la cerrada → estado CERRADA con fecha de cierre; inexistente → 404', async () => {
     const cerrada = await getGestion(GESTION_CERRADA_ID)
-    expect(cerrada).toMatchObject({ estado: 'CERRADA', campaniaId: null, renovoDeclarado: 'NO' })
+    // Sin campaña: cerrada desde su creacion y sin resultado.
+    expect(cerrada).toMatchObject({
+      estado: 'CERRADA',
+      campaniaId: null,
+      contactado: null,
+      renovoDeclarado: null,
+    })
     expect(cerrada.fechaCierre).toBeInstanceOf(Date)
 
     const error = await getGestion(999).catch((e: unknown) => e)

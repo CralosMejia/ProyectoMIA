@@ -4,6 +4,9 @@ import { crearPlantillaSintetica } from './plantilla-sintetica'
 
 /**
  * Recorrido critico del Dia 5 (R-009): campaña -> lista -> gestion -> resultado -> Excel.
+ * R-010 añade: inactivar y volver a activar la campaña (y que se siga sugiriendo), la ayuda de la
+ * lista con las secciones de campañas y gestion, y la gestion con «No asignar campaña», que nace
+ * cerrada (sin fecha de seguimiento ni responsable, y sin resultado que registrar).
  *
  * CREA una campaña, una carga, una lista y una gestion: se ejecuta SOLO contra el stack aislado
  * `mtabolic-e2e` (E2E_BASE_URL=http://localhost:8081), nunca contra el principal.
@@ -36,7 +39,7 @@ async function cargarPlantilla(page: Page, ruta: string) {
   })
 }
 
-test('crea una campaña, gestiona un socio de la lista y cierra la gestion', async ({
+test('crea y reactiva una campaña, gestiona socios con y sin campaña y cierra la gestion', async ({
   page,
   baseURL,
 }) => {
@@ -74,6 +77,46 @@ test('crea una campaña, gestiona un socio de la lista y cierra la gestion', asy
     await expect(page.getByRole('cell', { name: nombreCampania, exact: true })).toBeVisible()
   })
 
+  await test.step('inactivar la campaña y volver a activarla con «Activar <nombre>»', async () => {
+    const filaCampania = page
+      .getByRole('row')
+      .filter({ has: page.getByRole('cell', { name: nombreCampania, exact: true }) })
+    const activar = filaCampania.getByRole('button', {
+      name: `Activar ${nombreCampania}`,
+      exact: true,
+    })
+    const inactivar = filaCampania.getByRole('button', {
+      name: `Inactivar ${nombreCampania}`,
+      exact: true,
+    })
+    await expect(filaCampania.getByRole('cell', { name: 'Activa', exact: true })).toBeVisible()
+    await expect(activar).toHaveCount(0)
+
+    await inactivar.click()
+    const confirmacion = page.getByRole('dialog', { name: 'Inactivar campaña' })
+    const inactivada = page.waitForResponse(
+      (r) =>
+        r.request().method() === 'POST' && /\/api\/v1\/campanias\/\d+\/inactivar$/.test(r.url()),
+    )
+    await confirmacion.getByRole('button', { name: 'Inactivar', exact: true }).click()
+    expect((await inactivada).status()).toBe(200)
+    await expect(confirmacion).toHaveCount(0)
+    await expect(filaCampania.getByRole('cell', { name: 'Inactiva', exact: true })).toBeVisible()
+    await expect(activar).toBeVisible()
+    await expect(inactivar).toHaveCount(0)
+
+    const activada = page.waitForResponse(
+      (r) => r.request().method() === 'POST' && /\/api\/v1\/campanias\/\d+\/activar$/.test(r.url()),
+    )
+    await activar.click()
+    expect((await activada).status()).toBe(200)
+    // Sin ventana de confirmacion: la fila cambia en su sitio.
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(filaCampania.getByRole('cell', { name: 'Activa', exact: true })).toBeVisible()
+    await expect(inactivar).toBeVisible()
+    await expect(activar).toHaveCount(0)
+  })
+
   await test.step('cargar socios ficticios y generar la lista', async () => {
     const plantilla = await crearPlantillaSintetica(test.info().outputPath('plantilla_e2e.xlsx'))
     await cargarPlantilla(page, plantilla.ruta)
@@ -89,6 +132,19 @@ test('crea una campaña, gestiona un socio de la lista y cierra la gestion', asy
       timeout: 30_000,
     })
     await expect(page.getByRole('columnheader', { name: 'Campaña' }).first()).toBeVisible()
+  })
+
+  await test.step('la ayuda muestra las secciones «Campañas» y «Gestionar a un socio»', async () => {
+    const botonAyuda = page.getByRole('button', { name: '¿Cómo funciona esta lista?' })
+    await botonAyuda.click()
+    const ayuda = page.getByRole('dialog', { name: '¿Cómo funciona esta lista?' })
+    await expect(ayuda.getByRole('heading', { name: 'Campañas', exact: true })).toBeVisible()
+    await expect(
+      ayuda.getByRole('heading', { name: 'Gestionar a un socio', exact: true }),
+    ).toBeVisible()
+    await ayuda.getByRole('button', { name: 'Cerrar' }).click()
+    await expect(ayuda).toHaveCount(0)
+    await expect(botonAyuda).toBeFocused()
   })
 
   const prioridad = await test.step('abrir «Gestionar» en un socio de riesgo alto o medio', async () => {
@@ -109,9 +165,10 @@ test('crea una campaña, gestiona un socio de la lista y cierra la gestion', asy
     has: page.getByRole('button', { name: new RegExp(`prioridad ${prioridad}$`) }),
   })
 
-  await test.step('crear la gestion con la campaña creada y la fecha sugerida', async () => {
+  await test.step('la campaña reactivada vuelve a sugerirse: crear la gestion con ella y la fecha sugerida', async () => {
     const nueva = dialogo.getByRole('form', { name: 'Nueva gestión' })
     await expect(nueva).toBeVisible()
+    await expect(nueva.getByLabel(nombreCampania)).toBeVisible()
     await nueva.getByLabel(nombreCampania).check()
     await expect(nueva.getByLabel('Fecha de seguimiento')).not.toHaveValue('')
     await nueva.getByRole('button', { name: 'Crear gestión' }).click()
@@ -141,7 +198,73 @@ test('crea una campaña, gestiona un socio de la lista y cierra la gestion', asy
     await dialogo.getByRole('button', { name: 'Cerrar' }).click()
   })
 
-  await test.step('el Excel lleva «Cerrada» en la columna «Gestión» y la campaña', async () => {
+  const prioridadSin = await test.step('abrir «Gestionar» en otro socio sin gestion', async () => {
+    const boton = page.getByRole('button', { name: /^Gestionar prioridad \d+$/ }).first()
+    await expect(boton).toBeVisible()
+    const etiqueta = (await boton.getAttribute('aria-label')) ?? ''
+    await boton.click()
+    return etiqueta.replace('Gestionar prioridad ', '')
+  })
+  expect(prioridadSin).not.toBe(prioridad)
+
+  const dialogoSin = page.getByRole('dialog', { name: `Gestión de la prioridad ${prioridadSin}` })
+  const accionesSin = page.getByRole('button', { name: new RegExp(`prioridad ${prioridadSin}$`) })
+  const filaSin = page.getByRole('row').filter({ has: accionesSin })
+  const verGestionSin = page.getByRole('button', {
+    name: `Ver gestión prioridad ${prioridadSin}`,
+    exact: true,
+  })
+
+  await test.step('«No asignar campaña»: sin fecha ni responsable, y la ventana se cierra al guardar', async () => {
+    const nueva = dialogoSin.getByRole('form', { name: 'Nueva gestión' })
+    await expect(nueva).toBeVisible()
+    await nueva.getByLabel('No asignar campaña').check()
+    await expect(nueva.getByLabel('Fecha de seguimiento')).toHaveCount(0)
+    await expect(nueva.getByLabel('Responsable (opcional)')).toHaveCount(0)
+    await expect(
+      nueva.getByText('Sin campaña, la gestión queda cerrada y no tendrá seguimiento.'),
+    ).toBeVisible()
+
+    const creada = page.waitForResponse(
+      (r) => r.request().method() === 'POST' && /\/api\/v1\/gestiones$/.test(r.url()),
+    )
+    await nueva.getByRole('button', { name: 'Crear gestión' }).click()
+    const respuesta = await creada
+    expect(respuesta.status()).toBe(201)
+    expect(respuesta.request().postDataJSON()).toMatchObject({
+      campania_id: null,
+      fecha_seguimiento: null,
+      responsable: null,
+    })
+    // No pasa a «Resultado del seguimiento»: la ventana se cierra sola.
+    await expect(dialogoSin).toHaveCount(0)
+    await expect(page.getByRole('form', { name: 'Resultado del seguimiento' })).toHaveCount(0)
+  })
+
+  await test.step('la fila queda «Cerrada», «Sin campaña» y con «Ver gestión» como unica accion', async () => {
+    await expect(filaSin.getByRole('cell', { name: 'Cerrada', exact: true })).toBeVisible()
+    await expect(filaSin.getByRole('cell', { name: 'Sin campaña', exact: true })).toBeVisible()
+    await expect(verGestionSin).toBeVisible()
+    await expect(accionesSin).toHaveCount(1)
+  })
+
+  await test.step('«Ver gestión» solo muestra «No se le asignó campaña»', async () => {
+    await verGestionSin.click()
+    await expect(dialogoSin.getByText('No se le asignó campaña', { exact: true })).toBeVisible()
+    await expect(page.getByRole('form', { name: 'Resultado del seguimiento' })).toHaveCount(0)
+    await expect(page.getByRole('form', { name: 'Nueva gestión' })).toHaveCount(0)
+    await expect(dialogoSin.getByRole('button', { name: 'Guardar resultado' })).toHaveCount(0)
+    await expect(dialogoSin.getByRole('radio')).toHaveCount(0)
+    await expect(dialogoSin.getByRole('textbox')).toHaveCount(0)
+    await expect(dialogoSin.getByText('Fecha de seguimiento')).toHaveCount(0)
+    // Lo unico que se puede hacer es cerrar.
+    await expect(dialogoSin.getByRole('button')).toHaveCount(1)
+    await dialogoSin.getByRole('button', { name: 'Cerrar' }).click()
+    await expect(dialogoSin).toHaveCount(0)
+    await expect(verGestionSin).toBeFocused()
+  })
+
+  await test.step('el Excel lleva «Cerrada» en «Gestión», la campaña y «Sin campaña»', async () => {
     const descarga = page.waitForEvent('download')
     await page.getByRole('button', { name: 'Descargar Excel' }).click()
     const ruta = await (await descarga).path()
@@ -172,5 +295,6 @@ test('crea una campaña, gestiona un socio de la lista y cierra la gestion', asy
       }
     })
     expect(cerradas).toContain(nombreCampania)
+    expect(cerradas).toContain('Sin campaña')
   })
 })

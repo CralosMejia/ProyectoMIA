@@ -127,4 +127,12 @@ export const handlers = [
     campanias = campanias.map((c) => (c.id === actual.id ? inactiva : c))
     return HttpResponse.json(inactiva)
   }),
+  http.post('*/api/v1/campanias/:id/activar', ({ params }) => {
+    const actual = buscar(params.id)
+    if (!actual) return noExiste()
+    // Idempotente: activar una ya activa devuelve 200 sin cambios. No toca `es_ejemplo`.
+    const activa: CampaniaSimulada = { ...actual, activa: true }
+    campanias = campanias.map((c) => (c.id === actual.id ? activa : c))
+    return HttpResponse.json(activa)
+  }),
 ]

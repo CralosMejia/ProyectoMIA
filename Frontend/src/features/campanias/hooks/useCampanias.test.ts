@@ -125,6 +125,80 @@ describe('useCampanias', () => {
     expect(result.current.campanias.find((c) => c.id === 1)?.activa).toBe(false)
   })
 
+  it('activar → true y la campaña queda activa en su misma posición', async () => {
+    const { result } = await montado()
+    await act(async () => {
+      await result.current.inactivar(2)
+    })
+    const posicion = result.current.campanias.findIndex((c) => c.id === 2)
+    expect(posicion).toBeGreaterThanOrEqual(0)
+    expect(result.current.campanias[posicion]?.activa).toBe(false)
+
+    let ok = false
+    await act(async () => {
+      ok = await result.current.activar(2)
+    })
+
+    expect(ok).toBe(true)
+    expect(result.current.campanias.findIndex((c) => c.id === 2)).toBe(posicion)
+    expect(result.current.campanias[posicion]).toMatchObject({ activa: true, esEjemplo: true })
+    expect(result.current.error).toBeNull()
+  })
+
+  it('activar con error del servidor → false, error con su mensaje y la lista sin cambios', async () => {
+    const { result } = await montado()
+    await act(async () => {
+      await result.current.inactivar(2)
+    })
+    const antes = result.current.campanias
+    server.use(
+      http.post(`${CAMPANIAS_PATH}/:id/activar`, () =>
+        HttpResponse.json(
+          { error: { code: 'not_found', message: 'La campana no existe.' } },
+          { status: 404 },
+        ),
+      ),
+    )
+
+    let ok = true
+    await act(async () => {
+      ok = await result.current.activar(2)
+    })
+
+    expect(ok).toBe(false)
+    expect(result.current.error).toBe('La campana no existe.')
+    expect(result.current.campanias).toEqual(antes)
+    expect(result.current.guardando).toBe(false)
+  })
+
+  it('mientras guarda, una segunda llamada a activar devuelve false sin otra petición', async () => {
+    const { result } = await montado()
+    await act(async () => {
+      await result.current.inactivar(2)
+    })
+    const contador = { llamadas: 0 }
+    server.use(
+      http.post(`${CAMPANIAS_PATH}/:id/activar`, async () => {
+        contador.llamadas += 1
+        await new Promise((resolve) => setTimeout(resolve, 50))
+        return undefined
+      }),
+    )
+
+    let primera: Promise<boolean> = Promise.resolve(false)
+    let segunda = true
+    await act(async () => {
+      primera = result.current.activar(2)
+      segunda = await result.current.activar(2)
+      await primera
+    })
+
+    expect(segunda).toBe(false)
+    await expect(primera).resolves.toBe(true)
+    expect(contador.llamadas).toBe(1)
+    expect(result.current.campanias.find((c) => c.id === 2)?.activa).toBe(true)
+  })
+
   it('error al cargar → errorCarga; recargar vuelve a pedir', async () => {
     server.use(
       http.get(

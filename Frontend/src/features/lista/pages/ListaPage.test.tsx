@@ -661,19 +661,134 @@ describe('ListaPage', () => {
       expect(dialogo.getByRole('button', { name: 'Crear gestión' })).toBeEnabled()
     })
 
-    it('Ver gestión (cerrada) → solo lectura, sin guardar', async () => {
+    it('Ver gestión de una cerrada con campaña → solo lectura, sin guardar', async () => {
+      server.use(...simularGestiones())
       const user = userEvent.setup()
       render(<ListaPage />)
       await user.click(
-        (await tablaCargada()).getByRole('button', { name: 'Ver gestión prioridad 2' }),
+        (await tablaCargada()).getByRole('button', { name: 'Registrar resultado prioridad 1' }),
       )
+      const registro = within(await screen.findByRole('dialog'))
+      await user.click(
+        within(await registro.findByRole('group', { name: '¿Se contactó al socio?' })).getByRole(
+          'radio',
+          { name: 'No' },
+        ),
+      )
+      await user.click(
+        within(registro.getByRole('group', { name: '¿Renovó?' })).getByRole('radio', { name: 'No' }),
+      )
+      await user.click(registro.getByRole('button', { name: 'Guardar resultado' }))
+      await registro.findByText('Gestión cerrada: no se puede modificar.')
+      await user.click(registro.getByRole('button', { name: 'Cerrar' }))
+
+      await user.click(
+        await (await tablaCargada()).findByRole('button', { name: 'Ver gestión prioridad 1' }),
+      )
+      const dialogo = within(
+        await screen.findByRole('dialog', { name: 'Gestión de la prioridad 1' }),
+      )
+
+      expect(await dialogo.findByText('Gestión cerrada: no se puede modificar.')).toBeInTheDocument()
+      expect(dialogo.queryByText('No se le asignó campaña')).not.toBeInTheDocument()
+      expect(dialogo.queryByRole('button', { name: 'Guardar resultado' })).not.toBeInTheDocument()
+      const radios = dialogo.getAllByRole('radio')
+      expect(radios.length).toBeGreaterThan(0)
+      for (const radio of radios) expect(radio).toBeDisabled()
+    })
+
+    it('Ver gestión de una cerrada sin campaña → solo "No se le asignó campaña"; al cerrar, el foco vuelve a la fila', async () => {
+      const user = userEvent.setup()
+      render(<ListaPage />)
+      const boton = (await tablaCargada()).getByRole('button', { name: 'Ver gestión prioridad 2' })
+
+      await user.click(boton)
       const dialogo = within(
         await screen.findByRole('dialog', { name: 'Gestión de la prioridad 2' }),
       )
 
-      expect(await dialogo.findByText('Gestión cerrada: no se puede modificar.')).toBeInTheDocument()
+      expect(await dialogo.findByText('No se le asignó campaña')).toBeInTheDocument()
+      expect(
+        screen.queryByRole('form', { name: 'Resultado del seguimiento' }),
+      ).not.toBeInTheDocument()
+      expect(dialogo.queryAllByRole('radio')).toHaveLength(0)
+      expect(dialogo.queryAllByRole('textbox')).toHaveLength(0)
       expect(dialogo.queryByRole('button', { name: 'Guardar resultado' })).not.toBeInTheDocument()
-      for (const radio of dialogo.getAllByRole('radio')) expect(radio).toBeDisabled()
+      expect(dialogo.getAllByRole('button').map((b) => b.textContent)).toEqual(['Cerrar'])
+
+      await user.click(dialogo.getByRole('button', { name: 'Cerrar' }))
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(boton).toHaveFocus()
+    })
+
+    it('Gestionar → "No asignar campaña" → Crear gestión: la ventana se cierra y la fila queda "Cerrada", "Sin campaña" y solo "Ver gestión"', async () => {
+      server.use(...simularGestiones())
+      const cuerpos: unknown[] = []
+      const recargas = { llamadas: 0 }
+      server.use(
+        http.post('*/api/v1/gestiones', async ({ request }) => {
+          cuerpos.push(await request.clone().json())
+          return undefined
+        }),
+      )
+      const user = userEvent.setup()
+      render(<ListaPage />)
+      await user.click(
+        (await tablaCargada()).getByRole('button', { name: 'Gestionar prioridad 3' }),
+      )
+      const dialogo = within(
+        await screen.findByRole('dialog', { name: 'Gestión de la prioridad 3' }),
+      )
+      server.use(
+        http.get(`${LISTAS_PATH}/:id`, () => {
+          recargas.llamadas += 1
+          return undefined
+        }),
+      )
+
+      await user.click(await dialogo.findByRole('radio', { name: 'No asignar campaña' }))
+      expect(dialogo.queryByLabelText('Fecha de seguimiento')).not.toBeInTheDocument()
+      expect(dialogo.queryByLabelText('Responsable (opcional)')).not.toBeInTheDocument()
+      await user.click(dialogo.getByRole('button', { name: 'Crear gestión' }))
+
+      // La ventana se cierra sola: nunca pasa a "Registrar resultado".
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      expect(
+        screen.queryByRole('form', { name: 'Resultado del seguimiento' }),
+      ).not.toBeInTheDocument()
+      await waitFor(async () =>
+        expect(await gestionDeLaFila(3)).toEqual(['Cerrada', 'Sin campaña']),
+      )
+      expect(recargas.llamadas).toBe(1)
+      expect(cuerpos).toEqual([
+        { prediccion_id: 1503, campania_id: null, fecha_seguimiento: null, responsable: null },
+      ])
+      const fila = (await filasDe(PRIORITARIOS))[2] as HTMLElement
+      expect(
+        within(fila)
+          .getAllByRole('button')
+          .map((b) => b.getAttribute('aria-label')),
+      ).toEqual(['Ver gestión prioridad 3'])
+      const tabla = await tablaCargada()
+      expect(
+        tabla.queryByRole('button', { name: 'Registrar resultado prioridad 3' }),
+      ).not.toBeInTheDocument()
+      expect(tabla.queryByRole('button', { name: 'Gestionar prioridad 3' })).not.toBeInTheDocument()
+
+      // Al abrirla solo se lee que no se le asigno campaña; al cerrar, el foco vuelve a la fila.
+      const ver = tabla.getByRole('button', { name: 'Ver gestión prioridad 3' })
+      await user.click(ver)
+      const consulta = within(
+        await screen.findByRole('dialog', { name: 'Gestión de la prioridad 3' }),
+      )
+      expect(await consulta.findByText('No se le asignó campaña')).toBeInTheDocument()
+      expect(consulta.queryAllByRole('radio')).toHaveLength(0)
+      expect(consulta.queryByRole('button', { name: 'Guardar resultado' })).not.toBeInTheDocument()
+      await user.click(consulta.getByRole('button', { name: 'Cerrar' }))
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(ver).toHaveFocus()
     })
   })
 

@@ -91,11 +91,14 @@ export interface CampaniaSugerida {
   prioridad: number
 }
 
-/** CU-08. `campaniaId` ausente o null = sin campaña. */
+/**
+ * CU-08. `campaniaId` ausente o null = sin campaña: la gestion nace cerrada y no lleva fecha de
+ * seguimiento (`null`) ni responsable. Con campaña, la fecha de seguimiento es obligatoria.
+ */
 export interface CrearGestionParams {
   prediccionId: number
   campaniaId?: number | null
-  fechaSeguimiento: string
+  fechaSeguimiento: string | null
   responsable?: string | null
 }
 
