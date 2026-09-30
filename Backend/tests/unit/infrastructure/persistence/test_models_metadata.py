@@ -430,6 +430,15 @@ def test_listas_priorizadas() -> None:
     assert creada.type.timezone is True
 
 
+def test_listas_priorizadas_nombre_is_required_text_with_length_check() -> None:
+    t = "listas_priorizadas"
+    nombre = col(t, "nombre")
+    assert isinstance(nombre.type, Text)
+    assert nombre.nullable is False
+    sql = check_sql(t, "nombre_longitud").replace(" ", "")
+    assert sql == "char_length(nombre)BETWEEN1AND80"
+
+
 # ------------------------------------------------------------------ predicciones
 def test_predicciones() -> None:
     t = "predicciones"

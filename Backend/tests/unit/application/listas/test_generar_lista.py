@@ -21,6 +21,7 @@ from app.application.listas.generar_lista import (
 from app.domain.common.enums import EstadoMigracion, NivelRiesgo, Plan
 from tests.unit.application.listas.dobles import (
     Almacen,
+    ListasEnMemoria,
     PredictorPorMonto,
     RelojFijo,
     membresia,
@@ -394,3 +395,74 @@ def test_ejecutar_never_logs_cedulas_or_names(caplog: pytest.LogCaptureFixture) 
     textos = [r.getMessage() for r in caplog.records] + [str(error.value)]
     assert not any(s and s in t for s in sensibles for t in textos)
     assert "Socio Sintetico" not in str(error.value)
+
+
+# ------------------------------------------------------------------ R-008 T8: nombre de la lista
+def test_generar_lista_dto_nombre_is_stripped() -> None:
+    assert GenerarListaDTO(nombre="  Campaña octubre  ").nombre == "Campaña octubre"
+
+
+def test_generar_lista_dto_nombre_absent_or_null_is_none() -> None:
+    assert GenerarListaDTO().nombre is None
+    assert GenerarListaDTO(nombre=None).nombre is None
+
+
+def test_generar_lista_dto_nombre_80_characters_is_valid() -> None:
+    assert GenerarListaDTO(nombre="a" * 80).nombre == "a" * 80
+
+
+@pytest.mark.parametrize(
+    "nombre",
+    ["   ", "a" * 81, "a\x07b", "a\x00b", "a\x7fb"],
+    ids=["solo-espacios", "81-caracteres", "control-bel", "control-nul", "control-del"],
+)
+def test_generar_lista_dto_invalid_nombre_raises(nombre: str) -> None:
+    with pytest.raises(ValidationError):
+        GenerarListaDTO(nombre=nombre)
+
+
+def test_generar_lista_dto_nombre_not_text_raises() -> None:
+    with pytest.raises(ValidationError):
+        GenerarListaDTO.model_validate({"nombre": 5})
+
+
+def test_ejecutar_without_name_and_date_saves_default_name_from_clock() -> None:
+    almacen = escenario_cedulas()
+
+    lista, _ = generar(almacen, dto=GenerarListaDTO())
+
+    nueva, _, _ = almacen.listas[lista.id]
+    assert nueva.nombre == "Lista del 29 sep 2026"
+    assert lista.nombre == "Lista del 29 sep 2026"
+
+
+def test_ejecutar_without_name_uses_the_requested_date_for_default_name() -> None:
+    almacen = escenario_cedulas()
+
+    lista, _ = generar(almacen, dto=GenerarListaDTO(fecha_referencia=date(2026, 10, 2)))
+
+    assert almacen.listas[lista.id][0].nombre == "Lista del 2 oct 2026"
+    assert lista.nombre == "Lista del 2 oct 2026"
+
+
+def test_ejecutar_with_name_saves_it_as_is() -> None:
+    almacen = escenario_cedulas()
+
+    lista, _ = generar(almacen, dto=GenerarListaDTO(nombre="  Campaña octubre  "))
+
+    assert almacen.listas[lista.id][0].nombre == "Campaña octubre"
+    assert lista.nombre == "Campaña octubre"
+    assert [r.nombre for r in ListasEnMemoria(almacen).listar()] == ["Campaña octubre"]
+
+
+def test_ejecutar_past_date_with_name_raises_without_saving() -> None:
+    almacen = escenario_cedulas()
+
+    with pytest.raises(FechaReferenciaPasadaError):
+        generar(
+            almacen,
+            dto=GenerarListaDTO(nombre="Campaña octubre", fecha_referencia=date(2026, 9, 28)),
+        )
+
+    assert almacen.listas == {}
+    assert almacen.commits == 0

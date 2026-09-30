@@ -18,6 +18,7 @@ from typing import Protocol, runtime_checkable
 from app.application.historial.ports import MembresiaRepository
 from app.application.modelo.ports import EstadoSistemaRepository, ModeloRepository
 from app.domain.common.enums import NivelRiesgo, Plan
+from app.domain.listas.nombre import LONGITUD_MAXIMA_NOMBRE
 
 _CERO = Decimal(0)
 _UNO = Decimal(1)
@@ -25,14 +26,20 @@ _UNO = Decimal(1)
 
 @dataclass(frozen=True, slots=True)
 class NuevaLista:
-    """Cabecera de la lista a guardar. ``creada_en`` la pone el repositorio desde el reloj."""
+    """Cabecera de la lista a guardar. ``creada_en`` la pone el repositorio desde el reloj.
+
+    ``nombre`` llega ya recortado (1..80 caracteres, CHECK ``nombre_longitud``).
+    """
 
     modelo_id: int
     fecha_generacion: date
     horizonte_dias: int
     top_k: int
+    nombre: str
 
     def __post_init__(self) -> None:
+        if not 1 <= len(self.nombre) <= LONGITUD_MAXIMA_NOMBRE:
+            raise ValueError(f"nombre debe tener entre 1 y {LONGITUD_MAXIMA_NOMBRE} caracteres")
         if self.horizonte_dias < 1:
             raise ValueError("horizonte_dias debe ser positivo")
         if self.top_k < 1:
@@ -92,6 +99,7 @@ class ListaDetalle:
     umbral_alto: Decimal
     umbral_medio: Decimal
     items: tuple[ItemLista, ...]
+    nombre: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +113,7 @@ class ListaResumen:
     horizonte_dias: int
     top_k: int
     total_items: int
+    nombre: str
 
 
 @runtime_checkable

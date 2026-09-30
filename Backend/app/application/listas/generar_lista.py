@@ -10,7 +10,8 @@ Flujo (todo en **una** unidad de trabajo, con un solo ``commit`` al final):
 4. Cartera, sin los socios que ya renovaron y despues sin los socios sin cedula (antes de
    predecir y priorizar); variables con las medianas del modelo y el historial completo.
 5. Score del modelo vigente, priorizacion y nivel con los umbrales del modelo.
-6. Se guardan la lista y sus predicciones.
+6. Se guardan la lista (con el nombre recibido o ``nombre_por_defecto(fecha)``) y sus
+   predicciones.
 
 La prediccion cruza el puerto ``PredictorModel``: aqui no se usa scikit-learn ni pandas.
 """
@@ -32,6 +33,7 @@ from app.domain.common.exceptions import DomainError
 from app.domain.common.fechas import hoy_en_negocio
 from app.domain.common.predictor import PredictorModel
 from app.domain.historico.ciclos import clasificar
+from app.domain.listas.nombre import nombre_por_defecto
 from app.domain.modelo.cartera import (
     CicloPuntuado,
     FilaPriorizada,
@@ -188,6 +190,7 @@ class GenerarLista:
                     fecha_generacion=fecha,
                     horizonte_dias=parametros.horizonte_dias,
                     top_k=parametros.top_k,
+                    nombre=parametros.nombre or nombre_por_defecto(fecha),
                 ),
                 _nuevas_predicciones(filas, umbrales, socio_de),
             )

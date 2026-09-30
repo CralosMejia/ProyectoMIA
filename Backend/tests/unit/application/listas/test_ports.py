@@ -78,6 +78,7 @@ class ListaRepositoryEnMemoria:
                 umbral_alto=Decimal("0.7"),
                 umbral_medio=Decimal("0.4"),
                 items=items,
+                nombre=lista.nombre,
             )
         )
         return lista_id
@@ -98,6 +99,7 @@ class ListaRepositoryEnMemoria:
                 horizonte_dias=lista.horizonte_dias,
                 top_k=lista.top_k,
                 total_items=len(lista.items),
+                nombre=lista.nombre,
             )
             for lista in reversed(self.listas)
         ]
@@ -112,7 +114,9 @@ def test_port_in_memory_double_satisfies_protocol() -> None:
 
 def test_in_memory_double_follows_the_contract() -> None:
     repo = ListaRepositoryEnMemoria()
-    lista_id = repo.crear(NuevaLista(1, date(2026, 8, 31), 30, 25), [nueva_prediccion()])
+    lista_id = repo.crear(
+        NuevaLista(1, date(2026, 8, 31), 30, 25, "Lista del 31 ago 2026"), [nueva_prediccion()]
+    )
 
     detalle = repo.obtener(lista_id)
     assert detalle is not None
@@ -120,6 +124,8 @@ def test_in_memory_double_follows_the_contract() -> None:
     assert repo.obtener(999) is None
     assert repo.ultima() == detalle
     assert [r.total_items for r in repo.listar()] == [1]
+    assert detalle.nombre == "Lista del 31 ago 2026"
+    assert [r.nombre for r in repo.listar()] == ["Lista del 31 ago 2026"]
 
 
 @pytest.mark.parametrize("score", [Decimal("-0.0001"), Decimal("1.0001"), Decimal("2")])
@@ -140,16 +146,43 @@ def test_nueva_prediccion_non_positive_priority_raises_value_error() -> None:
 
 def test_nueva_lista_non_positive_horizon_or_top_k_raises_value_error() -> None:
     with pytest.raises(ValueError, match="horizonte_dias"):
-        NuevaLista(modelo_id=1, fecha_generacion=date(2026, 8, 31), horizonte_dias=0, top_k=25)
+        NuevaLista(
+            modelo_id=1, fecha_generacion=date(2026, 8, 31), horizonte_dias=0, top_k=25, nombre="L"
+        )
     with pytest.raises(ValueError, match="top_k"):
-        NuevaLista(modelo_id=1, fecha_generacion=date(2026, 8, 31), horizonte_dias=30, top_k=0)
+        NuevaLista(
+            modelo_id=1, fecha_generacion=date(2026, 8, 31), horizonte_dias=30, top_k=0, nombre="L"
+        )
+
+
+@pytest.mark.parametrize("nombre", ["", "a" * 81], ids=["vacio", "81-caracteres"])
+def test_nueva_lista_invalid_name_length_raises_value_error(nombre: str) -> None:
+    with pytest.raises(ValueError, match="nombre"):
+        NuevaLista(
+            modelo_id=1,
+            fecha_generacion=date(2026, 8, 31),
+            horizonte_dias=30,
+            top_k=25,
+            nombre=nombre,
+        )
+
+
+def test_nueva_lista_80_characters_name_is_valid() -> None:
+    lista = NuevaLista(
+        modelo_id=1,
+        fecha_generacion=date(2026, 8, 31),
+        horizonte_dias=30,
+        top_k=25,
+        nombre="a" * 80,
+    )
+    assert lista.nombre == "a" * 80
 
 
 @pytest.mark.parametrize(
     ("valor", "campo"),
     [
         (nueva_prediccion(), "score"),
-        (NuevaLista(1, date(2026, 8, 31), 30, 25), "top_k"),
+        (NuevaLista(1, date(2026, 8, 31), 30, 25, "Lista del 31 ago 2026"), "top_k"),
     ],
 )
 def test_dtos_are_frozen(valor: object, campo: str) -> None:

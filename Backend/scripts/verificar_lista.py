@@ -316,6 +316,7 @@ class _Listas:
                 self._item(i, p)
                 for i, p in enumerate(sorted(predicciones, key=lambda p: p.prioridad), 1)
             ),
+            nombre=lista.nombre,
         )
 
     def _item(self, prediccion_id: int, p: NuevaPrediccion) -> ItemLista:

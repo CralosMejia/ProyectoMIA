@@ -1,10 +1,16 @@
 """Excel de la lista priorizada con openpyxl, generado en memoria (CU-12).
 
-- Tres hojas: ``top_{K}`` (como maximo K filas), ``cartera_completa`` y ``resumen``.
+- Igual que la pantalla (R-008, decisiones (a)-(c)): hojas ``Socios prioritarios a
+  contactar`` (items ``dentro_top_k``), ``Otros socios por vencer`` (el resto; si no hay,
+  solo encabezados) y ``Resumen`` con terminos amigables y el nombre de la lista. Las dos
+  primeras por ``prioridad`` ascendente y con las columnas de la tabla de la pantalla: sin
+  celular, score, monto, estado de la gestion ni campania.
+- Motivos sin el aporte numerico final entre parentesis (misma regla que ``APORTE_FINAL`` de
+  ``TablaLista.tsx``); sin motivos -> ``SIN_FACTORES``.
 - RN-12.1: todo ocurre en ``BytesIO``. openpyxl escribe cada hoja en un archivo temporal;
   aqui se sustituye ese paso por un buffer en memoria, asi que no se toca el disco.
-- RN-12.2: un texto que empieza por ``=``, ``+``, ``-`` o ``@`` se guarda como texto con el
-  prefijo ``'``; ninguna celda es una formula.
+- RN-12.2: un texto que empieza por ``=``, ``+``, ``-`` o ``@`` (incluido el nombre de la
+  lista) se guarda como texto con el prefijo ``'``; ninguna celda es una formula.
 - La cedula se guarda siempre como texto (conserva el cero inicial); el correo no se exporta.
 - RN-12.3: solo usa la lista guardada (``ListaDetalle``); no ejecuta el modelo.
 - Determinista: las propiedades del libro y las fechas de las entradas del zip salen de
@@ -12,10 +18,11 @@
 """
 
 import io
+import re
 import zipfile
 from collections import Counter
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from openpyxl import Workbook  # type: ignore[import-untyped]  # openpyxl no publica stubs
@@ -36,22 +43,25 @@ from app.domain.common.enums import NivelRiesgo
 COLUMNAS: tuple[str, ...] = (
     "Prioridad",
     "Nombre",
-    "Celular",
     "Cédula",
     "Plan",
-    "Fecha de vencimiento",
-    "Dias para vencer",
-    "Monto cobrado",
-    "Score (indicador de prioridad)",
+    "Vence el",
+    "Días para vencer",
     "Nivel de riesgo",
-    "Factores principales",
-    "Estado de la gestion",
-    "Campania asignada",
+    "Motivos principales",
 )
 SIN_FACTORES = "Sin factores de riesgo destacados"
-HOJA_CARTERA = "cartera_completa"
-HOJA_RESUMEN = "resumen"
-FORMATO_FECHA = "yyyy-mm-dd"
+HOJA_PRIORITARIOS = "Socios prioritarios a contactar"
+HOJA_OTROS = "Otros socios por vencer"
+HOJA_RESUMEN = "Resumen"
+FORMATO_FECHA = "dd/mm/yyyy"
+NIVEL_TEXTO: dict[NivelRiesgo, str] = {
+    NivelRiesgo.ALTO: "Alto",
+    NivelRiesgo.MEDIO: "Medio",
+    NivelRiesgo.BAJO: "Bajo",
+}
+# Aporte numerico al final del texto de un motivo, p. ej. " (+0,12)" (APORTE_FINAL del front).
+APORTE_FINAL = re.compile(r"\s*\([^()]*\)\s*$")
 _PREFIJOS_FORMULA = ("=", "+", "-", "@")
 _SEPARADOR_FACTORES = "; "
 
@@ -60,6 +70,16 @@ def neutralizar(texto: str) -> str:
     """Texto seguro para Excel: quita caracteres de control y desactiva formulas (RN-12.2)."""
     limpio: str = ILLEGAL_CHARACTERS_RE.sub("", texto)
     return "'" + limpio if limpio.startswith(_PREFIJOS_FORMULA) else limpio
+
+
+def sin_aporte(factor: str) -> str:
+    """``"Plan: TRIMESTRAL (+0,09)"`` -> ``"Plan: TRIMESTRAL"``."""
+    return APORTE_FINAL.sub("", factor, count=1)
+
+
+def motivos(factores: Sequence[str]) -> str:
+    """Motivos unidos con ``"; "`` y sin aporte; sin motivos -> ``SIN_FACTORES``."""
+    return _SEPARADOR_FACTORES.join(sin_aporte(f) for f in factores) or SIN_FACTORES
 
 
 def _utc_sin_zona(instante: datetime) -> datetime:
@@ -112,11 +132,14 @@ class ExcelListaOpenpyxl:
         libro.properties.created = creada_en
         libro.properties.modified = creada_en
 
-        top = libro.active
-        top.title = f"top_{lista.top_k}"
-        self._escribir_items(top, lista, [i for i in lista.items if i.prioridad <= lista.top_k])
-        self._escribir_items(libro.create_sheet(HOJA_CARTERA), lista, list(lista.items))
-        self._escribir_resumen(libro.create_sheet(HOJA_RESUMEN), lista)
+        ordenados = sorted(lista.items, key=lambda i: i.prioridad)
+        prioritarios = [i for i in ordenados if i.dentro_top_k]
+        otros = [i for i in ordenados if not i.dentro_top_k]
+        hoja_prioritarios = libro.active
+        hoja_prioritarios.title = HOJA_PRIORITARIOS
+        self._escribir_items(hoja_prioritarios, lista, prioritarios)
+        self._escribir_items(libro.create_sheet(HOJA_OTROS), lista, otros)
+        self._escribir_resumen(libro.create_sheet(HOJA_RESUMEN), lista, prioritarios, otros)
 
         destino = io.BytesIO()
         with _ZipDeterminista(destino, creada_en) as archivo:
@@ -130,42 +153,48 @@ class ExcelListaOpenpyxl:
             celda.value = neutralizar(valor)
             celda.data_type = "s"
 
+    @staticmethod
+    def _fecha(hoja: Any, fila: int, columna: int, valor: object) -> None:  # noqa: ANN401 - Worksheet sin tipos
+        celda = hoja.cell(row=fila, column=columna, value=valor)
+        celda.number_format = FORMATO_FECHA
+
     def _escribir_items(self, hoja: Any, lista: ListaDetalle, items: Sequence[ItemLista]) -> None:  # noqa: ANN401 - Worksheet sin tipos
-        for columna, nombre in enumerate(COLUMNAS, start=1):
-            hoja.cell(row=1, column=columna, value=nombre)
+        for columna, encabezado in enumerate(COLUMNAS, start=1):
+            self._texto(hoja, 1, columna, encabezado)
         for fila, item in enumerate(items, start=2):
             hoja.cell(row=fila, column=1, value=item.prioridad)
             self._texto(hoja, fila, 2, item.socio_nombre)
-            self._texto(hoja, fila, 3, item.celular)
-            self._texto(hoja, fila, 4, item.cedula)
-            self._texto(hoja, fila, 5, item.plan.value)
-            vence = hoja.cell(row=fila, column=6, value=item.fecha_vencimiento)
-            vence.number_format = FORMATO_FECHA
-            dias = (item.fecha_vencimiento - lista.fecha_generacion).days
-            hoja.cell(row=fila, column=7, value=dias)
-            hoja.cell(row=fila, column=8, value=item.monto_cobrado)
-            hoja.cell(row=fila, column=9, value=item.score)
-            self._texto(hoja, fila, 10, item.nivel_riesgo.value)
-            factores = _SEPARADOR_FACTORES.join(item.factores_principales) or SIN_FACTORES
-            self._texto(hoja, fila, 11, factores)
-            # Estado de la gestion y campania: aun no hay gestiones (CU-08, otro dia).
+            self._texto(hoja, fila, 3, item.cedula)
+            self._texto(hoja, fila, 4, item.plan.value)
+            self._fecha(hoja, fila, 5, item.fecha_vencimiento)
+            hoja.cell(
+                row=fila, column=6, value=(item.fecha_vencimiento - lista.fecha_generacion).days
+            )
+            self._texto(hoja, fila, 7, NIVEL_TEXTO[item.nivel_riesgo])
+            self._texto(hoja, fila, 8, motivos(item.factores_principales))
 
-    @staticmethod
-    def _escribir_resumen(hoja: Any, lista: ListaDetalle) -> None:  # noqa: ANN401 - Worksheet sin tipos
+    def _escribir_resumen(
+        self,
+        hoja: Any,  # noqa: ANN401 - Worksheet sin tipos
+        lista: ListaDetalle,
+        prioritarios: Sequence[ItemLista],
+        otros: Sequence[ItemLista],
+    ) -> None:
         niveles = Counter(item.nivel_riesgo for item in lista.items)
-        filas: list[tuple[str, object]] = [
-            ("Fecha de generacion", lista.fecha_generacion),
-            ("Horizonte (dias)", lista.horizonte_dias),
-            ("Top K", lista.top_k),
-            ("Version del modelo", f"v{lista.modelo_version}"),
-            ("Umbral alto", lista.umbral_alto),
-            ("Umbral medio", lista.umbral_medio),
-            ("Total en cartera", len(lista.items)),
-            ("Dentro del top K", sum(1 for i in lista.items if i.dentro_top_k)),
-            *((f"Nivel {n.value}", niveles.get(n, 0)) for n in NivelRiesgo),
+        self._texto(hoja, 1, 1, "Nombre de la lista")
+        self._texto(hoja, 1, 2, lista.nombre)
+        self._texto(hoja, 2, 1, "Fecha de la lista")
+        self._fecha(hoja, 2, 2, lista.fecha_generacion)
+        self._texto(hoja, 3, 1, "Vencen hasta")
+        self._fecha(hoja, 3, 2, lista.fecha_generacion + timedelta(days=lista.horizonte_dias))
+        conteos: list[tuple[str, int]] = [
+            (HOJA_PRIORITARIOS, len(prioritarios)),
+            (HOJA_OTROS, len(otros)),
+            ("Total de socios por vencer", len(lista.items)),
+            ("Riesgo alto", niveles.get(NivelRiesgo.ALTO, 0)),
+            ("Riesgo medio", niveles.get(NivelRiesgo.MEDIO, 0)),
+            ("Riesgo bajo", niveles.get(NivelRiesgo.BAJO, 0)),
         ]
-        for numero, (etiqueta, valor) in enumerate(filas, start=1):
-            hoja.cell(row=numero, column=1, value=etiqueta)
-            celda = hoja.cell(row=numero, column=2, value=valor)
-            if numero == 1:
-                celda.number_format = FORMATO_FECHA
+        for numero, (etiqueta, valor) in enumerate(conteos, start=4):
+            self._texto(hoja, numero, 1, etiqueta)
+            hoja.cell(row=numero, column=2, value=valor)

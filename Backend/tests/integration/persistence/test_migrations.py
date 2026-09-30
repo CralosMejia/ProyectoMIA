@@ -1,6 +1,7 @@
 """Migraciones ``0001`` (esquema), ``0002`` (fila de ``estado_sistema``), ``0003``
-(``membresias.socio_id NOT NULL``), ``0004`` (``membresias.fecha_actividad``) y ``0005``
-(indice de socios sin cedula por nombre) contra PostgreSQL 16.
+(``membresias.socio_id NOT NULL``), ``0004`` (``membresias.fecha_actividad``), ``0005``
+(indice de socios sin cedula por nombre) y ``0006`` (``listas_priorizadas.nombre``) contra
+PostgreSQL 16.
 
 Sin login (RT-12): no hay ``user_id``; las pruebas de aislamiento entre usuarios no aplican.
 Cada prueba deja la base como la encontro: transaccion con rollback, o ciclo de migraciones
@@ -26,7 +27,7 @@ pytestmark = pytest.mark.integration
 BUSINESS_TABLES = set(Base.metadata.tables)
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 LITERAL = re.compile(r"'([A-Z0-9_]+)'")
-HEAD = "0005"
+HEAD = "0006"
 
 
 # ------------------------------------------------------------------ guarda de la BD de pruebas
@@ -143,6 +144,7 @@ def gestion(conn: Connection, membresia_id: int) -> int:
             "horizonte_dias": 30,
             "top_k": 10,
             "creada_en": NOW,
+            "nombre": "Lista de prueba",
         },
     )
     prediccion_id = insert(
@@ -547,6 +549,106 @@ def test_0005_downgrade_removes_index_and_upgrade_restores_it_over_data(
         _vaciar_historial(migrated_engine)
         command.upgrade(alembic_config, "head")
     assert _revision_actual(migrated_engine) == HEAD
+
+
+# ------------------------------------------------------------------ 0006: nombre de la lista
+def lista(conn: Connection, *, con_nombre: bool = True, **values: object) -> int:
+    """Lista priorizada valida; ``con_nombre=False`` omite ``nombre`` (esquema anterior a 0006)."""
+    base: dict[str, object] = {
+        "modelo_id": modelo(conn, version=values.pop("version", 1)),
+        "fecha_generacion": NOW.date(),
+        "horizonte_dias": 30,
+        "top_k": 10,
+        "creada_en": NOW,
+    }
+    if con_nombre:
+        base["nombre"] = "Campaña octubre"
+    return insert(conn, "listas_priorizadas", {**base, **values})
+
+
+def _vaciar_listas(engine: Engine) -> None:
+    with engine.begin() as connection:
+        for tabla in ("listas_priorizadas", "modelos"):
+            connection.execute(text(f"DELETE FROM {tabla}"))  # noqa: S608 - nombres fijos
+
+
+def _conteos(engine: Engine) -> dict[str, int]:
+    with engine.connect() as connection:
+        return {
+            tabla: int(
+                connection.execute(text(f"SELECT count(*) FROM {tabla}")).scalar_one()  # noqa: S608 - nombres fijos
+            )
+            for tabla in sorted(BUSINESS_TABLES)
+        }
+
+
+def test_0006_nombre_is_not_null(migrated_engine: Engine) -> None:
+    assert "nombre" in _columnas(migrated_engine, "listas_priorizadas")
+    assert _is_nullable(migrated_engine, "listas_priorizadas", "nombre") is False
+
+
+@pytest.mark.parametrize("nombre", ["", "a" * 81], ids=["vacio", "81-caracteres"])
+def test_lista_with_invalid_name_length_is_rejected(conn: Connection, nombre: str) -> None:
+    with pytest.raises(IntegrityError, match="ck_listas_priorizadas_nombre_longitud"):
+        lista(conn, nombre=nombre)
+
+
+def test_lista_without_nombre_is_rejected(conn: Connection) -> None:
+    with pytest.raises(IntegrityError, match="nombre"):
+        lista(conn, con_nombre=False)
+
+
+def test_lista_with_80_characters_name_is_stored(conn: Connection) -> None:
+    lista_id = lista(conn, nombre="a" * 80)
+    stored = conn.execute(
+        text("SELECT nombre FROM listas_priorizadas WHERE id = :id"), {"id": lista_id}
+    ).scalar_one()
+    assert stored == "a" * 80
+
+
+def test_0006_upgrade_fills_default_name_from_fecha_generacion(
+    migrated_engine: Engine, alembic_config: Config
+) -> None:
+    command.downgrade(alembic_config, "0005")
+    try:
+        assert _revision_actual(migrated_engine) == "0005"
+        assert "nombre" not in _columnas(migrated_engine, "listas_priorizadas")
+        with migrated_engine.begin() as connection:
+            primera = lista(
+                connection, con_nombre=False, version=1, fecha_generacion=date(2026, 9, 29)
+            )
+            segunda = lista(
+                connection, con_nombre=False, version=2, fecha_generacion=date(2027, 1, 5)
+            )
+        antes = _conteos(migrated_engine)
+
+        command.upgrade(alembic_config, "head")
+
+        assert _revision_actual(migrated_engine) == HEAD
+        assert _is_nullable(migrated_engine, "listas_priorizadas", "nombre") is False
+        with migrated_engine.connect() as connection:
+            nombres = dict(
+                connection.execute(text("SELECT id, nombre FROM listas_priorizadas")).tuples().all()
+            )
+        assert nombres == {primera: "Lista del 29 sep 2026", segunda: "Lista del 5 ene 2027"}
+        assert _conteos(migrated_engine) == antes
+    finally:
+        _vaciar_listas(migrated_engine)
+        command.upgrade(alembic_config, "head")
+    assert _revision_actual(migrated_engine) == HEAD
+
+
+def test_0006_downgrade_removes_column_and_upgrade_over_empty_base_restores_it(
+    migrated_engine: Engine, alembic_config: Config
+) -> None:
+    command.downgrade(alembic_config, "0005")
+    try:
+        assert "nombre" not in _columnas(migrated_engine, "listas_priorizadas")
+    finally:
+        command.upgrade(alembic_config, "head")
+    assert _revision_actual(migrated_engine) == HEAD
+    assert _is_nullable(migrated_engine, "listas_priorizadas", "nombre") is False
+    command.check(alembic_config)
 
 
 # ------------------------------------------------------------------ ciclos de migracion

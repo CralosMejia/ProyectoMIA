@@ -48,6 +48,7 @@ def advertencia_de(uow: ContextoListas, lista: ListaDetalle) -> bool:
 def a_dto(lista: ListaDetalle, advertencia: bool) -> ListaPriorizadaDTO:
     return ListaPriorizadaDTO(
         id=lista.id,
+        nombre=lista.nombre,
         modelo_version=version_texto(lista.modelo_version),
         fecha_generacion=lista.fecha_generacion,
         creada_en=lista.creada_en,
@@ -80,6 +81,7 @@ def a_dto(lista: ListaDetalle, advertencia: bool) -> ListaPriorizadaDTO:
 def _a_resumen(resumen: ListaResumen) -> ListaResumenDTO:
     return ListaResumenDTO(
         id=resumen.id,
+        nombre=resumen.nombre,
         fecha_generacion=resumen.fecha_generacion,
         creada_en=resumen.creada_en,
         modelo_version=version_texto(resumen.modelo_version),

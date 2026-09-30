@@ -75,6 +75,7 @@ class SqlAlchemyListaRepository:
                 fecha_generacion=lista.fecha_generacion,
                 horizonte_dias=lista.horizonte_dias,
                 top_k=lista.top_k,
+                nombre=lista.nombre,
                 creada_en=ahora,
                 **marcas,
             )
@@ -110,6 +111,7 @@ class SqlAlchemyListaRepository:
                 ListaPriorizada.top_k,
                 Modelo.umbral_alto,
                 Modelo.umbral_medio,
+                ListaPriorizada.nombre,
             )
             .join(Modelo, Modelo.id == ListaPriorizada.modelo_id)
             .where(ListaPriorizada.id == lista_id)
@@ -149,6 +151,7 @@ class SqlAlchemyListaRepository:
             umbral_alto=cabecera.umbral_alto,
             umbral_medio=cabecera.umbral_medio,
             items=tuple(_item(fila) for fila in filas),
+            nombre=cabecera.nombre,
         )
 
     def ultima(self) -> ListaDetalle | None:
@@ -170,6 +173,7 @@ class SqlAlchemyListaRepository:
                 ListaPriorizada.horizonte_dias,
                 ListaPriorizada.top_k,
                 total.label("total_items"),
+                ListaPriorizada.nombre,
             )
             .join(Modelo, Modelo.id == ListaPriorizada.modelo_id)
             .outerjoin(Prediccion, Prediccion.lista_id == ListaPriorizada.id)
@@ -185,6 +189,7 @@ class SqlAlchemyListaRepository:
                 horizonte_dias=f.horizonte_dias,
                 top_k=f.top_k,
                 total_items=f.total_items,
+                nombre=f.nombre,
             )
             for f in filas
         ]

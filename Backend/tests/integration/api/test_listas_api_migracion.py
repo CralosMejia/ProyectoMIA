@@ -43,6 +43,7 @@ FECHA = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 CAMPOS_LISTA = {
     "id",
+    "nombre",
     "modelo_version",
     "fecha_generacion",
     "creada_en",
@@ -72,6 +73,7 @@ CAMPOS_ITEM = {
 }
 CAMPOS_RESUMEN = {
     "id",
+    "nombre",
     "fecha_generacion",
     "creada_en",
     "modelo_version",

@@ -5,7 +5,7 @@ Aislamiento entre usuarios: NO APLICA. No hay login (RT-12): el acceso se contro
 """
 
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 
-from app.api.dependencies import get_predictor
+from app.api.dependencies import get_clock, get_predictor
 from app.application.listas.generar_lista import MENSAJE_FECHA_PASADA
 from app.domain.common.predictor import FeatureRow, Prediction, TrainedModel
 from tests.integration.api.contract_helpers import assert_operation_contract, json_example
@@ -153,6 +153,7 @@ def test_get_listas_returns_summaries_most_recent_first(
     assert [r["id"] for r in resumenes] == [segunda["id"], primera["id"]]
     assert resumenes[0] == {
         "id": segunda["id"],
+        "nombre": "Lista del 31 ago 2026",
         "fecha_generacion": "2026-08-31",
         "creada_en": segunda["creada_en"],
         "modelo_version": "v1",
@@ -230,3 +231,86 @@ def test_post_listas_without_date_uses_clock_today(
 
     assert respuesta.status_code == 201
     assert respuesta.json()["fecha_generacion"] == "2026-08-31"
+
+
+# ------------------------------------------------------------------ R-008 T10: nombre de la lista
+RELOJ_29_SEP = datetime(2026, 9, 29, 15, 0, tzinfo=UTC)
+
+
+class Reloj29Sep:
+    def now(self) -> datetime:
+        return RELOJ_29_SEP
+
+
+@pytest.fixture
+def reloj_29_sep(contract_app: FastAPI) -> None:
+    contract_app.dependency_overrides[get_clock] = Reloj29Sep
+
+
+def test_post_listas_without_name_returns_default_name_everywhere(
+    contract_client: TestClient, base_migrada: Engine, reloj_29_sep: None
+) -> None:
+    respuesta = contract_client.post(LISTAS, json={})
+
+    assert respuesta.status_code == 201
+    creada = respuesta.json()
+    assert creada["nombre"] == "Lista del 29 sep 2026"
+    assert contract_client.get(f"{LISTAS}/{creada['id']}").json()["nombre"] == creada["nombre"]
+    assert contract_client.get(f"{LISTAS}/ultima").json()["nombre"] == creada["nombre"]
+    assert [r["nombre"] for r in contract_client.get(LISTAS).json()] == [creada["nombre"]]
+
+
+def test_post_listas_with_name_saves_it_stripped(
+    contract_client: TestClient, base_migrada: Engine, reloj_29_sep: None
+) -> None:
+    respuesta = contract_client.post(LISTAS, json={"nombre": "  Campaña octubre  "})
+
+    assert respuesta.status_code == 201
+    creada = respuesta.json()
+    assert creada["nombre"] == "Campaña octubre"
+    assert contract_client.get(f"{LISTAS}/{creada['id']}").json()["nombre"] == "Campaña octubre"
+    assert contract_client.get(f"{LISTAS}/ultima").json()["nombre"] == "Campaña octubre"
+    assert [r["nombre"] for r in contract_client.get(LISTAS).json()] == ["Campaña octubre"]
+
+
+@pytest.mark.parametrize(
+    "nombre",
+    ["   ", "a" * 81, "a\u0007b", 5],
+    ids=["solo-espacios", "81-caracteres", "caracter-de-control", "no-texto"],
+)
+def test_post_listas_invalid_name_returns_400_and_saves_nothing(
+    contract_client: TestClient, base_migrada: Engine, reloj_29_sep: None, nombre: object
+) -> None:
+    antes = contar(base_migrada, "listas_priorizadas")
+
+    respuesta = contract_client.post(LISTAS, json={"nombre": nombre})
+
+    assert respuesta.status_code == 400
+    assert respuesta.json()["error"]["code"] == "validation_error"
+    assert set(respuesta.json()) == {"error"}
+    assert contar(base_migrada, "listas_priorizadas") == antes
+
+
+def test_openapi_documents_nombre_in_request_and_responses(
+    openapi_spec: dict[str, Any],
+) -> None:
+    schemas = openapi_spec["components"]["schemas"]
+    generar = schemas["GenerarListaDTO"]
+    assert "nombre" not in generar.get("required", [])
+    variantes = generar["properties"]["nombre"]["anyOf"]
+    texto = next(v for v in variantes if v.get("type") == "string")
+    assert texto["maxLength"] == 80
+    assert texto["minLength"] == 1
+    assert {"type": "null"} in variantes
+    assert generar["examples"][0]["nombre"] == "Campaña octubre"
+    for dto in ("ListaPriorizadaDTO", "ListaResumenDTO"):
+        assert "nombre" in schemas[dto]["required"]
+        assert schemas[dto]["properties"]["nombre"]["maxLength"] == 80
+    post = openapi_spec["paths"][LISTAS]["post"]
+    ejemplos = post["requestBody"]["content"]["application/json"]["examples"]
+    assert ejemplos["con_nombre"]["value"]["nombre"] == "Campaña octubre"
+    assert ejemplos["nombre_invalido"]["value"] == {"nombre": "   "}
+    assert "nombre" in post["responses"]["400"]["description"]
+    assert json_example(post, 201)["nombre"] == "Campaña octubre"
+    resumen = openapi_spec["paths"][LISTAS]["get"]["responses"]["200"]["content"]
+    assert all("nombre" in r for r in resumen["application/json"]["example"])

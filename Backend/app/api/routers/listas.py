@@ -10,7 +10,7 @@ Aislamiento entre usuarios: NO APLICA (RT-12, sin login; acceso restringido por 
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Response, status
 
 from app.api.dependencies import get_consultar_listas, get_generar_lista
 from app.api.openapi import XLSX_MEDIA_TYPE, error_responses, success_response
@@ -34,6 +34,7 @@ MENSAJE_SIN_LISTAS = "Aun no se ha generado ninguna lista."
 
 LISTA_PRIORIZADA_EXAMPLE = {
     "id": 42,
+    "nombre": "Campaña octubre",
     "modelo_version": "v1",
     "fecha_generacion": "2026-08-31",
     "creada_en": "2026-09-28T15:20:00Z",
@@ -87,6 +88,7 @@ LISTA_PRIORIZADA_EXAMPLE = {
 LISTAS_RESUMEN_EXAMPLE = [
     {
         "id": 43,
+        "nombre": "Lista del 28 sep 2026",
         "fecha_generacion": "2026-09-28",
         "creada_en": "2026-09-28T16:05:00Z",
         "modelo_version": "v1",
@@ -96,6 +98,7 @@ LISTAS_RESUMEN_EXAMPLE = [
     },
     {
         "id": 42,
+        "nombre": "Campaña octubre",
         "fecha_generacion": "2026-08-31",
         "creada_en": "2026-09-28T15:20:00Z",
         "modelo_version": "v1",
@@ -104,6 +107,32 @@ LISTAS_RESUMEN_EXAMPLE = [
         "total_items": 57,
     },
 ]
+
+
+GENERAR_LISTA_REQUEST_EXAMPLES: dict[str, Any] = {
+    "con_nombre": {
+        "summary": "Lista con nombre",
+        "description": "El nombre se recorta y se guarda tal cual (1..80 caracteres).",
+        "value": {
+            "nombre": "Campaña octubre",
+            "fecha_referencia": "2026-09-29",
+            "horizonte_dias": 30,
+            "top_k": 25,
+        },
+    },
+    "nombre_por_defecto": {
+        "summary": "Sin nombre: nombre por defecto",
+        "description": 'Sin nombre (o null) se guarda "Lista del <d> <mmm> <aaaa>" con la '
+        'fecha de la lista, p. ej. "Lista del 29 sep 2026".',
+        "value": {"horizonte_dias": 30, "top_k": 25},
+    },
+    "nombre_invalido": {
+        "summary": "Nombre invalido (400)",
+        "description": "Vacio tras recortar, mas de 80 caracteres o con caracteres de "
+        "control -> 400 validation_error; no se guarda nada.",
+        "value": {"nombre": "   "},
+    },
+}
 
 
 def _con_mensaje(responses: dict[int | str, dict[str, Any]], code: int, message: str) -> None:
@@ -118,7 +147,9 @@ _POST_ERRORS = error_responses(
     status.HTTP_409_CONFLICT,
     status.HTTP_422_UNPROCESSABLE_CONTENT,
     descriptions={
-        status.HTTP_400_BAD_REQUEST: "Horizonte fuera de 1..31, K menor que 1 o fecha invalida.",
+        status.HTTP_400_BAD_REQUEST: "Horizonte fuera de 1..31, K menor que 1, fecha invalida "
+        "o nombre invalido (vacio tras recortar, mas de 80 caracteres o con caracteres de "
+        "control).",
         status.HTTP_409_CONFLICT: "El sistema no esta listo (migracion en curso o sin modelo).",
         status.HTTP_422_UNPROCESSABLE_CONTENT: "La fecha de la lista es anterior a hoy.",
     },
@@ -161,7 +192,10 @@ def _no_existe(mensaje: str = MENSAJE_LISTA_NO_EXISTE) -> HTTPException:
     },
     summary="Generar la lista priorizada de no renovacion",
 )
-def post_lista(body: GenerarListaDTO, generar: Generador) -> ListaPriorizadaDTO:
+def post_lista(
+    body: Annotated[GenerarListaDTO, Body(openapi_examples=GENERAR_LISTA_REQUEST_EXAMPLES)],
+    generar: Generador,
+) -> ListaPriorizadaDTO:
     try:
         return generar.ejecutar(body)
     except SistemaNoListoError:

@@ -189,6 +189,7 @@ class ListasEnMemoria:
             umbral_alto=modelo_lista.umbral_alto,
             umbral_medio=modelo_lista.umbral_medio,
             items=tuple(items),
+            nombre=lista.nombre,
         )
 
     def ultima(self) -> ListaDetalle | None:
@@ -207,6 +208,7 @@ class ListasEnMemoria:
                     horizonte_dias=lista.horizonte_dias,
                     top_k=lista.top_k,
                     total_items=len(predicciones),
+                    nombre=lista.nombre,
                 )
             )
         return resumenes

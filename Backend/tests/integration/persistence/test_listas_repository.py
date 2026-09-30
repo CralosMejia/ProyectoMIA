@@ -139,9 +139,15 @@ def predicciones(escenario: Escenario, top_k: int = 25) -> list[NuevaPrediccion]
     ]
 
 
-def nueva_lista(escenario: Escenario, fecha: date = date(2026, 8, 31)) -> NuevaLista:
+def nueva_lista(
+    escenario: Escenario, fecha: date = date(2026, 8, 31), nombre: str = "Lista sintetica"
+) -> NuevaLista:
     return NuevaLista(
-        modelo_id=escenario.modelo_id, fecha_generacion=fecha, horizonte_dias=30, top_k=25
+        modelo_id=escenario.modelo_id,
+        fecha_generacion=fecha,
+        horizonte_dias=30,
+        top_k=25,
+        nombre=nombre,
     )
 
 
@@ -398,3 +404,58 @@ def test_repository_module_never_reads_socio_correo() -> None:
     fuente = inspect.getsource(modulo_repositorio)
 
     assert re.search(r"correo", fuente) is None
+
+
+# ------------------------------------------------------------------ R-008 T9: nombre de la lista
+def test_crear_saves_nombre_and_obtener_ultima_listar_return_it(
+    repo: SqlAlchemyListaRepository, escenario: Escenario, reloj: RelojAjustable
+) -> None:
+    primera = repo.crear(nueva_lista(escenario, nombre="Lista del 31 ago 2026"), [])
+    reloj.instante = INSTANTE + timedelta(minutes=1)
+    segunda = repo.crear(
+        nueva_lista(escenario, date(2026, 9, 1), nombre="Campaña octubre"),
+        predicciones(escenario)[:3],
+    )
+
+    detalle = repo.obtener(segunda)
+    ultima = repo.ultima()
+    assert detalle is not None
+    assert ultima is not None
+    assert detalle.nombre == "Campaña octubre"
+    assert ultima.nombre == "Campaña octubre"
+    assert {r.id: r.nombre for r in repo.listar()} == {
+        segunda: "Campaña octubre",
+        primera: "Lista del 31 ago 2026",
+    }
+
+
+def test_repeated_names_are_allowed(repo: SqlAlchemyListaRepository, escenario: Escenario) -> None:
+    repo.crear(nueva_lista(escenario, nombre="Campaña octubre"), [])
+    repo.crear(nueva_lista(escenario, nombre="Campaña octubre"), [])
+
+    assert [r.nombre for r in repo.listar()] == ["Campaña octubre", "Campaña octubre"]
+
+
+def test_listar_with_names_is_a_single_query(
+    repo: SqlAlchemyListaRepository,
+    escenario: Escenario,
+    migrated_engine: Engine,
+) -> None:
+    for i in range(3):
+        repo.crear(nueva_lista(escenario, nombre=f"Lista {i}"), predicciones(escenario)[:2])
+    consultas: list[str] = []
+
+    def escuchar(
+        conn: object, cursor: object, sql: str, params: object, context: object, many: bool
+    ) -> None:
+        if sql.lstrip().upper().startswith("SELECT"):
+            consultas.append(sql)
+
+    event.listen(migrated_engine, "before_cursor_execute", escuchar)
+    try:
+        resumen = repo.listar()
+    finally:
+        event.remove(migrated_engine, "before_cursor_execute", escuchar)
+
+    assert len(resumen) == 3
+    assert len(consultas) == 1

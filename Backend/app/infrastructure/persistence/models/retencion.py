@@ -54,10 +54,13 @@ class ListaPriorizada(IdMixin, TimestampMixin, Base):
     horizonte_dias: Mapped[int] = mapped_column(Integer, nullable=False)
     top_k: Mapped[int] = mapped_column(Integer, nullable=False)
     creada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # R-008 (punto 5): nombre editable al generar; por defecto "Lista del 29 sep 2026".
+    nombre: Mapped[str] = mapped_column(Text, nullable=False)
 
     __table_args__ = (
         CheckConstraint("horizonte_dias > 0", name="horizonte_dias_positivo"),
         CheckConstraint("top_k > 0", name="top_k_positivo"),
+        CheckConstraint("char_length(nombre) BETWEEN 1 AND 80", name="nombre_longitud"),
     )
 
 

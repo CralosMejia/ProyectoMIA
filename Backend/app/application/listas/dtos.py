@@ -2,14 +2,27 @@
 
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from app.domain.common.enums import EstadoGestion, NivelRiesgo, Plan
+from app.domain.listas.nombre import LONGITUD_MAXIMA_NOMBRE
 
 HORIZONTE_DIAS_POR_DEFECTO = 30
 HORIZONTE_DIAS_MAXIMO = 31
 TOP_K_POR_DEFECTO = 25
+
+NombreLista = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        max_length=LONGITUD_MAXIMA_NOMBRE,
+        pattern=r"^[^\x00-\x1f\x7f]*$",
+    ),
+]
+"""Nombre de la lista: se recorta; tras recortar 1..80 caracteres y sin caracteres de control."""
 
 
 class GenerarListaDTO(BaseModel):
@@ -17,16 +30,27 @@ class GenerarListaDTO(BaseModel):
 
     ``fecha_referencia`` nula = hoy en la zona del negocio (Ecuador); una fecha anterior a hoy
     la rechaza el caso de uso (regla de negocio). ``horizonte_dias`` va de 1 a 31.
+    ``nombre`` ausente o nulo = nombre por defecto con la fecha de la lista
+    (``"Lista del 29 sep 2026"``); si llega, se recorta y debe quedar con 1..80 caracteres sin
+    caracteres de control. Se permiten nombres repetidos.
     """
 
     model_config = ConfigDict(
         frozen=True,
         extra="forbid",
         json_schema_extra={
-            "examples": [{"fecha_referencia": "2026-09-29", "horizonte_dias": 30, "top_k": 25}]
+            "examples": [
+                {
+                    "nombre": "Campaña octubre",
+                    "fecha_referencia": "2026-09-29",
+                    "horizonte_dias": 30,
+                    "top_k": 25,
+                }
+            ]
         },
     )
 
+    nombre: NombreLista | None = None
     fecha_referencia: date | None = None
     horizonte_dias: int = Field(default=HORIZONTE_DIAS_POR_DEFECTO, ge=1, le=HORIZONTE_DIAS_MAXIMO)
     top_k: int = Field(default=TOP_K_POR_DEFECTO, ge=1)
@@ -68,6 +92,7 @@ class ListaPriorizadaDTO(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     id: int = Field(ge=1)
+    nombre: str = Field(min_length=1, max_length=LONGITUD_MAXIMA_NOMBRE)
     modelo_version: str
     fecha_generacion: date
     creada_en: datetime
@@ -85,6 +110,7 @@ class ListaResumenDTO(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     id: int = Field(ge=1)
+    nombre: str = Field(min_length=1, max_length=LONGITUD_MAXIMA_NOMBRE)
     fecha_generacion: date
     creada_en: datetime
     modelo_version: str
