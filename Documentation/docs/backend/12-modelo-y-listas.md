@@ -46,7 +46,7 @@ Con los libros reales: `LISTO` en ~5 s; 2.748 membresías, 1.410 socios, 1 model
 - `advertencia_datos_antiguos` se evalúa con la última carga cuya `fecha_carga ≤ creada_en` de la lista frente a `fecha_generacion` (`datos_antiguos`), también al consultar listas anteriores.
 - **R-008 · nombre de la lista:** `GenerarListaDTO.nombre` opcional; se recorta y debe quedar en 1..80 caracteres sin caracteres de control (`\x00-\x1f`, `\x7f`); si no, `400 validation_error`. Ausente o `null` → `nombre_por_defecto(fecha efectiva)` de `domain/listas/nombre.py`: `"Lista del <d> <mmm> <aaaa>"` con la tabla fija de meses sin punto (`ene … dic`), sin `locale` ni reloj (`2026-09-29` → `"Lista del 29 sep 2026"`). Nombres repetidos permitidos; se guarda recortado y la neutralización `= + - @` solo ocurre al escribir el Excel. `NuevaLista`, `ListaDetalle` y `ListaResumen` llevan `nombre`; el mismo formato está en la migración `0006` y en el frontend (`fechaCorta`).
 - Una lista guardada es inmutable (RN-04.5): sus ítems no filtran `deleted_at`, y el nombre no se edita después de generarla.
-- `gestion_estado` y `campania_asignada` salen `null` hasta CU-08 (día 5).
+- **R-009 · gestión de cada ítem:** `ItemLista` y `PrediccionDTO` llevan `gestion_id`, `gestion_estado` y `campania_asignada`. El repositorio de listas los trae con un `LEFT JOIN` a la gestión del **ciclo** (`membresia_id`, `deleted_at IS NULL`) en la misma consulta de los ítems (sin N+1): una gestión creada desde una lista se ve en todas las listas que contienen esa membresía. `campania_asignada` es el nombre congelado (`gestiones_retencion.campania_nombre`). Sustituye la nota anterior ("salen `null` hasta CU-08").
 - Sin prueba todavía de dos `POST /listas` simultáneos.
 
 ## Excel (CU-12)
@@ -58,7 +58,8 @@ Con los libros reales: `LISTO` en ~5 s; 2.748 membresías, 1.410 socios, 1 model
 - Hojas: `Socios prioritarios a contactar` (ítems con `dentro_top_k`), `Otros socios por vencer` (el resto; solo encabezados si no hay) y `Resumen`. Las dos primeras por `prioridad` ascendente.
 - Columnas A..H: Prioridad, Nombre, Cédula (texto con cero inicial; `null` → vacía), Plan, Vence el (fecha `dd/mm/yyyy`), Días para vencer (vencimiento − `fecha_generacion`), Nivel de riesgo (`Alto`/`Medio`/`Bajo`), Motivos principales (unidos con `"; "`, sin el aporte final entre paréntesis, misma regla que `APORTE_FINAL` de `TablaLista.tsx`; sin motivos → "Sin factores de riesgo destacados").
 - `Resumen`: Nombre de la lista, Fecha de la lista, Vencen hasta, Socios prioritarios a contactar, Otros socios por vencer, Total de socios por vencer, Riesgo alto, Riesgo medio, Riesgo bajo. Sin versión del modelo, umbrales, Top K ni score.
-- No incluye Celular, Score, Monto, Estado de la gestión ni Campaña. La API (`GET /listas/{id}`) **sigue** devolviendo `celular`, `score` y `monto_cobrado`.
+- **R-009 · columnas I "Gestión" y J "Campaña"** en las dos hojas de socios, con los mismos textos que la pantalla y el estado **al momento de descargar**: sin gestión → "Sin gestión" y "—"; pendiente → "Pendiente"; cerrada → "Cerrada"; gestión sin campaña → "Sin campaña". El nombre de la campaña se neutraliza como el resto de textos (`= + - @`). El botón de acción no va al Excel. **Corrige** el criterio de R-008, que excluía estado de gestión y campaña: la regla vigente sigue siendo "Excel igual a la tabla" (ADR-007) y la tabla ahora las tiene.
+- No incluye Celular, Score ni Monto. La API (`GET /listas/{id}`) **sigue** devolviendo `celular`, `score` y `monto_cobrado`.
 
 ~~R-005: el Excel conserva el score y los factores con su aporte~~ — **sustituido por R-008** (decisión del usuario). También queda revertido R-006 ("el celular se mantiene en el Excel"). De R-005 sigue vigente: "Cédula" en lugar de "Correo".
 

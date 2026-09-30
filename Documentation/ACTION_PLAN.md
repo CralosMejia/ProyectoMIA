@@ -5,9 +5,264 @@
 
 ## ACTIVO
 
-_Ninguno._
+_(ninguno)_
 
 ## TERMINADOS RECIENTEMENTE
+
+### R-009 — Día 5 del cronograma: campañas (CU-06, CU-07) y gestión de retención (CU-08, CU-10) desde la Lista · **DONE** 2026-09-30
+
+**Cierre:** Backend 1.671 pytest, `ruff`, `format` (267), `mypy app` (121), `lint-imports` (7), `verificar_lista.py` salida 0; Frontend 570 Vitest, `build`, `lint` 0; E2E 3/3 en el stack aislado 8081 (`health`, `carga-lista-excel`, `campanias-gestion`); contra 8080, 1 en verde y 2 saltados a propósito. Stack principal en `0008`, `LISTO`: socios 1.410, membresías 2.748, cargas 1, listas 0, predicciones 0, campañas 3 (de ejemplo), gestiones 0; navegador: Campañas con las 3 "Ejemplo" y formulario; Lista con formulario de gestión. Reinicio de la base principal ejecutado el 30-09-2026 (autorizado por el usuario). Seguridad diferida al día 7 (05 §1). Contrato y esquema → [ADR-008](adr/ADR-008-gestion-por-ciclo-y-nombre-de-campania-congelado.md). **Escalado al usuario:** [03 §15 CU-12](03-casos-de-uso.md) aún dice que el Excel no lleva gestión ni campaña; no se creó `docs/backend/14-campanias-y-gestiones.md` (el detalle está en API_CONTRACT, 09, 12 y ADR-008); la excepción de `now()` en `0007` no se añadió a DEVELOPMENT_GUIDELINES.
+
+**Objetivo:** el personal parametriza campañas (crear, editar, inactivar; 3 de ejemplo), ve las sugeridas para un socio de la lista, crea la gestión (campaña o "No asignar", fecha de seguimiento, responsable), registra el resultado hasta cerrarla con Renovó Sí/No, y ve el estado de la gestión y la campaña en la tabla de la Lista y en su Excel.
+
+**Fuente:** [05 §3 Día 5](05-cronograma-semana.md) (D5-BD-01..02, D5-BE-01..04, D5-FE-01..03) · [03 §9–§11, §13](03-casos-de-uso.md) (CU-06, CU-07, CU-08, CU-10; RN-06.x, RN-07.x, RN-08.x, RN-10.x) y §16 (entidades `campania`, `gestion_retencion`) · [04 §2 D-16, D-17, D-18](04-pendientes-para-iniciar-desarrollo.md) · [06](06-como-funciona-la-lista.md) · `docs/API_CONTRACT.md` §Operaciones de negocio · `docs/backend/09-esquema-base-de-datos.md` §Retención.
+
+**Notas de alcance del planner**
+- No existe `products/P##-*.md`. Nada cae en `DEVELOPMENT_GUIDELINES.md` §Fuera de alcance (editar una gestión cerrada y más de una gestión por ciclo siguen fuera: se **rechazan**). Sin reactivar campañas (CU-06 solo pide crear, editar e inactivar; el contrato no tiene `activar`).
+- **Fuera de R-009 (día 6):** `GET /alertas` y `GET /gestiones?filtro=` (CU-09, D6-BD-01/D6-BE-01/D6-FE-01) **siguen en `501`**; el requerimiento los nombra entre los endpoints en `501`, pero pertenecen al día 6 y su pantalla (Inicio) también. Se avisa al usuario (decisión (a), reversible).
+- **Proceso (05 §1):** el día 5 no tiene tareas marcadas **TDD** → pruebas de los criterios de aceptación en todas. Revisión de seguridad diferida a la revisión única del día 7. Sin login (RT-12): no hay pruebas de aislamiento entre usuarios. Datos de prueba ficticios; ni logs ni mensajes de error llevan nombres, cédulas ni celulares.
+- **Stacks:** confirmaciones de prueba y E2E solo en `mtabolic-e2e` (8081). En el principal (8080) solo verificación: se aplican `0007` (3 campañas de ejemplo) y `0008`; **no** se crean campañas ni gestiones.
+- **Decisiones del planner (reversibles; se avisan al usuario):**
+  - (a) Alcance de endpoints: se implementan `GET/POST /campanias`, `PUT /campanias/{id}`, `POST /campanias/{id}/inactivar`, `GET /predicciones/{id}/campanias-sugeridas`, `POST /gestiones`, `GET /gestiones/{id}`, `PUT /gestiones/{id}/resultado`. `GET /alertas` y `GET /gestiones?filtro` quedan en `501` hasta el día 6.
+  - (b) **Contrato:** se mantiene salvo: `PrediccionDTO` **añade** `gestion_id: int | null` (para abrir la gestión desde la lista); `CampaniaEntradaDTO.prioridad` pasa a `1..999` (evita desbordar `INTEGER` → 500). `GestionDTO.fecha_asignacion` (datetime) = `created_at` de la gestión (instante UTC); la columna `fecha_asignacion DATE` guarda la fecha de negocio (Ecuador) y la usará el dashboard del día 6. `gestion_estado` y `campania_asignada` de `PrediccionDTO` dejan de ser siempre `null`.
+  - (c) **RN-08.2 (la campaña queda como estaba al asignarla):** migración de esquema `0008`: `gestiones_retencion.campania_nombre TEXT NULL` (instantánea del nombre al crear la gestión) con `CHECK ((campania_id IS NULL) = (campania_nombre IS NULL))` (`campania_nombre_coherente`); relleno desde `campanias.nombre` para filas existentes (hoy 0). `GestionDTO.campania_nombre` y `PrediccionDTO.campania_asignada` salen de esa columna: editar o inactivar la campaña no cambia gestiones ya creadas.
+  - (d) **Campañas de ejemplo (`0007`, D-17):** migración de **datos** en Alembic (la ejecuta el servicio `migrate`, como `0002`; no es una migración al arrancar). Inserta con `es_ejemplo = true`, `activa = true`, `created_at = updated_at = now()` de la base (excepción al `Clock`, solo en migraciones), **solo si no existe** ya una campaña no borrada con ese nombre:
+    1. "Ejemplo: Llamada personal antes del vencimiento" — "Llamar al socio antes de que venza su plan para recordarle sus avances y resolver dudas." — `ALTO` — `MENSUAL, TRIMESTRAL, SEMESTRAL, ANUAL, OTRO` — prioridad 1.
+    2. "Ejemplo: Renovación anticipada" — "Ofrecer renovar antes del vencimiento con el beneficio que Mtabolic defina." — `ALTO, MEDIO` — `MENSUAL, TRIMESTRAL` — prioridad 2.
+    3. "Ejemplo: Recordatorio de renovación" — "Enviar un recordatorio amable de la fecha de vencimiento." — `MEDIO, BAJO` — todos los planes de campaña — prioridad 3.
+    `downgrade` borra solo esas 3 filas `es_ejemplo` y **falla con mensaje claro** si alguna gestión las referencia (solo desarrollo). La aplicación no calcula descuentos (RN-06.1).
+  - (e) **Campañas (CU-06):** nombre recortado 1..120; descripción recortada ≤ 500 (vacía → `null`); `niveles_riesgo` y `planes` no vacíos, sin `DIARIO`, **deduplicados** y guardados en orden canónico (`ALTO, MEDIO, BAJO`; `MENSUAL, TRIMESTRAL, SEMESTRAL, ANUAL, OTRO`); prioridad 1..999. Se permiten nombres repetidos. Editar no cambia `activa` ni `es_ejemplo` (el indicador "ejemplo" marca el origen). Inactivar una ya inactiva → `200` sin cambios (idempotente). Editar una inactiva se permite. `GET /campanias`: sin `deleted_at`, ordenadas `activa DESC, prioridad, lower(nombre), id`. No hay `DELETE` ni borrado físico.
+  - (f) **Sugerencias (CU-07):** nivel = `predicciones.nivel_riesgo` (el de esa lista); plan = `membresias.plan` del ciclo. Campañas `activa AND deleted_at IS NULL AND nivel = ANY(niveles_riesgo) AND plan = ANY(planes)`, orden `prioridad, lower(nombre), id`. Plan `DIARIO` → `[]`. La opción "No asignar campaña" la pinta el frontend (`campania_id = null` en `POST /gestiones`); el backend devuelve solo campañas.
+  - (g) **Gestión (CU-08):** "hoy" = `hoy_en_negocio(clock.now())` (Ecuador). Rango permitido `[hoy, vencimiento + 30]`; fuera → `422` "La fecha de seguimiento debe estar entre AAAA-MM-DD y AAAA-MM-DD."; si `vencimiento + 30 < hoy` → `422` "El plazo de seguimiento de este ciclo ya termino." Fecha sugerida (la calcula el frontend con la misma regla, probada con los mismos casos) = `max(vencimiento + 25, hoy)`. Una gestión por **ciclo** (`membresia_id`), aunque la membresía esté en varias listas: la segunda → `409` "El ciclo de membresia ya tiene una gestion." (también si llega por carrera: la violación de `ux_gestiones_retencion_membresia_id` se traduce a `409`). Campaña inexistente o borrada → `404`; inactiva o incompatible con el nivel/plan de la predicción → `422` "La campana no esta activa o no aplica a este socio." Se guarda: `prediccion_id`, `membresia_id` (de la predicción), `campania_id`, `campania_nombre` (instantánea), `fecha_asignacion = hoy`, `estado = PENDIENTE`, `responsable` recortado. Score, nivel y versión del modelo se leen por la predicción (RT-07). Todo en una transacción.
+  - (h) **Resultado (CU-10), `PUT` reemplaza los campos del resultado** (`contactado`, `campania_ofrecida`, `campania_aceptada`, `renovo_declarado`, `fecha_contacto`, `observaciones`, `responsable`); `fecha_seguimiento` `null` = se conserva. Coherencia (`422` con mensaje propio de cada regla):
+    - sin campaña → ofrecida y aceptada = `NO_APLICA`;
+    - con campaña y `contactado = false` → ofrecida y aceptada = `NO_APLICA`;
+    - con campaña y `contactado = true` → ofrecida ∈ {`SI`, `NO`}; ofrecida `NO` → aceptada `NO_APLICA`; ofrecida `SI` → aceptada ∈ {`SI`, `NO`, `PENDIENTE`};
+    - `contactado = true` → `fecha_contacto` obligatoria con `fecha_asignacion ≤ fecha_contacto ≤ hoy`; `contactado = false` → `fecha_contacto` debe ser `null`.
+    - `renovo_declarado` `SI`/`NO` → `CERRADA`, `cerrada_en = clock.now()` (`fecha_seguimiento` recibida se ignora); `PENDIENTE` → sigue `PENDIENTE` y, si llega `fecha_seguimiento`, se valida con el rango de (g).
+    - Gestión `CERRADA` → `409` "La gestion esta cerrada y no se puede modificar." (se comprueba con `SELECT … FOR UPDATE` dentro de la transacción). El resultado no toca membresías ni etiquetas (RN-10.2).
+  - (i) **Lista (D5-FE-03):** la gestión de un ítem se busca por `membresia_id` (no por `prediccion_id`), con `deleted_at IS NULL`, en la misma consulta de `obtener` (LEFT JOIN, sin N+1). Tabla: columnas nuevas **"Gestión"** (`Sin gestión` / `Pendiente` / `Cerrada`) y **"Campaña"** (nombre de la instantánea; `Sin campaña` si la gestión no tiene; `—` si no hay gestión) y columna de acción con botón **"Gestionar"** (sin gestión), **"Registrar resultado"** (pendiente) o **"Ver gestión"** (cerrada, solo lectura), con nombre accesible que incluye la prioridad (p. ej. "Gestionar prioridad 3"), no el nombre del socio.
+  - (j) **Excel (D5-FE-03, "Excel igual a la tabla", ADR-007):** se añaden las columnas I "Gestión" y J "Campaña" con los mismos textos que la pantalla, con el estado **al momento de descargar**. El botón de acción no va al Excel. Sustituye el criterio de R-008 T1 que prohibía estado de gestión y campaña en el Excel.
+  - (k) **Frontend:** el formulario de gestión vive en el feature `lista` (su API ya está en `lista-api.ts`); la página Campañas en el feature `campanias`. Ventana modal con `Modal` de `shared/ui`. Parte 1 (solo al crear): radios con las campañas sugeridas (nombre + descripción) y "No asignar campaña" (seleccionada por defecto si no hay sugerencias; si hay, ninguna preseleccionada y se exige elegir); "Fecha de seguimiento" con la sugerida y `min`/`max` del rango; "Responsable (opcional)" `maxLength` 120. Parte 2 (gestión pendiente): "¿Se contactó al socio?" Sí/No; "¿Se ofreció la campaña?" Sí/No/No aplica; "¿Aceptó la campaña?" Sí/No/Pendiente/No aplica; "¿Renovó?" Sí/No/Pendiente; "Fecha del contacto"; "Observaciones" (`maxLength` 500); "Responsable"; "Fecha de seguimiento" solo si Renovó = Pendiente. Las opciones incoherentes se **deshabilitan** y se valida también al guardar (mensaje local), y los `422`/`409` del servidor se muestran con `ErrorAlert`. Tras guardar se recarga la lista para ver la columna actualizada. "Hoy" en el navegador = fecha local (el PC está en Ecuador).
+- **Excepción al límite de 4 archivos:** `__init__.py` vacíos; `"0006 (head)"` → `"0008 (head)"` en `test_migrations_robustness.py` (T3/T4); añadir `gestion_id`/`gestion_estado`/`campania_asignada` a constructores de dobles y datos de prueba (`tests/unit/application/listas/dobles.py`, `tests/integration/api/listas_datos.py`, `scripts/verificar_lista.py` si construye `ItemLista`) (T13); ajuste de la expectativa `501` en `test_contract_campanias.py` / `test_contract_gestiones.py` (T8, T12); `Frontend/src/features/lista/components/TablaLista.test.tsx` y fixtures de `Prediccion` con `gestionId` (T17).
+
+**Tareas**
+
+- [x] **T1** · `domain` · Reglas de una campaña (validación, normalización y compatibilidad)
+  - Archivos: `Backend/app/domain/campanias/campania.py` (principal, nuevo: `DatosCampania` frozen con factory `crear(...)`, `CampaniaInvalidaError(DomainError)`, `es_compatible(activa, niveles, planes, nivel, plan) -> bool`, `clave_orden(prioridad, nombre, id)`), `Backend/app/domain/campanias/__init__.py`, `Backend/tests/unit/domain/campanias/test_campania.py` (nuevo).
+  - Docs: `Documentation/docs/backend/01-arquitectura.md` §Capas; `03-casos-de-uso.md` §9–§10; decisiones (e), (f).
+  - Aceptación:
+    - `crear(nombre="  Renovación  ", descripcion="  ", niveles=[MEDIO, ALTO, MEDIO], planes=[TRIMESTRAL, MENSUAL], prioridad=1)` → nombre `"Renovación"`, descripción `None`, niveles `(ALTO, MEDIO)`, planes `(MENSUAL, TRIMESTRAL)`.
+    - Nombre vacío tras recortar o > 120, descripción > 500, niveles o planes vacíos, plan `DIARIO`, prioridad 0 o 1000 → `CampaniaInvalidaError` con mensaje sin datos del socio.
+    - `es_compatible`: campaña solo `BAJO` + socio `ALTO` → `False`; solo `MENSUAL` + socio `ANUAL` → `False`; inactiva → `False`; `ALTO`+`MENSUAL` en una campaña `[ALTO,MEDIO]`/`[MENSUAL]` activa → `True`; plan `DIARIO` → `False`.
+    - Orden: prioridades `[2,1,1]` con nombres `["b","Zeta","alfa"]` → `alfa, Zeta, b` (sin distinguir mayúsculas; empate final por id). Solo librería estándar; `lint-imports` en verde.
+  - Pruebas: unitarias.
+
+- [x] **T2** · `domain` · Reglas de una gestión (rango de fecha, coherencia del resultado y cierre)
+  - Archivos: `Backend/app/domain/gestiones/reglas.py` (principal, nuevo: `rango_seguimiento(hoy, vencimiento) -> (desde, hasta)`, `fecha_sugerida(hoy, vencimiento)`, `validar_fecha_seguimiento(...)`, `validar_resultado(con_campania, contactado, ofrecida, aceptada, fecha_contacto, fecha_asignacion, hoy)`, `estado_tras_resultado(renovo) -> EstadoGestion`), `Backend/app/domain/gestiones/errores.py` (nuevo: `FechaSeguimientoFueraDeRangoError`, `PlazoSeguimientoTerminadoError`, `ResultadoIncoherenteError`, `GestionCerradaError`, `GestionDuplicadaError`, `CampaniaNoAplicableError`, todas `DomainError`), `Backend/app/domain/gestiones/__init__.py`, `Backend/tests/unit/domain/gestiones/test_reglas.py` (nuevo).
+  - Docs: `03-casos-de-uso.md` §11, §13; decisiones (g), (h).
+  - Aceptación (sin reloj: `hoy` llega como parámetro):
+    - hoy 2026-09-29, vencimiento 2026-10-05 → rango `2026-09-29..2026-11-04`, sugerida `2026-10-30`. Vencimiento 2026-09-01 → rango `2026-09-29..2026-10-01`, sugerida `2026-09-29`. Vencimiento 2026-08-29 (venc+30 = 2026-09-28 < hoy) → `PlazoSeguimientoTerminadoError`.
+    - `validar_fecha_seguimiento`: 2026-09-28 o 2026-11-05 (con venc 2026-10-05) → `FechaSeguimientoFueraDeRangoError` cuyo mensaje contiene `2026-09-29` y `2026-11-04`; los extremos son válidos.
+    - `validar_resultado` (parametrizada con cada fila de (h)): no contactado + ofrecida `SI` → error; sin campaña + ofrecida `NO` → error; contactado + ofrecida `NO` + aceptada `SI` → error; contactado + ofrecida `SI` + aceptada `NO_APLICA` → error; contactado sin `fecha_contacto` → error; `fecha_contacto` futura o anterior a `fecha_asignacion` → error; no contactado con `fecha_contacto` → error; combinaciones coherentes de (h) → sin error.
+    - `estado_tras_resultado`: `SI`/`NO` → `CERRADA`; `PENDIENTE` → `PENDIENTE`.
+  - Pruebas: unitarias.
+
+- [x] **T3** · `db` · Migración de datos `0007`: 3 campañas de ejemplo (D5-BD-02, D-17)
+  - Archivos: `Backend/alembic/versions/0007_campanias_ejemplo.py` (principal), `Backend/tests/integration/persistence/test_migrations.py`, `Backend/tests/integration/persistence/test_migrations_robustness.py` (línea de `head`, excepción mecánica).
+  - Docs: `.claude/rules/database.md` §Migraciones; `docs/backend/09-esquema-base-de-datos.md` §Retención, §Migraciones y pruebas; decisión (d).
+  - Aceptación (`app_db_test`):
+    - `revision="0007"`, `down_revision="0006"`. Tras `upgrade 0007` hay exactamente 3 filas en `campanias` con los nombres, niveles, planes, prioridades y descripciones de (d), `es_ejemplo = true`, `activa = true`, `deleted_at IS NULL`.
+    - Base con una campaña previa llamada "Ejemplo: Renovación anticipada" → `upgrade` no la duplica (quedan 3 con ese conjunto de nombres). Sin SQL construido con f-strings; valores enlazados o literales fijos.
+    - `downgrade 0006` elimina solo esas 3 filas (una campaña creada a mano sigue); con una gestión que referencia una de ejemplo → `downgrade` falla con mensaje claro y no borra nada. Otras tablas con conteos iguales antes/después.
+  - Pruebas: integración.
+
+- [x] **T4** · `db` · Migración de esquema `0008`: instantánea `gestiones_retencion.campania_nombre` (RN-08.2)
+  - Archivos: `Backend/alembic/versions/0008_gestiones_campania_nombre.py` (principal), `Backend/app/infrastructure/persistence/models/retencion.py` (`GestionRetencion.campania_nombre` + `CheckConstraint` `campania_nombre_coherente`), `Backend/tests/unit/infrastructure/persistence/test_models_metadata.py`, `Backend/tests/integration/persistence/test_migrations.py`.
+  - Docs: `.claude/rules/database.md` §Migraciones; `docs/backend/09-esquema-base-de-datos.md` §Retención; decisión (c).
+  - Aceptación:
+    - `revision="0008"`, `down_revision="0007"`. Sobre una base en `0007` con una gestión con campaña y otra sin campaña → `upgrade` rellena `campania_nombre` con el nombre de la campaña y deja `NULL` la otra; luego añade el `CHECK`.
+    - Tras `upgrade head`: insertar `campania_id` con `campania_nombre NULL` o al revés → `IntegrityError` (`campania_nombre_coherente`). `alembic check` sin diferencias; `alembic current` → `0008 (head)`; ciclo `downgrade 0007` → `upgrade head` funciona; base vacía también aplica.
+  - Pruebas: unitaria (metadatos) + integración.
+
+- [x] **T5** · `application` · CU-06: listar, crear, editar e inactivar campañas
+  - Archivos: `Backend/app/application/campanias/gestionar_campanias.py` (principal, nuevo: `ListarCampanias`, `CrearCampania`, `EditarCampania`, `InactivarCampania`, `CampaniaNoExisteError`), `Backend/app/application/campanias/ports.py` (nuevo: `CampaniaGuardada`, `CampaniaRepository` con `listar()`, `obtener(id)`, `crear(datos)`, `actualizar(id, datos)`, `inactivar(id)`, `compatibles(nivel, plan)`; `ContextoCampanias`, `UnidadDeTrabajoCampanias`), `Backend/app/application/campanias/dtos.py` (`prioridad` `le=999`, ejemplos), `Backend/tests/unit/application/campanias/test_gestionar_campanias.py` (nuevo, con dobles en memoria).
+  - Docs: `.claude/rules/backend.md` §Application, §API; `docs/API_CONTRACT.md` §Operaciones de negocio; decisiones (b), (e).
+  - Aceptación:
+    - Crear con los datos de T1 → el repositorio recibe `DatosCampania` normalizado, `activa=True`, `es_ejemplo=False`; se hace **un** `commit`; devuelve `CampaniaDTO`.
+    - Editar id inexistente → `CampaniaNoExisteError` sin `commit`; editar conserva `activa` y `es_ejemplo`.
+    - Inactivar activa → `activa=False`, un `commit`; inactivar ya inactiva → devuelve la campaña igual (idempotente). Inactivar inexistente → `CampaniaNoExisteError`.
+    - Datos inválidos que pasen el DTO pero no el dominio → `CampaniaInvalidaError`, sin `commit`. `CampaniaEntradaDTO(prioridad=1000)` → `ValidationError`. El puerto no expone borrado. `mypy app` en verde.
+  - Pruebas: unitarias.
+
+- [x] **T6** · `application` · CU-07: sugerencias para una predicción
+  - Archivos: `Backend/app/application/campanias/sugerir_campanias.py` (principal, nuevo: `SugerirCampanias`, `PrediccionNoExisteError`), `Backend/app/application/campanias/ports.py` (puerto `PerfilPrediccion.obtener(prediccion_id) -> (nivel, plan) | None` dentro de `ContextoCampanias`), `Backend/tests/unit/application/campanias/test_sugerir_campanias.py` (nuevo).
+  - Docs: `03-casos-de-uso.md` §10; decisión (f).
+  - Aceptación:
+    - Predicción `ALTO`/`MENSUAL` → pide `compatibles(ALTO, MENSUAL)` y devuelve las campañas en el orden del repositorio como `list[CampaniaDTO]`; sin compatibles → `[]`.
+    - Predicción inexistente → `PrediccionNoExisteError`. Plan `DIARIO` → `[]` sin consultar campañas. Solo lectura (sin `commit`).
+  - Pruebas: unitarias.
+
+- [x] **T7** · `infra` · Repositorio de campañas y unidad de trabajo de retención (D5-BD-01)
+  - Archivos: `Backend/app/infrastructure/persistence/repositories/campanias.py` (principal, nuevo: `SqlAlchemyCampaniaRepository`, `SqlAlchemyPerfilPrediccion`), `Backend/app/infrastructure/persistence/unit_of_work_retencion.py` (nuevo: `SqlAlchemyUnidadDeTrabajoRetencion`, mismo patrón que `unit_of_work_listas.py`; implementa `UnidadDeTrabajoCampanias` y, en T11, la de gestiones), `Backend/tests/integration/persistence/test_campanias_repository.py` (nuevo).
+  - Docs: `.claude/rules/database.md` §Reparto de herramientas, §Reglas innegociables; `docs/backend/09-esquema-base-de-datos.md` §Retención; decisiones (e), (f).
+  - Aceptación (PostgreSQL `app_db_test`, fixture `db_session`, reloj fijo):
+    - `crear` → fila con `created_at`/`updated_at` del `Clock`; `actualizar` cambia `updated_at`; `inactivar` pone `activa=false` y **no** `deleted_at`; ninguna fila desaparece (conteo igual). No existe método de borrado.
+    - `listar` excluye `deleted_at` y ordena `activa DESC, prioridad, lower(nombre), id`.
+    - `compatibles(ALTO, MENSUAL)` con campañas {solo `BAJO`; solo `ANUAL`; inactiva compatible; borrada compatible; dos compatibles con prioridad 1 "beta"/"Alfa" y una con prioridad 2} → exactamente `Alfa, beta, <prioridad 2>`.
+    - `SqlAlchemyPerfilPrediccion.obtener` → `(nivel_riesgo de la predicción, plan de la membresía)`; id inexistente → `None`. SQL parametrizado (`ANY(:param)` o `.any()`), sin `commit` en el repositorio.
+  - Pruebas: integración.
+
+- [x] **T8** · `api` · Router de campañas real (D5-BE-01, D5-BE-02)
+  - Archivos: `Backend/app/api/routers/campanias.py` (principal: quita `501`, mapea `CampaniaNoExisteError`/`PrediccionNoExisteError` → `404`, `CampaniaInvalidaError` → `400 validation_error`; ejemplos con campañas de ejemplo), `Backend/app/api/dependencies.py` (fábricas de los casos de uso con `SqlAlchemyUnidadDeTrabajoRetencion`), `Backend/tests/integration/api/test_campanias_api.py` (nuevo), `Backend/tests/integration/api/test_contract_campanias.py` (quita la expectativa `501`).
+  - Docs: `docs/API_CONTRACT.md` §Operaciones de negocio; `.claude/rules/backend.md` §API; decisiones (b), (e), (f).
+  - Aceptación (PostgreSQL de pruebas en `head`):
+    - `GET /api/v1/campanias` → `200` con las 3 de ejemplo (`es_ejemplo: true`) en orden de prioridad.
+    - `POST /campanias` válido → `201` y aparece en `GET`; `{"nombre":"   ", …}`, `niveles_riesgo: []`, `planes: ["DIARIO"]`, `prioridad: 0` o campo extra → `400 validation_error` sin guardar (conteo igual).
+    - `PUT /campanias/{id}` → `200` con los datos nuevos; id inexistente → `404` "La campana no existe."; id `0` → `400`.
+    - `POST /campanias/{id}/inactivar` → `200` `activa:false`; repetir → `200` igual; la fila sigue en la base (`SELECT count(*)` igual).
+    - `GET /predicciones/{id}/campanias-sugeridas` (predicción ficticia `ALTO`/`MENSUAL`) → las compatibles activas por prioridad; tras inactivar una, ya no aparece; predicción inexistente → `404` "La prediccion no existe.".
+    - `/openapi.json`: ningún endpoint de campañas documenta ya `501`; `prioridad` con `maximum` 999; ejemplos de request y de cada respuesta.
+  - Pruebas: integración (API).
+
+- [x] **T9** · `application` · CU-08: crear la gestión (D5-BE-03)
+  - Archivos: `Backend/app/application/gestiones/crear_gestion.py` (principal, nuevo: `CrearGestion`), `Backend/app/application/gestiones/ports.py` (nuevo: `DatosPrediccionGestion` (membresía, vencimiento, nivel, plan, score, versión, nombre del socio), `NuevaGestion`, `GestionDetalle`, `GestionRepository` con `datos_prediccion(id)`, `existe_para_membresia(id)`, `crear(nueva)`, `obtener(id)`, `obtener_para_actualizar(id)`, `guardar_resultado(...)`; `ContextoGestiones` con `gestiones` y `campanias`; `UnidadDeTrabajoGestiones`), `Backend/tests/unit/application/gestiones/test_crear_gestion.py` (nuevo, dobles en memoria, reloj fijo).
+  - Docs: `03-casos-de-uso.md` §11; `.claude/rules/backend.md` §Application; decisiones (b), (c), (g).
+  - Aceptación (reloj `2026-09-29T15:00Z`; predicción `ALTO`/`MENSUAL`, vencimiento 2026-10-05):
+    - Con campaña compatible y fecha 2026-10-30 → guarda `NuevaGestion(membresia_id de la predicción, campania_nombre="<nombre actual>", fecha_asignacion=2026-09-29, estado=PENDIENTE)`, un `commit`, devuelve `GestionDTO` con `score`, `nivel_riesgo`, `modelo_version` de la predicción.
+    - `campania_id=None` → `campania_nombre=None`. Responsable `"  Andrea "` → `"Andrea"` (lo recorta el DTO).
+    - Fecha 2026-09-28 o 2026-11-05 → `FechaSeguimientoFueraDeRangoError`; vencimiento 2026-08-29 → `PlazoSeguimientoTerminadoError`; campaña inactiva o solo `BAJO` → `CampaniaNoAplicableError`; campaña inexistente → `CampaniaNoExisteError`; predicción inexistente → `PrediccionNoExisteError`; membresía con gestión → `GestionDuplicadaError`. En todos, **sin** `commit`.
+    - Reloj `2026-09-30T03:00Z` (aún 29 en Ecuador) → hoy = 2026-09-29 (acepta 2026-09-29).
+  - Pruebas: unitarias.
+
+- [x] **T10** · `application` · CU-10: registrar el resultado y consultar la gestión (D5-BE-04)
+  - Archivos: `Backend/app/application/gestiones/registrar_resultado.py` (principal, nuevo: `RegistrarResultado`, `GestionNoExisteError`), `Backend/app/application/gestiones/consultar_gestion.py` (nuevo: `ConsultarGestion`), `Backend/tests/unit/application/gestiones/test_registrar_resultado.py` (nuevo), `Backend/tests/unit/application/gestiones/test_consultar_gestion.py` (nuevo).
+  - Docs: `03-casos-de-uso.md` §13; decisión (h).
+  - Aceptación (reloj fijo; gestión pendiente creada 2026-09-29 con campaña, vencimiento 2026-10-05):
+    - Contactado Sí, ofrecida Sí, aceptada Sí, renovó `PENDIENTE`, fecha contacto 2026-09-29, fecha seguimiento 2026-10-27 → sigue `PENDIENTE`, `fecha_seguimiento` actualizada, un `commit`.
+    - Renovó `NO` → `CERRADA` con `cerrada_en = clock.now()`; `fecha_seguimiento` recibida ignorada.
+    - Sobre `CERRADA` → `GestionCerradaError` sin `commit`. No contactado + ofrecida `SI` → `ResultadoIncoherenteError`; gestión sin campaña + ofrecida `NO` → error; fecha de seguimiento fuera de rango con renovó `PENDIENTE` → `FechaSeguimientoFueraDeRangoError`. Inexistente → `GestionNoExisteError`.
+    - `ConsultarGestion(id)` → `GestionDTO` con `campania_nombre` de la instantánea y score/nivel/versión originales; inexistente → `GestionNoExisteError`. Usa `obtener_para_actualizar` (bloqueo) solo en `RegistrarResultado`.
+  - Pruebas: unitarias.
+
+- [x] **T11** · `infra` · Repositorio de gestiones (D5-BD-01)
+  - Archivos: `Backend/app/infrastructure/persistence/repositories/gestiones.py` (principal, nuevo: `SqlAlchemyGestionRepository`), `Backend/app/infrastructure/persistence/unit_of_work_retencion.py` (contexto con `gestiones` y `campanias`; traduce `IntegrityError` de `ux_gestiones_retencion_membresia_id` a `GestionDuplicadaError`), `Backend/tests/integration/persistence/test_gestiones_repository.py` (nuevo).
+  - Docs: `.claude/rules/database.md` §Reglas innegociables; `docs/backend/09-esquema-base-de-datos.md` §Retención; decisiones (c), (g), (h).
+  - Aceptación (PostgreSQL `app_db_test`; datos ficticios: modelo, lista, 2 predicciones de la **misma** membresía en 2 listas):
+    - `crear` → fila con `created_at` del `Clock`; `obtener` devuelve socio, plan, vencimiento, score, nivel, versión `"v<n>"`, `campania_nombre`, estado.
+    - Segunda gestión para la misma membresía (desde la otra predicción) → `GestionDuplicadaError` (índice único parcial); la primera sigue intacta. `existe_para_membresia` → `True`.
+    - Tras renombrar e inactivar la campaña, `obtener` sigue mostrando el nombre original (RN-08.2) y la campaña inactiva.
+    - `obtener_para_actualizar` emite `FOR UPDATE`; `guardar_resultado` actualiza campos, `estado`, `cerrada_en`, `updated_at`. Todas las lecturas filtran `deleted_at IS NULL`. Sin método de borrado; sin `commit` en el repositorio.
+  - Pruebas: integración.
+
+- [x] **T12** · `api` · Router de gestiones real (`POST /gestiones`, `GET /gestiones/{id}`, `PUT /gestiones/{id}/resultado`)
+  - Archivos: `Backend/app/api/routers/gestiones.py` (principal: mapeo `404` predicción/campaña/gestión, `409` duplicada o cerrada, `422` reglas de dominio; `GET /gestiones?filtro` y `GET /alertas` siguen `501`), `Backend/app/api/dependencies.py`, `Backend/tests/integration/api/test_gestiones_api.py` (nuevo), `Backend/tests/integration/api/test_contract_gestiones.py`.
+  - Docs: `docs/API_CONTRACT.md` §Operaciones de negocio; `.claude/rules/backend.md` §API; decisiones (a), (b), (g), (h).
+  - Aceptación (PostgreSQL de pruebas, `get_clock` fijo `2026-09-29T15:00Z`, predicción ficticia con vencimiento 2026-10-05):
+    - `POST /gestiones {prediccion_id, campania_id: <ejemplo compatible>, fecha_seguimiento: "2026-10-30", responsable: "Andrea"}` → `201`, `estado: "PENDIENTE"`, `campania_nombre` correcto, `score`/`nivel_riesgo`/`modelo_version` de la predicción. Repetir (o desde otra lista con la misma membresía) → `409` y 1 sola fila.
+    - Fecha `2026-09-28` → `422 domain_rule_violated` con el rango en el mensaje; campaña inactiva → `422`; campaña inexistente → `404`; predicción inexistente → `404`; `campania_id: null` → `201` con `campania_nombre: null`; cuerpo sin `fecha_seguimiento` → `400`. Nada guardado en los errores.
+    - `GET /gestiones/{id}` → `200`; inexistente → `404`.
+    - `PUT …/resultado` coherente con renovó `PENDIENTE` → `200` `PENDIENTE`; con renovó `NO` → `200` `CERRADA` y `fecha_cierre` no nula; otro `PUT` → `409` "La gestion esta cerrada y no se puede modificar." y datos sin cambios; "No se contactó" + ofrecida `SI` → `422`.
+    - `GET /alertas` y `GET /gestiones?filtro=hoy` → siguen `501`. OpenAPI con ejemplos de request y de cada respuesta.
+  - Pruebas: integración (API).
+
+- [x] **T13** · `application` · La lista trae la gestión de cada ítem (`gestion_id`, `gestion_estado`, `campania_asignada`)
+  - Archivos: `Backend/app/application/listas/ports.py` (principal: `ItemLista` con `gestion_id`, `gestion_estado`, `campania_asignada` opcionales), `Backend/app/application/listas/dtos.py` (`PrediccionDTO.gestion_id: int | None`), `Backend/app/application/listas/consultar_listas.py` (`a_dto`), `Backend/tests/unit/application/listas/test_consultar_listas.py`.
+  - Docs: `docs/backend/12-modelo-y-listas.md` §Lista priorizada; `docs/API_CONTRACT.md` §Operaciones de negocio (listas); decisiones (b), (i).
+  - Aceptación: ítem con gestión pendiente (id 9, campaña "Ejemplo: Renovación anticipada") → DTO `gestion_id: 9`, `gestion_estado: "PENDIENTE"`, `campania_asignada: "Ejemplo: Renovación anticipada"`; ítem sin gestión → los tres `null`; gestión sin campaña → `campania_asignada: null`, `gestion_estado` presente. Dobles y datos de prueba actualizados (excepción mecánica); `mypy app` en verde.
+  - Pruebas: unitarias.
+
+- [x] **T14** · `infra` · Repositorio de listas: LEFT JOIN con la gestión del ciclo
+  - Archivos: `Backend/app/infrastructure/persistence/repositories/listas.py` (principal), `Backend/tests/integration/persistence/test_listas_repository.py`, `Backend/tests/integration/api/test_listas_api.py`.
+  - Docs: `.claude/rules/database.md` §Reparto de herramientas; decisión (i).
+  - Aceptación: con 2 listas que contienen la misma membresía y una gestión creada desde la lista 1 → `obtener(lista 1)` y `obtener(lista 2)` muestran esa gestión en ese ítem; gestión con `deleted_at` → no se muestra; sigue siendo **una** consulta para los ítems (sin N+1). `GET /listas/{id}` y `/ultima` devuelven `gestion_id`, `gestion_estado`, `campania_asignada`.
+  - Pruebas: integración.
+
+- [x] **T15** · `infra` · Excel: columnas "Gestión" y "Campaña"
+  - Archivos: `Backend/app/infrastructure/exportacion/excel_lista.py` (principal), `Backend/tests/unit/infrastructure/exportacion/test_excel_lista.py`, `Backend/tests/integration/api/test_listas_excel_api.py`.
+  - Docs: `docs/backend/12-modelo-y-listas.md` §Excel (CU-12); [ADR-007](adr/ADR-007-excel-igual-a-la-pantalla-y-nombre-de-lista.md); decisiones (i), (j).
+  - Aceptación: encabezados de ambas hojas = `Prioridad, Nombre, Cédula, Plan, Vence el, Días para vencer, Nivel de riesgo, Motivos principales, Gestión, Campaña`; ítem sin gestión → "Sin gestión" y "—"; pendiente con campaña → "Pendiente" y el nombre; cerrada sin campaña → "Cerrada" y "Sin campaña". Nombre de campaña `"=SUM(1)"` → texto `"'=SUM(1)"`. Siguen sin aparecer celular, score ni monto; `Resumen` sin cambios; mismo libro dos veces → bytes idénticos. Se actualiza la aserción de R-008 T1 que prohibía estas columnas.
+  - Pruebas: unitaria + integración (API).
+
+- [x] **T16** · `frontend` · Campañas: hook y datos simulados
+  - Archivos: `Frontend/src/features/campanias/hooks/useCampanias.ts` (principal, nuevo: carga, `crear`, `editar`, `inactivar`, error, `AbortController`), `Frontend/src/features/campanias/api/campanias-api.handlers.ts` (MSW: 3 de ejemplo, `400` con nombre vacío, `404`), `Frontend/src/features/campanias/types.ts` (si falta algo), `Frontend/src/features/campanias/hooks/useCampanias.test.ts` (nuevo).
+  - Docs: `docs/frontend/01-arquitectura.md` §Estructura, §MSW; `.claude/rules/frontend.md` §Estado y asincronía; decisión (e).
+  - Aceptación: al montar carga la lista (1 petición); `crear` exitoso añade la campaña y recarga; `400` → `error` con el mensaje del servidor y sin cambios; `inactivar` actualiza `activa:false` en el estado; desmontar aborta la petición en curso. Datos del handler ficticios.
+  - Pruebas: frontend.
+
+- [x] **T17** · `frontend` · Página Campañas: tabla, formulario de alta/edición, inactivar e indicador "Ejemplo" (D5-FE-01)
+  - Archivos: `Frontend/src/features/campanias/pages/CampaniasPage.tsx` (principal), `Frontend/src/features/campanias/components/FormularioCampania.tsx` (nuevo, presentacional), `Frontend/src/features/campanias/components/TablaCampanias.tsx` (nuevo, usa `DataTable` de `shared/ui`), `Frontend/src/features/campanias/pages/CampaniasPage.test.tsx` (nuevo).
+  - Docs: `docs/frontend/01-arquitectura.md` §`shared/ui`, §Estilos; `.claude/rules/frontend.md` §Formularios, §Estilos; `03-casos-de-uso.md` §9; decisión (e).
+  - Aceptación (Vitest + MSW + `user-event`):
+    - La tabla muestra Nombre, Descripción, Niveles, Planes, Prioridad, Estado ("Activa"/"Inactiva") y una etiqueta "Ejemplo" en las `esEjemplo`.
+    - "Nueva campaña" abre el formulario: campos con `label` ("Nombre", "Descripción", casillas de "Niveles de riesgo" Alto/Medio/Bajo y "Planes" Mensual/Trimestral/Semestral/Anual/Otro —sin Diario—, "Prioridad"). Guardar sin nombre → "Escriba un nombre para la campaña."; sin nivel → "Elija al menos un nivel de riesgo."; sin plan → "Elija al menos un plan."; prioridad fuera de 1..999 → "La prioridad debe ser un número entre 1 y 999." — sin llamar a la API. Válido → aparece en la tabla.
+    - "Editar" precarga los datos y guarda con `PUT`. "Inactivar" pide confirmación en `Modal` ("La campaña dejará de sugerirse; las gestiones que ya la usan la conservan.") y tras confirmar el estado pasa a "Inactiva" y el botón desaparece; no hay botón "Eliminar".
+    - Error del servidor → `ErrorAlert` con el mensaje. Sin CSS nuevo; solo tokens existentes.
+  - Pruebas: frontend.
+
+- [x] **T18** · `frontend` · Lista: tipos, cliente y MSW de gestiones (`gestionId`)
+  - Archivos: `Frontend/src/features/lista/api/lista-api.ts` (principal: mapea `gestion_id`), `Frontend/src/features/lista/types.ts` (`Prediccion.gestionId: number | null`), `Frontend/src/features/lista/api/lista-api.handlers.ts` (MSW: sugeridas, `POST /gestiones` con `409`/`422`, `GET /gestiones/:id`, `PUT …/resultado` con `409` si cerrada), `Frontend/src/features/lista/api/lista-api.test.ts`.
+  - Docs: `docs/frontend/01-arquitectura.md` §Lista priorizada, §MSW; decisión (b).
+  - Aceptación: `obtenerLista` mapea `gestion_id` → `gestionId` (y `null`); `crearGestion` con `422` → `ApiError` 422 con el mensaje del servidor; `registrarResultado` con `409` → `ApiError` 409. Fixtures de `Prediccion` en pruebas existentes con `gestionId` (excepción mecánica). Datos ficticios.
+  - Pruebas: frontend.
+
+- [x] **T19** · `frontend` · Reglas del formulario de gestión y hook `useGestion`
+  - Archivos: `Frontend/src/features/lista/hooks/useGestion.ts` (principal, nuevo: abre con `prediccion` → carga sugeridas o la gestión existente; `crear`, `registrar`, estados `cargando/listo/enviando/error`, cancelación), `Frontend/src/features/lista/hooks/reglasGestion.ts` (nuevo, funciones puras: `rangoSeguimiento`, `fechaSugerida`, `opcionesPermitidas`, `validarResultado`), `Frontend/src/features/lista/hooks/reglasGestion.test.ts` (nuevo), `Frontend/src/features/lista/hooks/useGestion.test.ts` (nuevo).
+  - Docs: `docs/frontend/01-arquitectura.md` §Lista priorizada; `.claude/rules/frontend.md` §Estado y asincronía, §Formularios; decisiones (g), (h), (k).
+  - Aceptación:
+    - `reglasGestion` con los **mismos casos** de T2 (hoy 2026-09-29: venc 2026-10-05 → rango 29-09..04-11, sugerida 30-10; venc 2026-09-01 → sugerida 29-09; venc 2026-08-29 → sin rango, "El plazo de seguimiento de este ciclo ya terminó.") y cada fila de coherencia de (h).
+    - `opcionesPermitidas`: sin campaña → ofrecida y aceptada solo "No aplica"; no contactado → idem; ofrecida No → aceptada solo "No aplica"; ofrecida Sí → aceptada Sí/No/Pendiente.
+    - `useGestion` sin gestión → 1 petición a sugeridas; con `gestionId` → 1 petición a `GET /gestiones/{id}`; `crear` exitoso → devuelve la gestión; `422`/`409` → `error` con el mensaje del servidor; no hay doble envío mientras `enviando`.
+  - Pruebas: frontend.
+
+- [x] **T20** · `frontend` · Formulario de gestión en ventana modal (D5-FE-02)
+  - Archivos: `Frontend/src/features/lista/components/FormularioGestion.tsx` (principal, nuevo, presentacional: parte 1 y contenedor), `Frontend/src/features/lista/components/ResultadoGestion.tsx` (nuevo, parte 2), `Frontend/src/features/lista/components/FormularioGestion.test.tsx` (nuevo).
+  - Docs: `docs/frontend/01-arquitectura.md` §`shared/ui` (`Modal`, `ErrorAlert`, `RiskBadge`); `.claude/rules/frontend.md` §Formularios, §Estilos; `03-casos-de-uso.md` §11, §13; decisión (k).
+  - Aceptación (Vitest + `user-event`, fecha simulada 2026-09-29):
+    - Parte 1: título con prioridad, plan, vencimiento y nivel (`RiskBadge`); radios de las sugeridas en orden + "No asignar campaña"; sin sugerencias → solo "No asignar campaña", marcada. "Fecha de seguimiento" = 2026-10-30 con `min` 2026-09-29 y `max` 2026-11-04; escribir 2026-11-05 → "La fecha de seguimiento debe estar entre el 29/09/2026 y el 04/11/2026." sin enviar; plazo terminado → mensaje y botón "Crear gestión" deshabilitado.
+    - Parte 2 (gestión pendiente): elegir "No" en "¿Se contactó al socio?" deja "¿Se ofreció…?" y "¿Aceptó…?" en "No aplica" y deshabilita las demás opciones; gestión sin campaña → las mismas en "No aplica" y deshabilitadas. "Fecha de seguimiento" solo visible con "¿Renovó?" = Pendiente. Guardar con Renovó = No → emite el resultado; con contactado Sí sin fecha de contacto → "Indique la fecha del contacto." sin enviar.
+    - Gestión cerrada → todos los campos de solo lectura y sin botón de guardar, con el texto "Gestión cerrada: no se puede modificar.".
+    - Accesibilidad: cada grupo de radios en `fieldset` con `legend`; errores enlazados con `aria-describedby`; foco al primer campo al abrir y de vuelta al botón al cerrar (`Modal`). Sin CSS nuevo.
+  - Pruebas: frontend.
+
+- [x] **T21** · `frontend` · Tabla de la Lista con columnas "Gestión" y "Campaña" y botón de acción (D5-FE-03)
+  - Archivos: `Frontend/src/features/lista/components/TablaLista.tsx` (principal: columnas y botón; emite `onGestionar(prediccion)`), `Frontend/src/features/lista/pages/ListaPage.tsx` (abre `FormularioGestion` con `useGestion`, recarga la lista tras guardar), `Frontend/src/features/lista/components/TablaLista.test.tsx`, `Frontend/src/features/lista/pages/ListaPage.test.tsx`.
+  - Docs: `docs/frontend/01-arquitectura.md` §Lista priorizada; decisiones (i), (k).
+  - Aceptación (Vitest + MSW):
+    - Con un ítem sin gestión, uno `PENDIENTE` con campaña "Ejemplo: Renovación anticipada" y uno `CERRADA` sin campaña → celdas "Sin gestión"/"—", "Pendiente"/"Ejemplo: Renovación anticipada", "Cerrada"/"Sin campaña"; botones "Gestionar prioridad N", "Registrar resultado prioridad N", "Ver gestión prioridad N" (sin el nombre del socio en el nombre accesible).
+    - "Gestionar" → modal con sugeridas → "Crear gestión" → el modal pasa a la parte 2 y, al cerrar, la fila muestra "Pendiente" (lista recargada). `409` del servidor → `ErrorAlert` "El ciclo de membresia ya tiene una gestion.".
+    - Ambas tablas (prioritarios y otros) tienen las columnas. Las pruebas existentes siguen en verde.
+  - Pruebas: frontend.
+
+- [x] **T22** · `infra-deploy` · Suites, E2E en el stack aislado, stacks reconstruidos y verificación en el navegador
+  - Archivos: `Frontend/e2e/campanias-gestion.spec.ts` (principal, nuevo; se salta en 8080 como `carga-lista-excel`).
+  - Docs: `docs/backend/10-docker.md` §Uso, §Stack E2E aislado; `.claude/rules/deploy.md`; decisión (a) y nota de stacks.
+  - Aceptación (el developer pega solo estados, códigos y conteos, sin datos personales):
+    1. Backend `pytest`, `ruff check`, `ruff format --check`, `mypy app`, `lint-imports`; Frontend `npm test`, `npm run lint`, `npm run build` en verde.
+    2. Stack E2E (8081) reconstruido (aplica `0007`, `0008`): E2E `health`, `carga-lista-excel` y `campanias-gestion` en verde. `campanias-gestion`: Campañas muestra 3 con "Ejemplo" → crear "Campaña E2E <timestamp>" (ALTO/MEDIO, todos los planes, prioridad 1) → generar lista → "Gestionar" en un ítem → aparece la campaña creada → crear con la fecha sugerida → registrar resultado contactado Sí, ofrecida Sí, aceptada Sí, renovó No → fila "Cerrada" → "Ver gestión" sin botón de guardar → descargar Excel con "Cerrada" en la columna "Gestión".
+    3. Stack principal (8080): `docker compose up -d --build` **sin** `down -v`; `alembic current` → `0008 (head)`; `campanias` = 3 (`es_ejemplo`), `gestiones_retencion` = 0; `socios`, `membresias`, `cargas`, `listas_priorizadas`, `predicciones` iguales antes y después; sistema `LISTO`.
+    4. Navegador 8080 (solo mirar, sin crear): Campañas lista las 3 de ejemplo con "Ejemplo"; el formulario "Nueva campaña" abre y se cancela; la tabla de la Lista (si el usuario tiene una) muestra "Gestión"/"Campaña" y el botón "Gestionar" abre el modal con las sugeridas (se cierra sin crear). Si no hay listas, se verifica en 8081.
+  - Pruebas: E2E + verificación del stack y navegador.
+
+- [x] **DOC-1** · (doc-agent) · Documentación
+  - `docs/API_CONTRACT.md`: marcar **(real)** los endpoints de (a); `gestion_id` en `PrediccionDTO`; `prioridad` 1..999; `fecha_asignacion` = instante de creación; códigos y mensajes de (g)–(h); `GET /alertas` y `GET /gestiones?filtro` siguen `501` (día 6).
+  - `docs/backend/09-esquema-base-de-datos.md`: `0007` (datos de ejemplo, idempotencia, `downgrade`) y `0008` (`campania_nombre`, CHECK, relleno). Nuevo `docs/backend/14-campanias-y-gestiones.md` (reglas de (e)–(i), unidad de trabajo de retención, concurrencia) enlazado desde `Documentation/README.md`.
+  - `docs/backend/12-modelo-y-listas.md` §Excel y `03-casos-de-uso.md` §15 CU-12: columnas "Gestión" y "Campaña" (decisión (j)); valorar si ADR-007 necesita una nota o un ADR nuevo por la instantánea (c).
+  - `docs/frontend/01-arquitectura.md`: página Campañas, formulario de gestión (partes, reglas, accesibilidad), columnas nuevas de la tabla. `06-como-funciona-la-lista.md`: cómo gestionar un socio desde la lista.
+  - `DEVELOPMENT_GUIDELINES.md` §Excepciones (fila del reinicio): **ejecutado** el 30-09-2026 en el stack principal; conteos tras el reinicio: socios 1.410, membresías 2.748, cargas 1, listas 0, predicciones 0. Y la excepción de `now()` de la base en la migración de datos `0007` (decisión (d)).
+  - `05-cronograma-semana.md`: "Avance y resumen del Día 5" (estado, realizado, desviaciones —`0007` en lugar de `0003`, `0008`, alertas al día 6—, qué puede probar el usuario, pendientes). `ACTION_PLAN.md`: decisiones a DECISIONES IMPORTANTES, R-009 a TERMINADOS.
+
+**Dependencias**
+- Backend: T1 → T5 → T6; T1, T5 → T7 → T8. T2 → T9 → T10; T4 → T11 (columna `campania_nombre`); T7, T9, T10 → T11 → T12. T3 → T4 (orden de revisiones). T11 → T13 → T14 → T15.
+- Frontend: T16 → T17 (contra MSW; T8 manda el contrato). T18 → T19 → T20 → T21 (T18 puede empezar con MSW; T12 y T13 mandan el contrato).
+- Todo (T1–T21) → T22 → DOC-1.
+- Orden sugerido: T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22.
+- Externas: PostgreSQL con `app_db_test` (T3, T4, T7, T8, T11, T12, T14, T15); Docker Desktop, `.env` y `.env.e2e` (T22); stack `mtabolic-e2e` para todo lo que crea campañas o gestiones.
+
+**Riesgos**
+1. **Dos gestiones para el mismo ciclo o edición de una cerrada por carrera** (doble clic, dos pestañas, la misma membresía en dos listas). Mitigación: índice único parcial existente + traducción de `IntegrityError` a `409` (T11), comprobación previa en la transacción, `SELECT … FOR UPDATE` al registrar el resultado (T10–T11), botón deshabilitado mientras envía (T19) y prueba con dos listas que comparten membresía (T11, T12, T14).
+2. **Migraciones sobre la base con datos reales.** `0007` podría duplicar campañas o su `downgrade` borrar datos del usuario; `0008` fallaría con filas que no cumplan el CHECK. Mitigación: inserción condicionada por nombre, `downgrade` limitado a las 3 de ejemplo y bloqueado si hay gestiones que las usan (T3), relleno antes del CHECK y prueba sobre base con datos (T4); en el stack principal, `up --build` sin `down -v` y conteos antes/después (T22).
+3. **"Hoy" y reglas duplicadas entre backend y frontend.** Usar la fecha UTC en el servidor o una regla distinta en el navegador daría fechas sugeridas aceptadas por uno y rechazadas por el otro (sobre todo después de las 19:00 en Ecuador). Mitigación: `hoy_en_negocio(clock.now())` con prueba a `03:00Z` (T9), mismos casos de prueba en T2 y T19, y el servidor siempre decide (el frontend muestra su `422`).
 
 ### R-008 — Correcciones tras el Día 4: Excel igual a la tabla, selector de archivo claro en Carga, ayuda sin dos secciones, reinicio por comandos de la base principal y nombre editable de la lista · **DONE** 2026-09-29
 
@@ -1733,9 +1988,19 @@ _Ninguno._
 - 2026-09-29 · R-008 · Reinicio de la base principal solo con scripts versionados (`-p proyectofinal` fijo, confirmación `BORRAR`); excepción de borrado físico explícito del usuario, no función de la app. No se ejecutó en R-008 para no borrar las 2 listas del usuario → [comandos](comandos/reiniciar-base-historica.md), [DEVELOPMENT_GUIDELINES §Excepciones](DEVELOPMENT_GUIDELINES.md).
 - 2026-09-29 · R-008 · La revisión de seguridad de R-008 se difiere a la revisión única del día 7 ([05 §1](05-cronograma-semana.md)).
 
+- 2026-09-30 · R-009 · (a) `GET /alertas` y `GET /gestiones?filtro=` siguen en `501` hasta el día 6 (CU-09) → [API_CONTRACT](docs/API_CONTRACT.md).
+- 2026-09-30 · R-009 · (b) `PrediccionDTO` añade `gestion_id`; `prioridad` de campaña 1..999; `GestionDTO.fecha_asignacion` = instante de creación → [ADR-008](adr/ADR-008-gestion-por-ciclo-y-nombre-de-campania-congelado.md).
+- 2026-09-30 · R-009 · (c) Migración `0008`: `gestiones_retencion.campania_nombre` congela el nombre de la campaña al asignarla (RN-08.2) → [ADR-008](adr/ADR-008-gestion-por-ciclo-y-nombre-de-campania-congelado.md), [09](docs/backend/09-esquema-base-de-datos.md).
+- 2026-09-30 · R-009 · (d) 3 campañas de ejemplo "Ejemplo: …" por migración de datos `0007` (el cronograma decía `0003`), sin duplicar → [09](docs/backend/09-esquema-base-de-datos.md).
+- 2026-09-30 · R-009 · (e) Nombres de campaña repetidos permitidos; no se reactivan; inactivar es idempotente; editar no cambia `es_ejemplo`.
+- 2026-09-30 · R-009 · (g) Fecha de seguimiento sugerida = `max(vencimiento + 25, hoy)`; la gestión es por ciclo y se ve en todas las listas de esa membresía; (h) reglas de coherencia del resultado en el dominio → [API_CONTRACT §Campañas y gestiones](docs/API_CONTRACT.md).
+- 2026-09-30 · R-009 · (j) El Excel incluye "Gestión" y "Campaña" para seguir igual a la tabla; **revierte** el criterio de R-008 que las excluía → [12 §Excel](docs/backend/12-modelo-y-listas.md). [03 §15](03-casos-de-uso.md) sin modificar: pendiente de confirmación del usuario.
+- 2026-09-30 · R-009 · Reinicio de la base principal **ejecutado** con `scripts/reiniciar-base-historica.sh --si`, autorizado por el usuario (socios 1.410, membresías 2.748, cargas 1, listas 0, predicciones 0; `LISTO`) → [DEVELOPMENT_GUIDELINES §Excepciones](DEVELOPMENT_GUIDELINES.md).
+- 2026-09-30 · R-009 · La revisión de seguridad de R-009 se difiere a la revisión única del día 7 ([05 §1](05-cronograma-semana.md)).
+
 ## PRÓXIMO
 
-Día 5 del [cronograma](05-cronograma-semana.md) (campañas y gestión: CU-06, CU-07, CU-08, CU-10).
+Día 6 del [cronograma](05-cronograma-semana.md): alertas (CU-09, incluye `GET /alertas` y `GET /gestiones?filtro=`, hoy en `501`), dashboard (CU-11), reentrenamiento (CU-02) y acceso por IP (CU-00).
 
 Registrado por R-005, sin implementar: **D6-BE-06 / D6-FE-04** (alerta en Inicio si no hay carga en el mes actual). D4-FE-03 quedó hecho en R-007.
 

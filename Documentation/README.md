@@ -40,5 +40,6 @@ Registro del paso del notebook `MVP.ipynb` a una aplicación web. Sirve de insum
 |---|---|
 | [ADR-001](adr/ADR-001-fastapi-react-postgresql.md) | FastAPI + React + PostgreSQL en lugar de Streamlit (cierra P-07) |
 | [ADR-007](adr/ADR-007-excel-igual-a-la-pantalla-y-nombre-de-lista.md) | Excel igual a la tabla de la pantalla y nombre editable de la lista (R-008) |
+| [ADR-008](adr/ADR-008-gestion-por-ciclo-y-nombre-de-campania-congelado.md) | Gestión por ciclo de membresía, nombre de la campaña congelado al asignar y reglas de campañas y gestiones (R-009) |
 
 Cómo levantar el stack: [README.md de la raíz](../README.md).

@@ -315,27 +315,57 @@ A petición del usuario. **Estado:** `DONE` (14 tareas + documentación).
 
 **Base de datos**
 
-| ID | Tarea | Resp. | Depende de | Hecho cuando |
-|---|---|---|---|---|
-| D5-BD-01 | Repositorios de `campania` (sin borrado; inactivar) y `gestion_retencion` (una por ciclo). | A | D1-BD-02 | Pruebas de integración; una segunda gestión para el mismo ciclo falla. |
-| D5-BD-02 | Migración de datos `0003`: 3 campañas de ejemplo marcadas `es_ejemplo` (D-17). | A | D5-BD-01 | Aparecen tras `upgrade head`. |
+| ID | Tarea | Resp. | Depende de | Hecho cuando | Estado |
+|---|---|---|---|---|---|
+| D5-BD-01 | Repositorios de `campania` (sin borrado; inactivar) y `gestion_retencion` (una por ciclo). | A | D1-BD-02 | Pruebas de integración; una segunda gestión para el mismo ciclo falla. | Hecho (R-009 T7, T11; migración `0008`, T4) |
+| D5-BD-02 | Migración de datos `0003`: 3 campañas de ejemplo marcadas `es_ejemplo` (D-17). | A | D5-BD-01 | Aparecen tras `upgrade head`. | Hecho (R-009 T3; la migración es la `0007`, no la `0003`) |
 
 **Backend**
 
-| ID | Tarea | Resp. | Depende de | Hecho cuando |
-|---|---|---|---|---|
-| D5-BE-01 | CU-06 · Crear, editar e inactivar campañas; validaciones. | A | D5-BD-01 | Criterios de aceptación de CU-06. |
-| D5-BE-02 | CU-07 · Sugerencias por nivel y plan, ordenadas por prioridad y nombre, más "No asignar". | A | D5-BE-01 | Criterios de aceptación de CU-07. |
-| D5-BE-03 | CU-08 · Crear gestión: fecha sugerida (vencimiento + 25), rango permitido, responsable y referencia a la predicción, el modelo y la campaña. | A | D5-BD-01 | Criterios de aceptación de CU-08. |
-| D5-BE-04 | CU-10 · Registrar resultado: reglas de coherencia, cierre con Sí o No, bloqueo de edición de una gestión cerrada. | A | D5-BE-03 | Criterios de aceptación de CU-10. |
+| ID | Tarea | Resp. | Depende de | Hecho cuando | Estado |
+|---|---|---|---|---|---|
+| D5-BE-01 | CU-06 · Crear, editar e inactivar campañas; validaciones. | A | D5-BD-01 | Criterios de aceptación de CU-06. | Hecho (R-009 T1, T5, T8) |
+| D5-BE-02 | CU-07 · Sugerencias por nivel y plan, ordenadas por prioridad y nombre, más "No asignar". | A | D5-BE-01 | Criterios de aceptación de CU-07. | Hecho (R-009 T6, T8) |
+| D5-BE-03 | CU-08 · Crear gestión: fecha sugerida (vencimiento + 25), rango permitido, responsable y referencia a la predicción, el modelo y la campaña. | A | D5-BD-01 | Criterios de aceptación de CU-08. | Hecho (R-009 T2, T9, T12) |
+| D5-BE-04 | CU-10 · Registrar resultado: reglas de coherencia, cierre con Sí o No, bloqueo de edición de una gestión cerrada. | A | D5-BE-03 | Criterios de aceptación de CU-10. | Hecho (R-009 T2, T10, T12) |
 
 **Frontend**
 
-| ID | Tarea | Resp. | Depende de | Hecho cuando |
-|---|---|---|---|---|
-| D5-FE-01 | Página Campañas: lista, formulario de alta y edición, inactivar e indicador "ejemplo". | B | D1-FE-03 | Pruebas del formulario y del flujo de inactivar. |
-| D5-FE-02 | Formulario de gestión (ventana modal desde la Lista): parte 1 (campaña sugerida o "No asignar", fecha de seguimiento, responsable) y parte 2 (resultado). | B | D3-FE-01 | Pruebas de validación: fecha fuera de rango y combinaciones incoherentes. |
-| D5-FE-03 | Columna de estado de gestión y campaña en la tabla de la Lista. | B | D5-FE-02 | Prueba con una gestión pendiente y una cerrada. |
+| ID | Tarea | Resp. | Depende de | Hecho cuando | Estado |
+|---|---|---|---|---|---|
+| D5-FE-01 | Página Campañas: lista, formulario de alta y edición, inactivar e indicador "ejemplo". | B | D1-FE-03 | Pruebas del formulario y del flujo de inactivar. | Hecho (R-009 T16, T17) |
+| D5-FE-02 | Formulario de gestión (ventana modal desde la Lista): parte 1 (campaña sugerida o "No asignar", fecha de seguimiento, responsable) y parte 2 (resultado). | B | D3-FE-01 | Pruebas de validación: fecha fuera de rango y combinaciones incoherentes. | Hecho (R-009 T18, T19, T20) |
+| D5-FE-03 | Columna de estado de gestión y campaña en la tabla de la Lista. | B | D5-FE-02 | Prueba con una gestión pendiente y una cerrada. | Hecho (R-009 T13, T14, T15, T21) |
+
+#### Avance y resumen del Día 5
+
+**Estado:** cerrado · 9 de 9 tareas hechas en un solo requerimiento (R-009, `DONE`, 22 tareas de desarrollo + documentación). Hito verificado: en el stack aislado (http://localhost:8081, datos sintéticos) el recorrido campaña → lista → gestión → resultado → Excel funciona en el navegador y en el E2E; en el stack principal (http://localhost:8080) la base quedó en `0008`, `LISTO`, con socios 1.410, membresías 2.748, cargas 1, listas 0, predicciones 0, las 3 campañas de ejemplo y 0 gestiones.
+
+**Realizado**
+- Base de datos: migración de datos `0007` (3 campañas "Ejemplo: …", sin duplicar si ya existen) y de esquema `0008` (`gestiones_retencion.campania_nombre`: el nombre de la campaña queda congelado al asignarla, RN-08.2); repositorios de campañas y gestiones sin borrado y unidad de trabajo de retención. Detalle: [09](docs/backend/09-esquema-base-de-datos.md), [ADR-008](adr/ADR-008-gestion-por-ciclo-y-nombre-de-campania-congelado.md).
+- Backend: campañas (listar, crear, editar, inactivar; sin borrar ni reactivar), sugerencias por nivel y plan, crear gestión (una por ciclo, rango de fecha de seguimiento), consultar gestión y registrar resultado (reglas de coherencia; Renovó Sí/No la cierra y ya no se edita). La lista y el Excel traen la gestión y la campaña de cada socio. Contrato: [API_CONTRACT §Campañas y gestiones](docs/API_CONTRACT.md#campañas-y-gestiones-cu-06-cu-07-cu-08-cu-10-r-009); Excel: [12 §Excel](docs/backend/12-modelo-y-listas.md).
+- Frontend: página Campañas (tabla, alta y edición en ventana, inactivar con confirmación, etiqueta "Ejemplo") y formulario de gestión desde la Lista, con columnas "Gestión", "Campaña" y botón de acción ([frontend/01](docs/frontend/01-arquitectura.md)). Guía para el personal: [06 §7](06-como-funciona-la-lista.md).
+- Pruebas: Backend 1.671 pytest, `ruff`, `format` (267 archivos), `mypy app` (121), `lint-imports` (7 contratos), `verificar_lista.py` salida 0; Frontend 570 Vitest, `build`, `lint` 0; E2E en el stack aislado 8081: 3 en verde (`health`, `carga-lista-excel`, `campanias-gestion`); contra 8080: 1 en verde y 2 saltados a propósito. Carreras probadas: dos creaciones simultáneas → `201` y `409`; dos cierres → `200` y `409`.
+
+**Desviaciones**
+- La migración de las campañas de ejemplo es la `0007` (el cronograma decía `0003`, número ya usado) y se añadió la `0008` para congelar el nombre de la campaña en la gestión.
+- `GET /alertas` y `GET /gestiones?filtro=` siguen en `501`: son del día 6 (CU-09).
+- Fecha de seguimiento sugerida = el mayor entre vencimiento + 25 y hoy (el cronograma decía solo vencimiento + 25, que puede quedar en el pasado). La gestión es por ciclo de membresía: se ve en todas las listas que contienen ese ciclo.
+- El Excel incluye las columnas "Gestión" y "Campaña", para seguir igual a la tabla; revierte el criterio de R-008 que las excluía. **Pendiente de decisión del usuario:** [03 §15 CU-12](03-casos-de-uso.md) todavía dice que el Excel no las lleva (no se modificó ese documento).
+- Nombres de campaña repetidos permitidos; una campaña inactiva no se reactiva; prioridad 1..999.
+- Reinicio de la base principal ejecutado el 30-09-2026 con `scripts/reiniciar-base-historica.sh --si`, autorizado por el usuario ([DEVELOPMENT_GUIDELINES §Excepciones](DEVELOPMENT_GUIDELINES.md)).
+- Revisión de seguridad no ejecutada: diferida a la revisión única del día 7 (§1).
+
+**Qué puede probar el usuario**
+1. En http://localhost:8080 → Campañas: ver las 3 de ejemplo, crear una nueva (nombre, niveles, planes, prioridad), editarla e inactivarla.
+2. Lista: generar una lista → columnas "Gestión" y "Campaña" → "Gestionar" un socio → elegir una campaña sugerida o "No asignar campaña", la fecha de seguimiento y el responsable → "Crear gestión" → registrar el resultado ("¿Renovó?" Sí o No cierra la gestión) → la fila muestra "Pendiente" o "Cerrada". (Crear campañas y gestiones guarda de verdad en la base.)
+3. "Descargar Excel": incluye "Gestión" y "Campaña".
+4. Para probar sin tocar los datos reales: stack aislado y E2E ([10-docker §Stack E2E aislado](docs/backend/10-docker.md), `Frontend/README.md`); para volver a solo histórico: [comandos/reiniciar-base-historica.md](comandos/reiniciar-base-historica.md).
+
+**Pendientes que pasan a los días siguientes**
+- **Día 6:** alertas (CU-09), dashboard (CU-11), reentrenamiento (CU-02), acceso por IP (CU-00) y alerta de datos del mes (D6-BE-06 / D6-FE-04).
+- **Día 7:** revisión de seguridad de lo hecho el día 5 y S23 (D7-OP-02); diseño visual (D7-FE-01).
+- Menor: con datos simulados en el navegador (`VITE_API_MOCKS`), las gestiones creadas no se recuerdan (solo afecta a pruebas). No hay prueba automática de "sin f-strings en `0007`" ni de `alembic check` tras `0008` (queda a la revisión de código).
 
 ---
 
