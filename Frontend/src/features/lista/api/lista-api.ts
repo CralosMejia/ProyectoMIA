@@ -9,6 +9,7 @@ import type {
   Gestion,
   GestionResumen,
   ListaPriorizada,
+  ListaResumen,
   NivelRiesgo,
   Plan,
   Prediccion,
@@ -21,6 +22,35 @@ import type {
 const LISTAS_PATH = '/api/v1/listas'
 const GESTIONES_PATH = '/api/v1/gestiones'
 
+/** Mensaje por defecto si un 409 llega sin mensaje util del servidor. */
+export const MENSAJE_SISTEMA_NO_LISTO =
+  'El sistema se esta inicializando; intente de nuevo en unos minutos.'
+
+/**
+ * `POST /listas` → 409: la migracion historica no ha terminado o no hay modelo vigente.
+ * Conserva el status y el mensaje del servidor (es un `ApiError`).
+ */
+export class SistemaNoListoError extends ApiError {
+  constructor(message: string, body: unknown = null) {
+    super(409, message, body)
+    this.name = 'SistemaNoListoError'
+  }
+}
+
+/** Mensaje por defecto si un 422 de `POST /listas` llega sin mensaje util del servidor. */
+export const MENSAJE_FECHA_PASADA = 'La fecha de la lista debe ser hoy o posterior.'
+
+/**
+ * `POST /listas` → 422: la fecha de la lista es anterior a hoy (regla de negocio).
+ * Conserva el status y el mensaje del servidor (es un `ApiError`).
+ */
+export class FechaListaPasadaError extends ApiError {
+  constructor(message: string, body: unknown = null) {
+    super(422, message, body)
+    this.name = 'FechaListaPasadaError'
+  }
+}
+
 /*
  * Formas crudas (snake_case) del backend. Solo se conocen en este archivo.
  * Los decimales (score, umbrales) llegan como string y se conservan como string:
@@ -31,10 +61,11 @@ interface PrediccionResponse {
   prioridad: number
   socio_nombre: string
   celular: string | null
-  correo: string | null
+  cedula: string | null
   plan: Plan
   fecha_vencimiento: string
   dias_para_vencer: number
+  monto_cobrado: string | null
   score: string
   nivel_riesgo: NivelRiesgo
   factores_principales: string[]
@@ -46,13 +77,26 @@ interface PrediccionResponse {
 interface ListaPriorizadaResponse {
   id: number
   modelo_version: string
+  /** Fecha de referencia `YYYY-MM-DD`. */
   fecha_generacion: string
+  /** ISO 8601 con zona. */
+  creada_en: string
   horizonte_dias: number
   top_k: number
   umbral_alto: string
   umbral_medio: string
   advertencia_datos_antiguos: boolean
   items: PrediccionResponse[]
+}
+
+interface ListaResumenResponse {
+  id: number
+  fecha_generacion: string
+  creada_en: string
+  modelo_version: string
+  horizonte_dias: number
+  top_k: number
+  total_items: number
 }
 
 interface CampaniaResponse {
@@ -105,10 +149,11 @@ function toPrediccion(raw: PrediccionResponse): Prediccion {
     prioridad: raw.prioridad,
     socioNombre: raw.socio_nombre,
     celular: raw.celular ?? null,
-    correo: raw.correo ?? null,
+    cedula: raw.cedula ?? null,
     plan: raw.plan,
     fechaVencimiento: raw.fecha_vencimiento,
     diasParaVencer: raw.dias_para_vencer,
+    montoCobrado: raw.monto_cobrado ?? null,
     score: raw.score,
     nivelRiesgo: raw.nivel_riesgo,
     factoresPrincipales: raw.factores_principales,
@@ -122,13 +167,26 @@ function toLista(raw: ListaPriorizadaResponse): ListaPriorizada {
   return {
     id: raw.id,
     modeloVersion: raw.modelo_version,
-    fechaGeneracion: new Date(raw.fecha_generacion),
+    fechaGeneracion: raw.fecha_generacion,
+    creadaEn: new Date(raw.creada_en),
     horizonteDias: raw.horizonte_dias,
     topK: raw.top_k,
     umbralAlto: raw.umbral_alto,
     umbralMedio: raw.umbral_medio,
     advertenciaDatosAntiguos: raw.advertencia_datos_antiguos,
     items: raw.items.map(toPrediccion),
+  }
+}
+
+function toListaResumen(raw: ListaResumenResponse): ListaResumen {
+  return {
+    id: raw.id,
+    fechaGeneracion: raw.fecha_generacion,
+    creadaEn: new Date(raw.creada_en),
+    modeloVersion: raw.modelo_version,
+    horizonteDias: raw.horizonte_dias,
+    topK: raw.top_k,
+    totalItems: raw.total_items,
   }
 }
 
@@ -173,7 +231,19 @@ function toGestionResumen(raw: GestionResumenResponse): GestionResumen {
   }
 }
 
-/** CU-04: genera una lista priorizada nueva. */
+function tieneMensajeDelServidor(body: unknown): boolean {
+  if (typeof body !== 'object' || body === null || !('error' in body)) return false
+  const error = (body as { error: unknown }).error
+  if (typeof error !== 'object' || error === null || !('message' in error)) return false
+  const message = (error as { message: unknown }).message
+  return typeof message === 'string' && message !== ''
+}
+
+/**
+ * CU-04: genera una lista priorizada nueva.
+ * 409 → `SistemaNoListoError` y 422 (fecha anterior a hoy) → `FechaListaPasadaError`,
+ * ambos con el mensaje del servidor.
+ */
 export async function generarLista(
   params: GenerarListaParams,
   signal?: AbortSignal,
@@ -183,11 +253,23 @@ export async function generarLista(
     horizonte_dias: params.horizonteDias,
     top_k: params.topK,
   }
-  return toLista(await httpPost<ListaPriorizadaResponse>(LISTAS_PATH, body, { signal }))
+  try {
+    return toLista(await httpPost<ListaPriorizadaResponse>(LISTAS_PATH, body, { signal }))
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 409) {
+      const message = tieneMensajeDelServidor(error.body) ? error.message : MENSAJE_SISTEMA_NO_LISTO
+      throw new SistemaNoListoError(message, error.body)
+    }
+    if (error instanceof ApiError && error.status === 422) {
+      const message = tieneMensajeDelServidor(error.body) ? error.message : MENSAJE_FECHA_PASADA
+      throw new FechaListaPasadaError(message, error.body)
+    }
+    throw error
+  }
 }
 
 /** Ultima lista generada; `null` si aun no se ha generado ninguna (404). */
-export async function getUltimaLista(signal?: AbortSignal): Promise<ListaPriorizada | null> {
+export async function obtenerUltima(signal?: AbortSignal): Promise<ListaPriorizada | null> {
   try {
     return toLista(await httpGet<ListaPriorizadaResponse>(`${LISTAS_PATH}/ultima`, { signal }))
   } catch (error) {
@@ -196,8 +278,14 @@ export async function getUltimaLista(signal?: AbortSignal): Promise<ListaPrioriz
   }
 }
 
-export async function getLista(id: number, signal?: AbortSignal): Promise<ListaPriorizada> {
+export async function obtenerLista(id: number, signal?: AbortSignal): Promise<ListaPriorizada> {
   return toLista(await httpGet<ListaPriorizadaResponse>(`${LISTAS_PATH}/${id}`, { signal }))
+}
+
+/** Historial: resumen de las listas generadas, de la mas reciente a la mas antigua. */
+export async function listarListas(signal?: AbortSignal): Promise<ListaResumen[]> {
+  const raw = await httpGet<ListaResumenResponse[]>(LISTAS_PATH, { signal })
+  return raw.map(toListaResumen)
 }
 
 /** Descarga la lista en Excel (.xlsx). */

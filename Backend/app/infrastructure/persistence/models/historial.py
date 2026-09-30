@@ -100,6 +100,8 @@ class Membresia(IdMixin, TimestampMixin, SoftDeleteMixin, Base):
     plan: Mapped[str] = mapped_column(Text, nullable=False)
     fecha_inicio: Mapped[date | None] = mapped_column(Date, nullable=True)
     fecha_vencimiento: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Inicio, o el mes de la hoja si falta: ordena el historial del socio (migracion 0004).
+    fecha_actividad: Mapped[date] = mapped_column(Date, nullable=False)
     forma_pago: Mapped[str] = mapped_column(Text, nullable=False)
     monto_facturado: Mapped[Decimal | None] = mapped_column(MONTO, nullable=True)
     monto_cobrado: Mapped[Decimal | None] = mapped_column(MONTO, nullable=True)
@@ -122,4 +124,5 @@ class Membresia(IdMixin, TimestampMixin, SoftDeleteMixin, Base):
         CheckConstraint(f"asistencias BETWEEN 0 AND {MAX_ASISTENCIAS}", name="asistencias_rango"),
         Index("ix_membresias_socio_id_fecha_vencimiento", "socio_id", "fecha_vencimiento"),
         Index("ix_membresias_fecha_vencimiento", "fecha_vencimiento"),
+        Index("ix_membresias_socio_id_fecha_actividad", "socio_id", "fecha_actividad"),
     )

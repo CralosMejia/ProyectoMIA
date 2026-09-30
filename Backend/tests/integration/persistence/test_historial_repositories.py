@@ -11,16 +11,17 @@ import re
 import time
 from collections.abc import Iterator
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import Connection, Engine, func, select, text
+from sqlalchemy import Connection, Engine, event, func, select, text
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from app.application.historial.ports import (
     CargaRepository,
+    MembresiaParaPrediccion,
     MembresiaRepository,
     NuevaCarga,
     NuevaMembresia,
@@ -75,6 +76,7 @@ def membresia(socio_id: int, carga_id: int, fila: int = 7) -> NuevaMembresia:
         forma_pago=FormaPago.EFECTIVO,
         origen=OrigenMembresia.HISTORICO,
         inicio_aproximado=False,
+        fecha_actividad=date(2025, 1, 6),
         fecha_inicio=date(2025, 1, 6),
         fecha_vencimiento=date(2025, 2, 5),
         monto_cobrado=Decimal("39.50"),
@@ -380,3 +382,151 @@ def test_repositories_module_never_reads_system_time() -> None:
     assert "datetime.now" not in fuente
     assert "utcnow" not in fuente
     assert "date.today" not in fuente
+
+
+# ------------------------------------------------------------------ R-004 T5: lecturas
+def test_insertar_en_bloque_membresia_stores_fecha_actividad(
+    db_session: Session,
+    repos: tuple[
+        SqlAlchemyCargaRepository, SqlAlchemySocioRepository, SqlAlchemyMembresiaRepository
+    ],
+) -> None:
+    carga_id = repos[0].crear(carga_historica())
+    (socio_id,) = repos[1].insertar_en_bloque([socio_sintetico(1)])
+    # Sin inicio: la actividad es el mes de la hoja (dominio), distinta de ``fecha_inicio``.
+    sin_inicio = replace(
+        membresia(socio_id, carga_id),
+        fecha_inicio=None,
+        fecha_actividad=date(2025, 3, 1),
+        inicio_aproximado=True,
+    )
+
+    repos[2].insertar_en_bloque([sin_inicio])
+
+    guardada = db_session.scalars(select(Membresia)).one()
+    assert guardada.fecha_actividad == date(2025, 3, 1)
+    assert guardada.fecha_inicio is None
+
+
+def test_listar_para_prediccion_returns_active_rows_in_one_query(
+    db_session: Session,
+    migrated_engine: Engine,
+    repos: tuple[
+        SqlAlchemyCargaRepository, SqlAlchemySocioRepository, SqlAlchemyMembresiaRepository
+    ],
+) -> None:
+    carga_id = repos[0].crear(carga_historica())
+    socio_ids = repos[1].insertar_en_bloque(
+        [socio_sintetico(0), replace(socio_sintetico(1), cedula=None), socio_sintetico(2)]
+    )
+    base = membresia(socio_ids[0], carga_id)
+    repos[2].insertar_en_bloque(
+        [
+            base,
+            replace(
+                base,
+                socio_id=socio_ids[1],
+                plan=Plan.TRIMESTRAL,
+                forma_pago=FormaPago.TRANSFERENCIA,
+                fecha_inicio=None,
+                fecha_vencimiento=None,
+                fecha_actividad=date(2025, 2, 1),
+                monto_cobrado=None,
+                inicio_aproximado=True,
+            ),
+            replace(base, socio_id=socio_ids[2]),
+        ]
+    )
+    ids = list(db_session.scalars(select(Membresia.id).order_by(Membresia.id)))
+    db_session.execute(
+        text("UPDATE membresias SET deleted_at = :t WHERE id = :id"),
+        {"t": INSTANTE, "id": ids[2]},
+    )
+
+    consultas: list[str] = []
+
+    def registrar(*args: object) -> None:
+        consultas.append(str(args[2]))
+
+    event.listen(migrated_engine, "before_cursor_execute", registrar)
+    try:
+        leidas = repos[2].listar_para_prediccion()
+    finally:
+        event.remove(migrated_engine, "before_cursor_execute", registrar)
+
+    assert len(consultas) == 1  # sin N+1
+    assert "deleted_at IS NULL" in consultas[0]
+    assert leidas == [
+        MembresiaParaPrediccion(
+            membresia_id=ids[0],
+            socio_id=socio_ids[0],
+            plan=Plan.MENSUAL,
+            forma_pago=FormaPago.EFECTIVO,
+            fecha_inicio=date(2025, 1, 6),
+            fecha_vencimiento=date(2025, 2, 5),
+            fecha_actividad=date(2025, 1, 6),
+            monto_cobrado=Decimal("39.50"),
+            inicio_aproximado=False,
+            socio_con_cedula=True,
+        ),
+        MembresiaParaPrediccion(
+            membresia_id=ids[1],
+            socio_id=socio_ids[1],
+            plan=Plan.TRIMESTRAL,
+            forma_pago=FormaPago.TRANSFERENCIA,
+            fecha_inicio=None,
+            fecha_vencimiento=None,
+            fecha_actividad=date(2025, 2, 1),
+            monto_cobrado=None,
+            inicio_aproximado=True,
+            socio_con_cedula=False,
+        ),
+    ]
+    assert isinstance(leidas[0].monto_cobrado, Decimal)
+    assert leidas[0].plan is Plan.MENSUAL
+
+
+def test_hay_migracion_o_membresias_empty_database_returns_false(
+    repos: tuple[SqlAlchemyCargaRepository, object, object],
+) -> None:
+    assert repos[0].hay_migracion_o_membresias() is False
+
+
+def test_hay_migracion_o_membresias_with_historical_migration_returns_true(
+    repos: tuple[SqlAlchemyCargaRepository, object, object],
+) -> None:
+    repos[0].crear(carga_historica())
+
+    assert repos[0].hay_migracion_o_membresias() is True
+
+
+def test_hay_migracion_o_membresias_with_template_load_only_depends_on_memberships(
+    repos: tuple[
+        SqlAlchemyCargaRepository, SqlAlchemySocioRepository, SqlAlchemyMembresiaRepository
+    ],
+) -> None:
+    carga_id = repos[0].crear(replace(carga_historica(), tipo=TipoCarga.PLANTILLA))
+    assert repos[0].hay_migracion_o_membresias() is False
+
+    (socio_id,) = repos[1].insertar_en_bloque([socio_sintetico(1)])
+    repos[2].insertar_en_bloque(
+        [replace(membresia(socio_id, carga_id), origen=OrigenMembresia.PLANTILLA)]
+    )
+
+    assert repos[0].hay_migracion_o_membresias() is True
+
+
+def test_ultima_fecha_carga_without_loads_returns_none(
+    repos: tuple[SqlAlchemyCargaRepository, object, object],
+) -> None:
+    assert repos[0].ultima_fecha_carga() is None
+
+
+def test_ultima_fecha_carga_with_two_loads_returns_the_latest(
+    repos: tuple[SqlAlchemyCargaRepository, object, object],
+) -> None:
+    posterior = INSTANTE + timedelta(days=3)
+    repos[0].crear(replace(carga_historica(), tipo=TipoCarga.PLANTILLA, fecha_carga=posterior))
+    repos[0].crear(carga_historica())
+
+    assert repos[0].ultima_fecha_carga() == posterior

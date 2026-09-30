@@ -18,6 +18,8 @@ docker compose ps           # db, backend y frontend en estado healthy
 | http://localhost:8000/api/v1/health | Health del backend |
 | http://localhost:8000/docs | OpenAPI interactivo |
 
+Con la base vacía y `HISTORICO_DIR` apuntando a los libros `Control Gym*.xlsx`, el backend migra el histórico y entrena el modelo v1 al arrancar; Inicio pasa a "Sistema listo" en segundos ([Backend/README.md](Backend/README.md) §Primer arranque).
+
 Parar: `docker compose down` (añadir `-v` borra el volumen de la base de datos).
 
 Desarrollo y pruebas de cada parte: [Backend/README.md](Backend/README.md) · [Frontend/README.md](Frontend/README.md). Detalle de contenedores: [10-docker.md](Documentation/docs/backend/10-docker.md).

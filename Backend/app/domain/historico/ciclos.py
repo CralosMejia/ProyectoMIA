@@ -11,6 +11,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from enum import StrEnum, unique
+from typing import Protocol
 
 from app.domain.common.enums import EstadoCiclo, Plan
 from app.domain.common.exceptions import DomainError
@@ -38,6 +39,19 @@ class MotivoCiclo(StrEnum):
     EVALUABLE = "EVALUABLE"
 
 
+class CicloClasificable(Protocol):
+    """Lo minimo que ``clasificar`` necesita de un ciclo (registro historico o del modelo)."""
+
+    @property
+    def plan(self) -> Plan: ...
+
+    @property
+    def fecha_vencimiento(self) -> date | None: ...
+
+    @property
+    def duracion_dias(self) -> int | None: ...
+
+
 @dataclass(frozen=True, slots=True)
 class CicloEtiquetado:
     registro: RegistroHistorico
@@ -55,7 +69,7 @@ def fecha_corte(meses_hoja: Iterable[date]) -> date:
     return date(ultimo.year, ultimo.month, calendar.monthrange(ultimo.year, ultimo.month)[1])
 
 
-def clasificar(registro: RegistroHistorico, corte: date) -> tuple[EstadoCiclo, MotivoCiclo]:
+def clasificar(registro: CicloClasificable, corte: date) -> tuple[EstadoCiclo, MotivoCiclo]:
     """Estado del ciclo segun ``motivo_estado_ciclo`` (seccion 5.3); gana la primera regla."""
     vence = registro.fecha_vencimiento
     if vence is None:

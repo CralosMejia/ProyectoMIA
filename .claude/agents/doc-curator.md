@@ -24,7 +24,8 @@ Bajo pedido explícito del usuario: "reorganiza la documentación", "revisa que 
 ## Procedimiento
 
 1. Aclara el alcance del pedido. Si es ambiguo, pregunta antes de tocar nada.
-2. Lee **solo** lo necesario: los documentos señalados, `ACTION_PLAN.md`, y `products/P##-*.md` del producto involucrado si aplica. No leas el árbol de documentación completo de una vez.
+2. Orienta la lectura antes de abrir documentos: `Documentation/` no tiene grafo, así que busca con `Grep`/`Glob`; cuando un documento describe código, contrástalo con `Backend/graphify-out/GRAPH_REPORT.md` o `Frontend/graphify-out/GRAPH_REPORT.md` en lugar de abrir el código (`.claude/rules/graphify.md`). No tienes `Bash`.
+   Lee **solo** lo necesario: los documentos señalados, `ACTION_PLAN.md`, y `products/P##-*.md` del producto involucrado si aplica. No leas el árbol de documentación completo de una vez.
 3. Detecta y corrige:
    - inconsistencias entre `ACTION_PLAN.md` y `products/P##-*.md`;
    - contenido duplicado o contradictorio entre documentos de `docs/**`;

@@ -9,7 +9,10 @@ export type RespuestaOfrecimiento = 'SI' | 'NO' | 'NO_APLICA'
 export type RespuestaAceptacion = 'SI' | 'NO' | 'PENDIENTE' | 'NO_APLICA'
 export type RespuestaRenovacion = 'SI' | 'NO' | 'PENDIENTE'
 
-/** Parametros de CU-04. `fechaReferencia` (`YYYY-MM-DD`) ausente o null = hoy. */
+/**
+ * Parametros de CU-04. `fechaReferencia` (`YYYY-MM-DD`) debe ser hoy o posterior; ausente o null =
+ * hoy segun el servidor. `horizonteDias` entre 1 y 31.
+ */
 export interface GenerarListaParams {
   fechaReferencia?: string | null
   horizonteDias: number
@@ -25,10 +28,13 @@ export interface Prediccion {
   prioridad: number
   socioNombre: string
   celular: string | null
-  correo: string | null
+  /** Cedula como texto (conserva el cero inicial); `null` en listas antiguas de socios sin cedula. */
+  cedula: string | null
   plan: Plan
   fechaVencimiento: string
   diasParaVencer: number
+  /** Monto cobrado del ciclo, decimal exacto como `string`; `null` si no se registro. */
+  montoCobrado: string | null
   score: string
   nivelRiesgo: NivelRiesgo
   factoresPrincipales: string[]
@@ -37,17 +43,33 @@ export interface Prediccion {
   campaniaAsignada: string | null
 }
 
-/** Lista priorizada (instantanea inmutable). Umbrales decimales como `string`. */
+/**
+ * Lista priorizada (instantanea inmutable). Umbrales decimales como `string`.
+ * `fechaGeneracion` es la fecha de referencia (`YYYY-MM-DD`); `creadaEn`, el momento en que se genero.
+ */
 export interface ListaPriorizada {
   id: number
   modeloVersion: string
-  fechaGeneracion: Date
+  fechaGeneracion: string
+  creadaEn: Date
   horizonteDias: number
   topK: number
   umbralAlto: string
   umbralMedio: string
   advertenciaDatosAntiguos: boolean
   items: Prediccion[]
+}
+
+/** Resumen de una lista generada, para el historial (D3-FE-03). */
+export interface ListaResumen {
+  id: number
+  /** Fecha de referencia `YYYY-MM-DD`. */
+  fechaGeneracion: string
+  creadaEn: Date
+  modeloVersion: string
+  horizonteDias: number
+  topK: number
+  totalItems: number
 }
 
 /** Campaña sugerida para un socio (CU-07), ordenada por prioridad. */

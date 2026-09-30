@@ -59,16 +59,31 @@ Flujo en una sola dirección: `pages → hooks → api → core/http`. `componen
 | `/salud` | `health` | `HealthPage` (fuera del menú) |
 | `*` | — | "Página no encontrada" |
 
-Las páginas de negocio son placeholders con `<h1>` hasta sus días del cronograma, salvo Inicio y Carga (R-003, abajo). Cada feature expone ya su capa `api/` (`types.ts`, `api/<feature>-api.ts`, `api/<feature>-api.handlers.ts`) según el [contrato](../API_CONTRACT.md): `inicio` (estado del sistema, alertas), `carga` (vista previa y confirmación con `FormData` campo `archivo`), `lista` (generar, última, por id, Excel, sugerencias, gestiones), `campanias` (listar, crear, editar, inactivar; el tipo de `planes` excluye `"DIARIO"`) y `dashboard` (`?mes=YYYY-MM` opcional). Los decimales (`score`, `tasaRenovacion`) se mantienen como `string`; `modeloVigente.version` es `string` (`"v1"`).
+Las páginas de negocio son placeholders con `<h1>` hasta sus días del cronograma, salvo Inicio y Carga (R-003) y Lista (R-004), abajo. Cada feature expone ya su capa `api/` (`types.ts`, `api/<feature>-api.ts`, `api/<feature>-api.handlers.ts`) según el [contrato](../API_CONTRACT.md): `inicio` (estado del sistema, alertas), `carga` (vista previa y confirmación con `FormData` campo `archivo`), `lista` (generar, última, por id, Excel, sugerencias, gestiones), `campanias` (listar, crear, editar, inactivar; el tipo de `planes` excluye `"DIARIO"`) y `dashboard` (`?mes=YYYY-MM` opcional). Los decimales (`score`, `tasaRenovacion`) se mantienen como `string`; `modeloVigente.version` es `string` (`"v1"`).
 
 ### Inicio y Carga (R-003, con MSW)
 
 | Feature | Archivos | Comportamiento |
 |---|---|---|
-| `inicio` | `hooks/useEstadoSistema.ts`, `components/EstadoSistemaPanel.tsx`, `pages/InicioPage.tsx` | Pide `GET /sistema/estado` (con `AbortController`). `INICIALIZANDO` → "Inicializando datos históricos" (`role="status"`); `FALTAN_DATOS_HISTORICOS` → aviso de revisar la carpeta configurada (sin rutas); `LISTO` → "Sistema listo", versión del modelo y fechas en `es-EC`, o "Sin modelo vigente". Error `501`/`500` → `ErrorAlert` con "Reintentar". |
+| `inicio` | `hooks/useEstadoSistema.ts`, `components/EstadoSistemaPanel.tsx`, `pages/InicioPage.tsx` | Pide `GET /sistema/estado` (con `AbortController`). `INICIALIZANDO` → "Inicializando datos históricos" (`role="status"`); `FALTAN_DATOS_HISTORICOS` → aviso de revisar la carpeta configurada (sin rutas); `LISTO` → "Sistema listo" y "Modelo de predicción: activo desde <fecha es-EC>", o "El modelo de predicción aún no está disponible" (R-005; antes versión y fecha de entrenamiento). Error `501`/`500` → `ErrorAlert` con "Reintentar". |
 | `carga` | `hooks/useCarga.ts`, `components/{VistaPreviaCarga,ResumenCarga}.tsx`, `pages/CargaPage.tsx` | Estados `inicial` → `validando` → `vista-previa` → `enviando` → `confirmada`. Input `.xlsx` con etiqueta; otro tipo → mensaje local sin llamar a la API. Vista previa con conteos y `DataTable` de errores (`fila`/`columna`/`motivo`); "Confirmar" deshabilitado si hay errores, si `puedeConfirmar` es `false` (todo duplicado) o mientras envía (sin doble envío). Resumen tras confirmar: `filasGuardadas`, `filasDuplicadas`, `avisosEnlace`; `400`/`409`/`422` → `ErrorAlert` con el mensaje del servidor. Cambiar de archivo limpia la vista previa. |
 
 El resumen de carga no muestra aún `filasLeidas` ni `fechaCarga` (el criterio no lo exige). `router.edge.test.tsx`: la ruta `/` ahora pide `sistema/estado` en vez de `/health`.
+
+**Inicio con consulta periódica (R-004):** mientras el estado es `INICIALIZANDO`, `useEstadoSistema` vuelve a pedirlo cada 5 s hasta `LISTO` o `FALTAN_DATOS_HISTORICOS`, y se detiene al desmontar (`AbortController` + `clearTimeout`).
+
+### Lista priorizada, Excel e historial (R-004, contra el backend real)
+
+| Feature | Archivos | Comportamiento |
+|---|---|---|
+| `lista` · API | `api/lista-api.ts`, `api/lista-api.handlers.ts`, `types.ts` | `generarLista`, `obtenerUltima` (`404` → `null`), `obtenerLista`, `listarListas` (`GET /listas`), `descargarExcel` (`Blob`). Convierte `snake_case` → camelCase; `score`, umbrales y `montoCobrado` siguen como `string` (nunca `parseFloat`); `fechaGeneracion` es fecha y `creadaEn` instante. `409` → `MENSAJE_SISTEMA_NO_LISTO`. R-005: `Prediccion.cedula: string \| null` (sin `correo`); `422` → error tipado con el mensaje del servidor; los handlers MSW usan cédulas ficticias y devuelven `422` para fecha pasada. |
+| `lista` · página | `pages/ListaPage.tsx`, `hooks/useLista.ts`, `components/TablaLista.tsx` | R-005: "Fecha de la lista" (por defecto hoy local, `min` = hoy; vacía o anterior → error local sin llamar a la API), "Buscar socios que vencen en los próximos (días)" (1..31, defecto 30) y "Socios prioritarios a contactar" (K ≥ 1, defecto 25) → "Generar lista". Al entrar muestra la última lista. Dos tablas con `DataTable` y `RiskBadge`: "Socios prioritarios a contactar" (`dentroTopK`) y "Otros socios por vencer" (se oculta si está vacía), ambas por prioridad. Columnas: Prioridad, Nombre, Cédula (`null` → "—"), Celular, Plan, Vence el, Días para vencer, Nivel de riesgo, Motivos principales (sin el aporte entre paréntesis; "Sin factores de riesgo destacados" si no hay). No muestra score, columna Top, correo ni la versión del modelo. Aviso de datos antiguos en lenguaje llano si `advertenciaDatosAntiguos`; `409` → mensaje de sistema no listo; `422` → `ErrorAlert` con el mensaje. |
+| `lista` · Excel | `components/DescargarExcelButton.tsx`, `hooks/useDescargarExcel.ts` | Descarga `GET /listas/{id}/excel` como archivo (`lista_<id>_<fecha>.xlsx`); deshabilitado mientras descarga; error → `ErrorAlert`. |
+| `lista` · historial | `components/HistorialListas.tsx`, `hooks/useHistorialListas.ts` | "Listas anteriores" (`GET /listas`, más reciente primero); opciones "Lista del <fecha larga es-EC> · <K> socios prioritarios"; abre una anterior con `GET /listas/{id}`. |
+
+Etiquetas renombradas en R-005 (usuario no técnico): "Fecha de referencia" → "Fecha de la lista"; "Horizonte (días)" → "Buscar socios que vencen en los próximos (días)"; "Top K" → "Socios prioritarios a contactar"; "Factores principales" → "Motivos principales"; "Vencimiento" → "Vence el"; "Historial de listas" → "Listas anteriores"; en Inicio, "Versión del modelo" / "Fecha de entrenamiento" → "Modelo de predicción: activo desde <fecha>" (sin modelo: "El modelo de predicción aún no está disponible").
+
+`gestionEstado` y `campaniaAsignada` llegan `null` hasta CU-08 (día 5).
 
 ## `shared/ui`
 

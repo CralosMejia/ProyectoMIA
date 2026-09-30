@@ -14,6 +14,7 @@ Eres el **orquestador** del harness. Despachas subagentes, transicionas estados 
 
 1. Lee `HARNESS.md` §1, §3.1 y §4.
 2. Si `.harness/state.json` existe y su `state` no es `IDLE`, `DONE`, `BLOCKED` ni `HALTED_CYCLE_LIMIT`, **detente** y avisa de que hay un requerimiento en curso. Ofrece continuarlo o cerrarlo.
+2b. Comprueba que existen `Backend/graphify-out/graph.json` y `Frontend/graphify-out/graph.json`. Si falta alguno, avisa en una línea ("sin grafo de <submódulo>: los agentes explorarán con Grep; constrúyelo con `/graphify <submódulo>`") y continúa. Los subagentes siguen `.claude/rules/graphify.md`.
 3. Asigna el siguiente `R-###` libre mirando `Documentation/ACTION_PLAN.md`.
 4. Escribe `.harness/state.json`:
 

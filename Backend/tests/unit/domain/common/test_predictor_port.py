@@ -1,27 +1,43 @@
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import FrozenInstanceError
+from decimal import Decimal
 
 import pytest
 
-from app.domain.common.predictor import Prediction, PredictorModel, TrainedModel
+from app.domain.common.predictor import FeatureRow, Prediction, PredictorModel, TrainedModel
 
 pytestmark = pytest.mark.unit
-
-Features = Sequence[Mapping[str, float | int | str | None]]
 
 
 class FakePredictor:
     """Doble minimo del puerto PredictorModel (sin librerias de ML)."""
 
-    def train(self, features: Features, labels: Sequence[int]) -> TrainedModel:
+    def train(
+        self,
+        features: Sequence[FeatureRow],
+        labels: Sequence[int],
+        numericas: Sequence[str],
+        categoricas: Sequence[str],
+        referencia: Sequence[FeatureRow] | None = None,
+    ) -> TrainedModel:
         return TrainedModel(artefacto=b"modelo", metadata_tecnica={"filas": str(len(labels))})
 
-    def predict(self, artefacto: bytes, features: Features) -> list[Prediction]:
-        return [Prediction(score=0.5, factores_principales=("asistencias",)) for _ in features]
+    def predict(self, artefacto: bytes, features: Sequence[FeatureRow]) -> list[Prediction]:
+        return [
+            Prediction(score=Decimal("0.5"), factores_principales=("Plan: MENSUAL (+0,05)",))
+            for _ in features
+        ]
 
 
 class TrainOnly:
-    def train(self, features: Features, labels: Sequence[int]) -> TrainedModel:
+    def train(
+        self,
+        features: Sequence[FeatureRow],
+        labels: Sequence[int],
+        numericas: Sequence[str],
+        categoricas: Sequence[str],
+        referencia: Sequence[FeatureRow] | None = None,
+    ) -> TrainedModel:
         return TrainedModel(artefacto=b"", metadata_tecnica={})
 
 
@@ -38,13 +54,34 @@ def test_isinstance_without_predict_returns_false() -> None:
 
 def test_train_and_predict_through_port_return_value_objects() -> None:
     modelo: PredictorModel = FakePredictor()
-    features: Features = [{"asistencias": 12, "plan": "MENSUAL", "monto": None}]
+    features: list[FeatureRow] = [
+        {"ciclos_previos": 2, "plan": "MENSUAL", "monto_actual": Decimal("30.00"), "x": None}
+    ]
 
-    entrenado = modelo.train(features, [1])
+    entrenado = modelo.train(features, [1], ["ciclos_previos", "monto_actual", "x"], ["plan"])
     predicciones = modelo.predict(entrenado.artefacto, features)
 
     assert entrenado == TrainedModel(artefacto=b"modelo", metadata_tecnica={"filas": "1"})
-    assert predicciones == [Prediction(score=0.5, factores_principales=("asistencias",))]
+    assert predicciones == [
+        Prediction(score=Decimal("0.5"), factores_principales=("Plan: MENSUAL (+0,05)",))
+    ]
+
+
+def test_prediction_score_is_decimal() -> None:
+    assert isinstance(
+        Prediction(score=Decimal("0.12345678"), factores_principales=()).score, Decimal
+    )
+
+
+@pytest.mark.parametrize("score", [Decimal("-0.00000001"), Decimal("1.00000001")])
+def test_prediction_score_out_of_range_raises_value_error(score: Decimal) -> None:
+    with pytest.raises(ValueError, match="score"):
+        Prediction(score=score, factores_principales=())
+
+
+@pytest.mark.parametrize("score", [Decimal(0), Decimal(1)])
+def test_prediction_score_bounds_are_valid(score: Decimal) -> None:
+    assert Prediction(score=score, factores_principales=()).score == score
 
 
 def test_trained_model_is_frozen() -> None:
@@ -55,12 +92,12 @@ def test_trained_model_is_frozen() -> None:
 
 
 def test_prediction_is_frozen() -> None:
-    prediccion = Prediction(score=0.1, factores_principales=())
+    prediccion = Prediction(score=Decimal("0.1"), factores_principales=())
 
     with pytest.raises(FrozenInstanceError):
-        prediccion.score = 0.9  # type: ignore[misc]  # se prueba la inmutabilidad
+        prediccion.score = Decimal("0.9")  # type: ignore[misc]  # se prueba la inmutabilidad
 
 
 def test_value_objects_use_slots() -> None:
     assert not hasattr(TrainedModel(artefacto=b"", metadata_tecnica={}), "__dict__")
-    assert not hasattr(Prediction(score=0.0, factores_principales=()), "__dict__")
+    assert not hasattr(Prediction(score=Decimal(0), factores_principales=()), "__dict__")

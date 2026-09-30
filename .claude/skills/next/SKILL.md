@@ -34,7 +34,7 @@ Con el argumento `all` o cuando te invoca la skill `req`, repite el ciclo hasta 
    - si dos iteraciones seguidas no cambian nada → `HALTED_CYCLE_LIMIT`.
 6. Tras un ciclo de seguridad, el retorno a `TESTING` es **obligatorio**. Tras un ciclo de pruebas, vuelve a `SECURITY_REVIEW` solo si el fix tocó autenticación, autorización, SQL, entrada de usuario, secretos o serialización; márcalo en `resecurity`.
 7. Antes de `security-reviewer` o `test-engineer`, guarda `git rev-parse HEAD` y `git status --short` en `state.json.head`. Si al recoger el resultado el árbol cambió, descarta el resultado y repite el paso.
-8. Al llegar a `DONE`: verifica la checklist de `HARNESS.md` §8, borra `.harness/security.md` y `.harness/tests.md`, y sugiere `/commit`.
+8. Al llegar a `DONE`: verifica la checklist de `HARNESS.md` §8, borra `.harness/security.md` y `.harness/tests.md`, refresca el grafo de cada submódulo que cambió (`git -C Backend status --short` / `git -C Frontend status --short`) con `graphify update Backend` y/o `graphify update Frontend` (solo si existe su `graphify-out/graph.json`; sin LLM) y sugiere `/commit`.
 
 ## Salida al usuario
 

@@ -25,3 +25,6 @@ htmlcov/
 *.key
 *.p12
 secrets/
+
+# Grafo local de graphify (se regenera con /graphify o graphify update)
+graphify-out/

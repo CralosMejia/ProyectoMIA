@@ -1,7 +1,8 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { afterEach, describe, expect, it } from 'vitest'
+import { act } from 'react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { server } from '../../../mocks/server'
 import InicioPage from './InicioPage'
 import pageSource from './InicioPage.tsx?raw'
@@ -26,6 +27,10 @@ function estado(body: Record<string, unknown>) {
 
 function responderEstado(body: Record<string, unknown>) {
   server.use(http.get(ESTADO_PATH, () => HttpResponse.json(estado(body))))
+}
+
+function fechaEsEc(iso: string): string {
+  return new Intl.DateTimeFormat('es-EC', { dateStyle: 'long' }).format(new Date(iso))
 }
 
 function esEc(iso: string): string {
@@ -106,22 +111,31 @@ describe('InicioPage', () => {
     expect(contenedor?.textContent ?? '').not.toMatch(/[/\\]|\.xlsx/)
   })
 
-  it('LISTO → "Sistema listo", version del modelo y fechas en es-EC', async () => {
+  it('LISTO → "Sistema listo", "Modelo de predicción: activo desde <fecha>" y ultima carga en es-EC', async () => {
     render(<InicioPage />)
 
     expect(await screen.findByText('Sistema listo')).toBeInTheDocument()
-    expect(screen.getByText('v1')).toBeInTheDocument()
-    expect(screen.getByText(esEc('2026-09-28T14:30:00Z'))).toBeInTheDocument()
+    expect(screen.getByText('Modelo de predicción')).toBeInTheDocument()
+    expect(
+      screen.getByText(`Activo desde ${fechaEsEc('2026-09-28T14:30:00Z')}`),
+    ).toBeInTheDocument()
     expect(screen.getByText(esEc('2026-09-27T16:05:00Z'))).toBeInTheDocument()
+    const texto = document.body.textContent ?? ''
+    expect(texto).not.toMatch(/versi[oó]n del modelo|fecha de entrenamiento/i)
+    expect(texto).not.toMatch(/\bv1\b/)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('LISTO sin modelo vigente → "Sin modelo vigente"', async () => {
+  it('LISTO sin modelo vigente → "El modelo de predicción aún no está disponible"', async () => {
     responderEstado({ modelo_vigente: null })
 
     render(<InicioPage />)
 
-    expect(await screen.findByText('Sin modelo vigente')).toBeInTheDocument()
+    expect(
+      await screen.findByText('El modelo de predicción aún no está disponible'),
+    ).toBeInTheDocument()
+    expect(screen.getByText(esEc('2026-09-27T16:05:00Z'))).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/sin modelo vigente|versi[oó]n del modelo/i)
   })
 
   it('501 → ErrorAlert con el mensaje del servidor y "Reintentar" que vuelve a pedir', async () => {
@@ -182,6 +196,128 @@ describe('InicioPage', () => {
     unmount()
 
     await waitFor(() => expect((senal as AbortSignal | null)?.aborted).toBe(true))
+  })
+
+  describe('consulta periodica mientras INICIALIZANDO', () => {
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    /** Responde en orden los estados dados (el ultimo se repite) y cuenta las llamadas. */
+    function secuencia(estados: string[]) {
+      const registro = { llamadas: 0, senales: [] as AbortSignal[] }
+      server.use(
+        http.get(ESTADO_PATH, ({ request }) => {
+          registro.senales.push(request.signal)
+          const actual = estados[Math.min(registro.llamadas, estados.length - 1)]
+          registro.llamadas += 1
+          return HttpResponse.json(
+            actual === 'LISTO'
+              ? estado({})
+              : estado({ estado: actual, migracion_historica: 'EN_CURSO', modelo_vigente: null }),
+          )
+        }),
+      )
+      return registro
+    }
+
+    async function avanzar(ms: number) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ms)
+      })
+    }
+
+    it('vuelve a pedir cada 5 s hasta LISTO y entonces se detiene', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      const registro = secuencia(['INICIALIZANDO', 'INICIALIZANDO', 'LISTO'])
+
+      render(<InicioPage />)
+      await screen.findByText(/Inicializando datos históricos/)
+      expect(registro.llamadas).toBe(1)
+
+      await avanzar(4900)
+      expect(registro.llamadas).toBe(1)
+      await avanzar(100)
+      await waitFor(() => expect(registro.llamadas).toBe(2))
+      expect(screen.getByRole('status')).toHaveTextContent('Inicializando datos históricos')
+
+      await avanzar(5000)
+      expect(await screen.findByText('Sistema listo')).toBeInTheDocument()
+      expect(registro.llamadas).toBe(3)
+
+      await avanzar(20000)
+      expect(registro.llamadas).toBe(3)
+    })
+
+    it('se detiene con FALTAN_DATOS_HISTORICOS', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      const registro = secuencia(['INICIALIZANDO', 'FALTAN_DATOS_HISTORICOS'])
+
+      render(<InicioPage />)
+      await screen.findByText(/Inicializando datos históricos/)
+
+      await avanzar(5000)
+      expect(await screen.findByText(/Faltan los datos históricos/)).toBeInTheDocument()
+      expect(registro.llamadas).toBe(2)
+
+      await avanzar(20000)
+      expect(registro.llamadas).toBe(2)
+    })
+
+    it('un error durante la consulta periodica muestra ErrorAlert y se detiene', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      let llamadas = 0
+      server.use(
+        http.get(ESTADO_PATH, () => {
+          llamadas += 1
+          return llamadas === 1
+            ? HttpResponse.json(
+                estado({ estado: 'INICIALIZANDO', migracion_historica: 'EN_CURSO', modelo_vigente: null }),
+              )
+            : HttpResponse.json(
+                { error: { code: 'internal_error', message: 'Error interno del servidor.' } },
+                { status: 500 },
+              )
+        }),
+      )
+
+      render(<InicioPage />)
+      await screen.findByText(/Inicializando datos históricos/)
+
+      await avanzar(5000)
+      expect(await screen.findByRole('alert')).toHaveTextContent('Error interno del servidor.')
+      expect(llamadas).toBe(2)
+
+      await avanzar(20000)
+      expect(llamadas).toBe(2)
+    })
+
+    it('con LISTO desde el principio no programa nuevas consultas', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      const registro = secuencia(['LISTO'])
+
+      render(<InicioPage />)
+      await screen.findByText('Sistema listo')
+
+      await avanzar(20000)
+      expect(registro.llamadas).toBe(1)
+    })
+
+    it('al desmontar deja de consultar (clearTimeout y abort)', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      const registro = secuencia(['INICIALIZANDO'])
+
+      const { unmount } = render(<InicioPage />)
+      await screen.findByText(/Inicializando datos históricos/)
+      expect(vi.getTimerCount()).toBeGreaterThan(0)
+
+      unmount()
+
+      expect(vi.getTimerCount()).toBe(0)
+      await avanzar(20000)
+      expect(registro.llamadas).toBe(1)
+      expect(registro.senales.every((s) => s.aborted)).toBe(true)
+    })
   })
 
   it('arquitectura: la pagina no importa api/ ni core/http ni usa fetch', () => {

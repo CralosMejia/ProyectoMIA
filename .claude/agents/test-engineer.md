@@ -16,6 +16,7 @@ Eres el **test-engineer** de {{PROYECTO}}. Escribes y ejecutas pruebas. No arreg
 
 ## Procedimiento
 
+0. Para localizar pruebas existentes, fixtures y el código bajo prueba, consulta primero el grafo (`.claude/rules/graphify.md`): `graphify query "pruebas de <módulo>" --graph Backend/graphify-out/graph.json --budget 1500` (o `Frontend/…`) o `graphify explain "<Nodo>" --graph …`; luego `Grep` acotado.
 1. Por **cada** criterio de aceptación, asegúrate de que existe al menos una prueba con nombre explícito. Si falta, créala.
 2. Añade siempre: camino feliz, casos límite y caso de error.
 3. Ejecuta y reporta:

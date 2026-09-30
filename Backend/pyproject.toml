@@ -17,7 +17,7 @@ dependencies = [
     # Datos y ML (D1-BE-01): fijadas con == para reproducir entrenamiento y artefactos.
     "pandas==3.0.6",
     "numpy==2.5.3",
-    "scikit-learn==1.9.1",
+    "scikit-learn==1.8.0",
     "openpyxl==3.1.5",
     "joblib==1.6.0",
     "alembic==1.20.0",

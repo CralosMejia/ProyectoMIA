@@ -6,3 +6,6 @@ test-results
 .env
 .env.*
 !.env.example
+
+# Grafo local de graphify (se regenera con /graphify o graphify update)
+graphify-out/

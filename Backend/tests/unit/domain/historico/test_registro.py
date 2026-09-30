@@ -255,3 +255,27 @@ def test_registro_y_fila_repr_no_contienen_datos_personales() -> None:
         assert "0999888777" not in texto
         assert "0987654321" not in texto
         assert "ejemplo.invalid" not in texto
+
+
+# ---------------------------------------------------------------- contacto (R-004, T11)
+
+
+def test_limpiar_conserva_celular_y_correo_como_texto() -> None:
+    registro = unico([fila(celular=990001122.0, correo=" socio@example.com ")])
+
+    assert registro.celular == "990001122"
+    assert registro.correo == "socio@example.com"
+
+
+def test_limpiar_contacto_vacio_queda_none() -> None:
+    registro = unico([fila(celular="  ", correo=None)])
+
+    assert registro.celular is None
+    assert registro.correo is None
+
+
+def test_registro_repr_no_contiene_contacto() -> None:
+    registro = unico([fila(celular="0990001122", correo="socio@example.com")])
+
+    assert "0990001122" not in repr(registro)
+    assert "socio@example.com" not in repr(registro)

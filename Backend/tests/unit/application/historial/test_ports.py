@@ -16,6 +16,7 @@ from app.application.historial.ports import (
     LectorHistorico,
     LibroLeido,
     LibrosLeidos,
+    MembresiaParaPrediccion,
     MembresiaRepository,
     NuevaCarga,
     NuevaMembresia,
@@ -51,6 +52,7 @@ def nueva_membresia(socio_id: int = 1, carga_id: int = 1) -> NuevaMembresia:
         forma_pago=FormaPago.EFECTIVO,
         origen=OrigenMembresia.HISTORICO,
         inicio_aproximado=False,
+        fecha_actividad=date(2025, 1, 6),
         fecha_inicio=date(2025, 1, 6),
         fecha_vencimiento=date(2025, 2, 5),
         monto_cobrado=Decimal("39.50"),
@@ -88,6 +90,23 @@ class MembresiaRepositoryEnMemoria:
         self.membresias.extend(membresias)
         return len(membresias)
 
+    def listar_para_prediccion(self) -> list[MembresiaParaPrediccion]:
+        return [
+            MembresiaParaPrediccion(
+                membresia_id=i,
+                socio_id=m.socio_id,
+                plan=m.plan,
+                forma_pago=m.forma_pago,
+                fecha_inicio=m.fecha_inicio,
+                fecha_vencimiento=m.fecha_vencimiento,
+                fecha_actividad=m.fecha_actividad,
+                monto_cobrado=m.monto_cobrado,
+                inicio_aproximado=m.inicio_aproximado,
+                socio_con_cedula=True,
+            )
+            for i, m in enumerate(self.membresias, start=1)
+        ]
+
 
 class CargaRepositoryEnMemoria:
     def __init__(self) -> None:
@@ -96,6 +115,12 @@ class CargaRepositoryEnMemoria:
     def crear(self, carga: NuevaCarga) -> int:
         self.cargas.append(carga)
         return len(self.cargas)
+
+    def ultima_fecha_carga(self) -> datetime | None:
+        return max((c.fecha_carga for c in self.cargas), default=None)
+
+    def hay_migracion_o_membresias(self) -> bool:
+        return any(c.tipo is TipoCarga.MIGRACION_HISTORICA for c in self.cargas)
 
 
 def test_ports_in_memory_doubles_satisfy_protocols() -> None:
@@ -166,7 +191,37 @@ def test_nueva_membresia_socio_id_is_required() -> None:
             forma_pago=FormaPago.EFECTIVO,
             origen=OrigenMembresia.HISTORICO,
             inicio_aproximado=False,
+            fecha_actividad=date(2025, 1, 6),
         )
+
+
+def test_nueva_membresia_fecha_actividad_is_required() -> None:
+    campos = {c.name: c for c in NuevaMembresia.__dataclass_fields__.values()}
+    assert campos["fecha_actividad"].type in (date, "date")
+    with pytest.raises(TypeError):
+        NuevaMembresia(  # type: ignore[call-arg]  # falta fecha_actividad a proposito
+            socio_id=1,
+            carga_id=1,
+            plan=Plan.MENSUAL,
+            forma_pago=FormaPago.EFECTIVO,
+            origen=OrigenMembresia.HISTORICO,
+            inicio_aproximado=False,
+        )
+
+
+def test_read_methods_in_memory_doubles_follow_the_contract() -> None:
+    membresias = MembresiaRepositoryEnMemoria()
+    membresias.insertar_en_bloque([nueva_membresia()])
+    cargas = CargaRepositoryEnMemoria()
+    assert cargas.ultima_fecha_carga() is None
+    assert cargas.hay_migracion_o_membresias() is False
+    cargas.crear(nueva_carga())
+
+    (leida,) = membresias.listar_para_prediccion()
+    assert leida.fecha_actividad == date(2025, 1, 6)
+    assert isinstance(leida.monto_cobrado, Decimal)
+    assert cargas.ultima_fecha_carga() == INSTANTE
+    assert cargas.hay_migracion_o_membresias() is True
 
 
 def test_nueva_membresia_keeps_decimal_amount_and_reference() -> None:
@@ -209,3 +264,21 @@ def test_ports_docstring_states_caller_owns_the_transaction() -> None:
 
     assert "commit" in doc
     assert "rollback" in doc
+
+
+def test_membresia_para_prediccion_socio_con_cedula_is_required() -> None:
+    campos = {
+        "membresia_id": 1,
+        "socio_id": 1,
+        "plan": Plan.MENSUAL,
+        "forma_pago": FormaPago.EFECTIVO,
+        "fecha_inicio": date(2026, 9, 1),
+        "fecha_vencimiento": date(2026, 10, 1),
+        "fecha_actividad": date(2026, 9, 1),
+        "monto_cobrado": Decimal("40"),
+        "inicio_aproximado": False,
+    }
+
+    with pytest.raises(TypeError, match="socio_con_cedula"):
+        ports.MembresiaParaPrediccion(**campos)  # type: ignore[arg-type]  # se prueba el campo obligatorio
+    assert ports.MembresiaParaPrediccion(**campos, socio_con_cedula=False).socio_con_cedula is False  # type: ignore[arg-type]  # campos heterogeneos

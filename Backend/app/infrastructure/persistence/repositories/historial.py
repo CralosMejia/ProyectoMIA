@@ -5,21 +5,27 @@ llama la abre y decide si confirma o revierte; aqui no se controla la transaccio
 inserciones masivas usan ``insert()`` con lista de parametros (executemany /
 *insertmanyvalues*), nunca ``session.add`` fila a fila. ``created_at``/``updated_at`` salen
 del ``Clock`` inyectado.
+
+Las lecturas (``listar_para_prediccion``, ``ultima_fecha_carga``,
+``hay_migracion_o_membresias``) usan SQLAlchemy Core en una sola consulta cada una y filtran
+siempre ``deleted_at IS NULL``.
 """
 
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import insert
+from sqlalchemy import exists, func, insert, or_, select
 from sqlalchemy.orm import Session
 
 from app.application.historial.ports import (
+    MembresiaParaPrediccion,
     NuevaCarga,
     NuevaMembresia,
     NuevoSocio,
     ReferenciaOrigen,
 )
 from app.domain.common.clock import Clock
+from app.domain.common.enums import FormaPago, Plan, TipoCarga
 from app.infrastructure.persistence.models.historial import Carga, Membresia, Socio
 
 
@@ -78,6 +84,7 @@ class SqlAlchemyMembresiaRepository:
                 "plan": m.plan,
                 "fecha_inicio": m.fecha_inicio,
                 "fecha_vencimiento": m.fecha_vencimiento,
+                "fecha_actividad": m.fecha_actividad,
                 "forma_pago": m.forma_pago,
                 "monto_facturado": m.monto_facturado,
                 "monto_cobrado": m.monto_cobrado,
@@ -94,6 +101,40 @@ class SqlAlchemyMembresiaRepository:
         ]
         self._session.execute(insert(Membresia), parametros)
         return len(parametros)
+
+    def listar_para_prediccion(self) -> list[MembresiaParaPrediccion]:
+        filas = self._session.execute(
+            select(
+                Membresia.id,
+                Membresia.socio_id,
+                Membresia.plan,
+                Membresia.forma_pago,
+                Membresia.fecha_inicio,
+                Membresia.fecha_vencimiento,
+                Membresia.fecha_actividad,
+                Membresia.monto_cobrado,
+                Membresia.inicio_aproximado,
+                Socio.cedula.is_not(None).label("socio_con_cedula"),
+            )
+            .join(Socio, Socio.id == Membresia.socio_id)
+            .where(Membresia.deleted_at.is_(None))
+            .order_by(Membresia.id)
+        ).all()
+        return [
+            MembresiaParaPrediccion(
+                membresia_id=f.id,
+                socio_id=f.socio_id,
+                plan=Plan(f.plan),
+                forma_pago=FormaPago(f.forma_pago),
+                fecha_inicio=f.fecha_inicio,
+                fecha_vencimiento=f.fecha_vencimiento,
+                fecha_actividad=f.fecha_actividad,
+                monto_cobrado=f.monto_cobrado,
+                inicio_aproximado=f.inicio_aproximado,
+                socio_con_cedula=bool(f.socio_con_cedula),
+            )
+            for f in filas
+        ]
 
 
 class SqlAlchemyCargaRepository:
@@ -119,3 +160,15 @@ class SqlAlchemyCargaRepository:
             .returning(Carga.id)
         )
         return self._session.scalars(sentencia).one()
+
+    def ultima_fecha_carga(self) -> datetime | None:
+        return self._session.scalar(
+            select(func.max(Carga.fecha_carga)).where(Carga.deleted_at.is_(None))
+        )
+
+    def hay_migracion_o_membresias(self) -> bool:
+        migracion = exists().where(
+            Carga.tipo == TipoCarga.MIGRACION_HISTORICA, Carga.deleted_at.is_(None)
+        )
+        membresias = exists().where(Membresia.deleted_at.is_(None))
+        return bool(self._session.scalar(select(or_(migracion, membresias))))

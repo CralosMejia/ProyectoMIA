@@ -1,5 +1,6 @@
-"""Migraciones ``0001`` (esquema), ``0002`` (fila de ``estado_sistema``) y ``0003``
-(``membresias.socio_id NOT NULL``) contra PostgreSQL 16.
+"""Migraciones ``0001`` (esquema), ``0002`` (fila de ``estado_sistema``), ``0003``
+(``membresias.socio_id NOT NULL``) y ``0004`` (``membresias.fecha_actividad``) contra
+PostgreSQL 16.
 
 Sin login (RT-12): no hay ``user_id``; las pruebas de aislamiento entre usuarios no aplican.
 Cada prueba deja la base como la encontro: transaccion con rollback, o ciclo de migraciones
@@ -8,7 +9,7 @@ que termina en ``head``; la fixture ``migrated_engine`` vuelve a ``base`` al fin
 
 import re
 from collections.abc import Iterator, Mapping
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import pytest
 from alembic import command
@@ -95,9 +96,12 @@ def carga(conn: Connection, **values: object) -> int:
     return insert(conn, "cargas", {**base, **values})
 
 
-def membresia(conn: Connection, **values: object) -> int:
-    """Membresia valida; crea un socio por defecto salvo que se pase ``socio_id``."""
-    base = {
+def membresia(conn: Connection, *, con_actividad: bool = True, **values: object) -> int:
+    """Membresia valida; crea un socio por defecto salvo que se pase ``socio_id``.
+
+    ``con_actividad=False`` omite ``fecha_actividad`` (esquema anterior a ``0004``).
+    """
+    base: dict[str, object] = {
         "socio_id": values["socio_id"] if "socio_id" in values else socio(conn),
         "carga_id": carga(conn),
         "plan": "MENSUAL",
@@ -105,6 +109,8 @@ def membresia(conn: Connection, **values: object) -> int:
         "origen": "PLANTILLA",
         "inicio_aproximado": False,
     }
+    if con_actividad:
+        base["fecha_actividad"] = NOW.date()
     return insert(conn, "membresias", {**base, **values})
 
 
@@ -345,7 +351,7 @@ def test_0003_downgrade_accepts_null_socio_and_upgrade_again_works(
         with migrated_engine.connect() as connection:
             transaction = connection.begin()
             try:
-                assert membresia(connection, socio_id=None) > 0
+                assert membresia(connection, socio_id=None, con_actividad=False) > 0
             finally:
                 transaction.rollback()
     finally:
@@ -373,8 +379,8 @@ def test_0003_upgrade_over_existing_membresias_with_socio_keeps_rows(
     try:
         with migrated_engine.begin() as connection:
             socio_id = socio(connection)
-            membresia_id = membresia(connection, socio_id=socio_id)
-        command.upgrade(alembic_config, "head")
+            membresia_id = membresia(connection, socio_id=socio_id, con_actividad=False)
+        command.upgrade(alembic_config, "0003")
 
         assert _revision_actual(migrated_engine) == "0003"
         assert _is_nullable(migrated_engine, "membresias", "socio_id") is False
@@ -384,8 +390,8 @@ def test_0003_upgrade_over_existing_membresias_with_socio_keeps_rows(
             ).scalar_one()
         assert stored == socio_id
     finally:
-        command.upgrade(alembic_config, "head")
         _vaciar_historial(migrated_engine)
+        command.upgrade(alembic_config, "head")
 
 
 def test_0003_upgrade_with_membresia_without_socio_fails_and_stays_at_0002(
@@ -394,7 +400,7 @@ def test_0003_upgrade_with_membresia_without_socio_fails_and_stays_at_0002(
     command.downgrade(alembic_config, "0002")
     try:
         with migrated_engine.begin() as connection:
-            membresia(connection, socio_id=None)
+            membresia(connection, socio_id=None, con_actividad=False)
 
         with pytest.raises(IntegrityError):
             command.upgrade(alembic_config, "head")
@@ -404,7 +410,95 @@ def test_0003_upgrade_with_membresia_without_socio_fails_and_stays_at_0002(
     finally:
         _vaciar_historial(migrated_engine)
         command.upgrade(alembic_config, "head")
-    assert _revision_actual(migrated_engine) == "0003"
+    assert _revision_actual(migrated_engine) == "0004"
+
+
+# ------------------------------------------------------------------ 0004: fecha_actividad
+INDICE_ACTIVIDAD = "ix_membresias_socio_id_fecha_actividad"
+
+
+def _columnas(engine: Engine, table: str) -> set[str]:
+    return {c["name"] for c in inspect(engine).get_columns(table)}
+
+
+def _indices(engine: Engine, table: str) -> dict[str, list[str | None]]:
+    return {str(i["name"]): list(i["column_names"]) for i in inspect(engine).get_indexes(table)}
+
+
+def test_0004_fecha_actividad_is_not_null_and_indexed(migrated_engine: Engine) -> None:
+    assert _is_nullable(migrated_engine, "membresias", "fecha_actividad") is False
+    assert _indices(migrated_engine, "membresias")[INDICE_ACTIVIDAD] == [
+        "socio_id",
+        "fecha_actividad",
+    ]
+
+
+def test_membresia_without_fecha_actividad_is_rejected(conn: Connection) -> None:
+    with pytest.raises(IntegrityError, match="fecha_actividad"):
+        membresia(conn, con_actividad=False)
+
+
+def test_membresia_with_fecha_actividad_is_stored(conn: Connection) -> None:
+    membresia_id = membresia(conn, fecha_actividad=date(2025, 3, 10))
+    stored = conn.execute(
+        text("SELECT fecha_actividad FROM membresias WHERE id = :id"), {"id": membresia_id}
+    ).scalar_one()
+    assert stored == date(2025, 3, 10)
+
+
+def test_0004_downgrade_removes_column_and_index_and_upgrade_restores_them(
+    migrated_engine: Engine, alembic_config: Config
+) -> None:
+    command.downgrade(alembic_config, "0003")
+    try:
+        assert _revision_actual(migrated_engine) == "0003"
+        assert "fecha_actividad" not in _columnas(migrated_engine, "membresias")
+        assert INDICE_ACTIVIDAD not in _indices(migrated_engine, "membresias")
+    finally:
+        command.upgrade(alembic_config, "head")
+    assert _revision_actual(migrated_engine) == "0004"
+    assert _is_nullable(migrated_engine, "membresias", "fecha_actividad") is False
+    assert INDICE_ACTIVIDAD in _indices(migrated_engine, "membresias")
+
+
+def test_0004_upgrade_fills_fecha_actividad_from_fecha_inicio(
+    migrated_engine: Engine, alembic_config: Config
+) -> None:
+    command.downgrade(alembic_config, "0003")
+    try:
+        with migrated_engine.begin() as connection:
+            membresia_id = membresia(connection, con_actividad=False, fecha_inicio=date(2025, 1, 6))
+        command.upgrade(alembic_config, "head")
+
+        assert _revision_actual(migrated_engine) == "0004"
+        with migrated_engine.connect() as connection:
+            stored = connection.execute(
+                text("SELECT fecha_actividad FROM membresias WHERE id = :id"),
+                {"id": membresia_id},
+            ).scalar_one()
+        assert stored == date(2025, 1, 6)
+    finally:
+        _vaciar_historial(migrated_engine)
+        command.upgrade(alembic_config, "head")
+
+
+def test_0004_upgrade_with_membresia_without_fecha_inicio_fails_and_stays_at_0003(
+    migrated_engine: Engine, alembic_config: Config
+) -> None:
+    command.downgrade(alembic_config, "0003")
+    try:
+        with migrated_engine.begin() as connection:
+            membresia(connection, con_actividad=False, fecha_inicio=None)
+
+        with pytest.raises(IntegrityError):
+            command.upgrade(alembic_config, "head")
+
+        assert _revision_actual(migrated_engine) == "0003"
+        assert "fecha_actividad" not in _columnas(migrated_engine, "membresias")
+    finally:
+        _vaciar_historial(migrated_engine)
+        command.upgrade(alembic_config, "head")
+    assert _revision_actual(migrated_engine) == "0004"
 
 
 # ------------------------------------------------------------------ ciclos de migracion

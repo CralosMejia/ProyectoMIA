@@ -33,12 +33,12 @@ Estados y contratos de cada agente: `HARNESS.md` (léelo solo cuando orquestes, 
 - Lee **solo** lo que la tarea necesita. Nunca el repositorio entero ni toda la documentación.
 - `Documentation/ACTION_PLAN.md` es el board vivo (corto). El detalle por producto está en `Documentation/products/P##-*.md`.
 - `Documentation/Plan/**` es material de referencia humano y voluminoso: **no lo abras** sin que el usuario lo pida. (Borra esta línea si no vas a tener esa carpeta.)
-- Antes de `Read` de un archivo largo, acota con `Grep`.
+- Explora el código con el grafo de su submódulo (`graphify query ... --graph`) antes que con `Grep`/`Glob`; antes de `Read` de un archivo largo, acota con `Grep`.
 - Un requerimiento = una sesión. Al terminar, `/clear`.
 
 ## Reglas
 
-`.claude/rules/` se carga solo cuando tocas archivos de esa área: `backend.md`, `frontend.md`, `database.md`, `deploy.md`. `git.md` se lee antes de cualquier operación de git.
+`.claude/rules/` se carga solo cuando tocas archivos de esa área: `backend.md`, `frontend.md`, `database.md`, `deploy.md`. `git.md` se lee antes de cualquier operación de git. `graphify.md` se lee antes de explorar código o documentación (aplica a todos los agentes).
 
 ## Invariantes del proyecto — no se negocian
 
@@ -56,8 +56,11 @@ Estados y contratos de cada agente: `HARNESS.md` (léelo solo cuando orquestes, 
 - No se implementa nada fuera del alcance de la versión actual ([`Documentation/DEVELOPMENT_GUIDELINES.md`](../Documentation/DEVELOPMENT_GUIDELINES.md) §Fuera de alcance; excepciones a estas invariantes en §Excepciones).
 - El esquema lo migra solo el servicio `migrate`; la única migración de datos al arrancar es CU-03 (`Documentation/adr/ADR-004-migracion-datos-al-arrancar.md`).
 
-## Herramientas opcionales
+## Navegación con graphify — obligatoria
 
-<!-- Si usas un indexador de código (grafo, wiki generada, buscador semántico), decláralo aquí y
-     en Backend/CLAUDE.md y Frontend/CLAUDE.md. Si no, borra esta sección y las referencias en
-     .claude/agents/planner.md y developer.md. -->
+Cada submódulo tiene su grafo: `Backend/graphify-out/graph.json` y `Frontend/graphify-out/graph.json` (Documentation no tiene; usa `Grep`). **Tú y todos los subagentes exploran el código primero con el grafo** para ahorrar tokens; `Grep`/`Glob`/`Read` vienen después y solo sobre lo que el grafo señaló. Protocolo completo: `.claude/rules/graphify.md` (léelo antes de explorar).
+
+- Pregunta sobre el código → `graphify query "<pregunta>" --graph Backend/graphify-out/graph.json --budget 1500` (o la ruta de Frontend; ambos si la pregunta cruza lados) antes de abrir archivos.
+- Relación entre dos piezas → `graphify path "A" "B" --graph <grafo>` · qué es un nodo → `graphify explain "X" --graph <grafo>`.
+- Sin el `graph.json` del submódulo → avísalo en una línea y sugiere `/graphify Backend` o `/graphify Frontend`; no lo construyas por iniciativa propia.
+- Al llegar a `DONE`, el orquestador refresca el grafo del submódulo que cambió con `graphify update Backend` / `graphify update Frontend` (sin LLM).

@@ -1,14 +1,13 @@
 import { http, HttpResponse } from 'msw'
 
 /*
- * Datos simulados FICTICIOS (nombres, celulares y correos inventados; sin cedulas).
+ * Datos simulados FICTICIOS (nombres y celulares inventados; sin correos). Las cedulas son
+ * imposibles a proposito (provincia 00 o 99, que no existen), la mitad con cero inicial.
  * Los decimales se escriben como string y se calculan con enteros (puntos basicos),
  * sin aritmetica de coma flotante.
  */
 
 const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-const LISTA_ID = 42
-const TOTAL_SOCIOS = 32
 const UMBRAL_ALTO_PB = 7000
 const UMBRAL_MEDIO_PB = 4000
 
@@ -34,39 +33,111 @@ function nivelDesdePuntosBasicos(pb: number): 'ALTO' | 'MEDIO' | 'BAJO' {
   return 'BAJO'
 }
 
-function prediccion(i: number, topK: number) {
+/** Monto en dolares como decimal string; cada noveno socio sin monto registrado. */
+function montoCobrado(i: number): string | null {
+  return i % 9 === 8 ? null : `${30 + (i % 5) * 5}.00`
+}
+
+/** Cada septimo socio sin factores destacados (la UI muestra el texto por defecto). */
+function factores(i: number): string[] {
+  return i % 7 === 6 ? [] : FACTORES.slice(0, 1 + (i % FACTORES.length))
+}
+
+/** Cedula ficticia de 10 digitos: pares `00000nnnnn` (cero inicial), impares `99nnnnnnnn`. */
+function cedula(n: number): string | null {
+  return n % 2 === 0 ? `00000${pad(n, 5)}` : `99${pad(n, 8)}`
+}
+
+/** Fecha local de hoy `YYYY-MM-DD` (la misma que propone el formulario). */
+function hoyLocal(): string {
+  const ahora = new Date()
+  return `${ahora.getFullYear()}-${pad(ahora.getMonth() + 1, 2)}-${pad(ahora.getDate(), 2)}`
+}
+
+/** `desfase` cambia los socios de la lista (la mas antigua empieza por otro nombre). */
+function prediccion(i: number, topK: number, desfase = 0, mesVencimiento = '2026-10') {
   const pb = 9500 - i * 300
   const dia = 1 + (i % 28)
+  const n = i + desfase
   return {
-    prediccion_id: 1501 + i,
+    prediccion_id: 1501 + desfase * 100 + i,
     prioridad: i + 1,
-    socio_nombre: `${NOMBRES[i % NOMBRES.length]} ${APELLIDOS[Math.floor(i / NOMBRES.length) % APELLIDOS.length]}`,
-    celular: `0990000${pad(i, 3)}`,
-    correo: `socio${i + 1}@ejemplo.test`,
-    plan: PLANES[i % PLANES.length],
-    fecha_vencimiento: `2026-10-${pad(dia, 2)}`,
+    socio_nombre: `${NOMBRES[n % NOMBRES.length]} ${APELLIDOS[Math.floor(n / NOMBRES.length) % APELLIDOS.length]}`,
+    celular: `0990000${pad(n, 3)}`,
+    cedula: cedula(n),
+    plan: PLANES[n % PLANES.length],
+    fecha_vencimiento: `${mesVencimiento}-${pad(dia, 2)}`,
     dias_para_vencer: dia + 3,
+    monto_cobrado: montoCobrado(i),
     score: decimalDesdePuntosBasicos(pb),
     nivel_riesgo: nivelDesdePuntosBasicos(pb),
-    factores_principales: FACTORES.slice(0, 1 + (i % FACTORES.length)),
+    factores_principales: factores(i),
     dentro_top_k: i < topK,
-    gestion_estado: i === 0 ? 'PENDIENTE' : null,
-    campania_asignada: i === 0 ? 'Renovacion anticipada' : null,
+    gestion_estado: i === 0 && desfase === 0 ? 'PENDIENTE' : null,
+    campania_asignada: i === 0 && desfase === 0 ? 'Renovacion anticipada' : null,
   }
 }
 
-function lista(horizonteDias = 30, topK = 25) {
+/** Lista mas reciente (la que devuelve `/ultima`), sin advertencia de datos antiguos. */
+export const LISTA_RECIENTE_ID = 42
+/**
+ * Lista anterior, con `advertencia_datos_antiguos: true`. Es antigua e inmutable: su tercer socio
+ * no tiene cedula (`null`), como las listas generadas antes de excluir a los socios sin cedula.
+ */
+export const LISTA_ANTERIOR_ID = 41
+
+function listaReciente(horizonteDias = 30, topK = 25, fechaGeneracion = '2026-09-28') {
   return {
-    id: LISTA_ID,
+    id: LISTA_RECIENTE_ID,
     modelo_version: 'v1',
-    fecha_generacion: '2026-09-28T15:00:00Z',
+    fecha_generacion: fechaGeneracion,
+    creada_en: '2026-09-28T15:00:00Z',
     horizonte_dias: horizonteDias,
     top_k: topK,
     umbral_alto: decimalDesdePuntosBasicos(UMBRAL_ALTO_PB),
     umbral_medio: decimalDesdePuntosBasicos(UMBRAL_MEDIO_PB),
     advertencia_datos_antiguos: false,
-    items: Array.from({ length: TOTAL_SOCIOS }, (_, i) => prediccion(i, topK)),
+    items: Array.from({ length: 32 }, (_, i) => prediccion(i, topK)),
   }
+}
+
+function listaAnterior() {
+  const topK = 10
+  return {
+    id: LISTA_ANTERIOR_ID,
+    modelo_version: 'v1',
+    fecha_generacion: '2026-08-31',
+    creada_en: '2026-08-31T14:00:00Z',
+    horizonte_dias: 30,
+    top_k: topK,
+    umbral_alto: decimalDesdePuntosBasicos(UMBRAL_ALTO_PB),
+    umbral_medio: decimalDesdePuntosBasicos(UMBRAL_MEDIO_PB),
+    advertencia_datos_antiguos: true,
+    items: Array.from({ length: 12 }, (_, i) => {
+      const p = prediccion(i, topK, 3, '2026-09')
+      return i === 2 ? { ...p, cedula: null } : p
+    }),
+  }
+}
+
+type ListaSimulada = ReturnType<typeof listaReciente>
+
+function resumen(lista: ListaSimulada) {
+  return {
+    id: lista.id,
+    fecha_generacion: lista.fecha_generacion,
+    creada_en: lista.creada_en,
+    modelo_version: lista.modelo_version,
+    horizonte_dias: lista.horizonte_dias,
+    top_k: lista.top_k,
+    total_items: lista.items.length,
+  }
+}
+
+function listaPorId(id: unknown): ListaSimulada | null {
+  if (id === String(LISTA_RECIENTE_ID)) return listaReciente()
+  if (id === String(LISTA_ANTERIOR_ID)) return listaAnterior()
+  return null
 }
 
 const GESTION = {
@@ -140,33 +211,81 @@ const CAMPANIAS_SUGERIDAS = [
   },
 ]
 
+const errorBody = (code: string, message: string) => ({ error: { code, message } })
+
 const noEncontrado = (message: string) =>
-  HttpResponse.json({ error: { code: 'not_found', message } }, { status: 404 })
+  HttpResponse.json(errorBody('not_found', message), { status: 404 })
 
 interface GenerarBody {
+  fecha_referencia?: string | null
   horizonte_dias?: number
   top_k?: number
+}
+
+const fechaPasada = () =>
+  HttpResponse.json(
+    errorBody('domain_rule_violated', 'La fecha de la lista debe ser hoy o posterior.'),
+    { status: 422 },
+  )
+
+/**
+ * Escenarios de error para `server.use(...)` en las pruebas (no se registran por defecto):
+ * 409 al generar mientras el sistema se inicializa, 422 por fecha anterior a hoy, 404 cuando
+ * aun no hay listas y una ultima lista con datos antiguos.
+ */
+export const escenariosLista = {
+  sistemaInicializando: http.post('*/api/v1/listas', () =>
+    HttpResponse.json(
+      errorBody(
+        'conflict',
+        'El sistema se esta inicializando; intente de nuevo en unos minutos.',
+      ),
+      { status: 409 },
+    ),
+  ),
+  /** `POST /listas` responde siempre 422 (fecha anterior a hoy segun el servidor). */
+  fechaPasada: http.post('*/api/v1/listas', fechaPasada),
+  /** `/ultima` devuelve la lista anterior (con `advertencia_datos_antiguos: true`). */
+  ultimaConDatosAntiguos: http.get('*/api/v1/listas/ultima', () =>
+    HttpResponse.json(listaAnterior()),
+  ),
+  sinListas: [
+    http.get('*/api/v1/listas/ultima', () =>
+      noEncontrado('Aun no se ha generado ninguna lista.'),
+    ),
+    http.get('*/api/v1/listas', () => HttpResponse.json([])),
+  ],
 }
 
 export const handlers = [
   http.post('*/api/v1/listas', async ({ request }) => {
     const body = (await request.json()) as GenerarBody
-    return HttpResponse.json(lista(body.horizonte_dias, body.top_k), { status: 201 })
+    const fecha = body.fecha_referencia ?? undefined
+    // Comparacion lexicografica valida para `YYYY-MM-DD`.
+    if (fecha !== undefined && fecha < hoyLocal()) return fechaPasada()
+    return HttpResponse.json(listaReciente(body.horizonte_dias, body.top_k, fecha), {
+      status: 201,
+    })
   }),
-  http.get('*/api/v1/listas/ultima', () => HttpResponse.json(lista())),
-  http.get('*/api/v1/listas/:id/excel', ({ params }) =>
-    params.id === String(LISTA_ID)
+  http.get('*/api/v1/listas', () =>
+    HttpResponse.json([resumen(listaReciente()), resumen(listaAnterior())]),
+  ),
+  http.get('*/api/v1/listas/ultima', () => HttpResponse.json(listaReciente())),
+  http.get('*/api/v1/listas/:id/excel', ({ params }) => {
+    const lista = listaPorId(params.id)
+    return lista
       ? new HttpResponse(new Uint8Array([0x50, 0x4b, 0x03, 0x04]), {
           headers: {
             'Content-Type': XLSX,
-            'Content-Disposition': `attachment; filename="lista-priorizada-${LISTA_ID}.xlsx"`,
+            'Content-Disposition': `attachment; filename="lista_${lista.id}_${lista.fecha_generacion}.xlsx"`,
           },
         })
-      : noEncontrado('La lista no existe.'),
-  ),
-  http.get('*/api/v1/listas/:id', ({ params }) =>
-    params.id === String(LISTA_ID) ? HttpResponse.json(lista()) : noEncontrado('La lista no existe.'),
-  ),
+      : noEncontrado('La lista no existe.')
+  }),
+  http.get('*/api/v1/listas/:id', ({ params }) => {
+    const lista = listaPorId(params.id)
+    return lista ? HttpResponse.json(lista) : noEncontrado('La lista no existe.')
+  }),
   http.get('*/api/v1/predicciones/:id/campanias-sugeridas', () =>
     HttpResponse.json(CAMPANIAS_SUGERIDAS),
   ),

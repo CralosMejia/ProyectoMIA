@@ -1,11 +1,12 @@
-"""Router del modulo sistema: estado general para la pantalla de inicio (CU-03).
+"""Router del modulo sistema: estado general para la pantalla de inicio (CU-03)."""
 
-Contrato publicado; la logica responde ``501`` hasta su dia del cronograma.
-"""
+from typing import Annotated
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 
-from app.api.openapi import error_responses, raise_not_implemented, success_response
+from app.api.dependencies import get_consultar_estado_sistema
+from app.api.openapi import OpenApiResponses, error_responses
+from app.application.sistema.consultar_estado import ConsultarEstadoSistema
 from app.application.sistema.dtos import EstadoSistemaDTO
 
 router = APIRouter(prefix="/sistema", tags=["sistema"])
@@ -15,11 +16,49 @@ ESTADO_SISTEMA_EXAMPLE = {
     "migracion_historica": "COMPLETADA",
     "modelo_vigente": {
         "version": "v1",
-        "fecha_entrenamiento": "2026-09-28T14:30:00Z",
-        "ciclos_entrenamiento": 1843,
+        "fecha_entrenamiento": "2026-09-29T14:30:00Z",
+        "ciclos_entrenamiento": 1564,
     },
-    "ultima_carga_en": "2026-09-27T16:05:00Z",
-    "proxima_fecha_reentrenamiento": "2026-10-28",
+    "ultima_carga_en": "2026-09-29T14:30:00Z",
+    "proxima_fecha_reentrenamiento": "2027-03-29",
+}
+ESTADO_INICIALIZANDO_EXAMPLE = {
+    "estado": "INICIALIZANDO",
+    "migracion_historica": "EN_CURSO",
+    "modelo_vigente": None,
+    "ultima_carga_en": None,
+    "proxima_fecha_reentrenamiento": None,
+}
+ESTADO_FALTAN_DATOS_EXAMPLE = {
+    "estado": "FALTAN_DATOS_HISTORICOS",
+    "migracion_historica": "PENDIENTE",
+    "modelo_vigente": None,
+    "ultima_carga_en": None,
+    "proxima_fecha_reentrenamiento": None,
+}
+
+_ESTADO_RESPONSES: OpenApiResponses = {
+    status.HTTP_200_OK: {
+        "description": (
+            "Estado actual del sistema: INICIALIZANDO mientras migra el historico, "
+            "FALTAN_DATOS_HISTORICOS si no se pudieron migrar los libros, LISTO al terminar."
+        ),
+        "content": {
+            "application/json": {
+                "examples": {
+                    "listo": {"summary": "Sistema listo", "value": ESTADO_SISTEMA_EXAMPLE},
+                    "inicializando": {
+                        "summary": "Migrando el historico",
+                        "value": ESTADO_INICIALIZANDO_EXAMPLE,
+                    },
+                    "faltan_datos": {
+                        "summary": "Faltan los datos historicos",
+                        "value": ESTADO_FALTAN_DATOS_EXAMPLE,
+                    },
+                }
+            }
+        },
+    }
 }
 
 
@@ -27,13 +66,10 @@ ESTADO_SISTEMA_EXAMPLE = {
     "/estado",
     response_model=EstadoSistemaDTO,
     status_code=status.HTTP_200_OK,
-    responses={
-        **success_response(
-            status.HTTP_200_OK, "Estado actual del sistema.", ESTADO_SISTEMA_EXAMPLE
-        ),
-        **error_responses(status.HTTP_403_FORBIDDEN, status.HTTP_501_NOT_IMPLEMENTED),
-    },
+    responses={**_ESTADO_RESPONSES, **error_responses(status.HTTP_403_FORBIDDEN)},
     summary="Estado del sistema (inicializando, faltan datos historicos o listo)",
 )
-def get_estado_sistema() -> EstadoSistemaDTO:
-    raise_not_implemented()
+def get_estado_sistema(
+    consulta: Annotated[ConsultarEstadoSistema, Depends(get_consultar_estado_sistema)],
+) -> EstadoSistemaDTO:
+    return consulta.ejecutar()

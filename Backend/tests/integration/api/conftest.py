@@ -11,6 +11,19 @@ from sqlalchemy.engine import URL
 
 from app.core.config import Settings
 from app.main import create_app
+from tests.integration.api.listas_datos import (  # noqa: F401 - fixtures de las pruebas de listas
+    base_limpia,
+    base_migrada,
+)
+
+
+@pytest.fixture(autouse=True)
+def _sin_migracion_al_arrancar(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Por defecto las pruebas de API no lanzan la migracion historica al arrancar (T13).
+
+    ``Settings`` lee la variable del entorno; una prueba puede pasar el valor explicito.
+    """
+    monkeypatch.setenv("MIGRAR_HISTORICO_AL_ARRANCAR", "false")
 
 
 @pytest.fixture

@@ -49,17 +49,18 @@ Público. Informa si el servicio y la base de datos responden (`SELECT 1`, timeo
 
 ### Operaciones de negocio (contrato del día 1, R-002)
 
-Las 18 operaciones están publicadas en `/openapi.json` con DTOs Pydantic (`app/application/{modulo}/dtos.py`) y un ejemplo en la respuesta de éxito y en cada error. **Todas responden `501 not_implemented`** hasta que se implemente su caso de uso; la validación de entrada ya está activa (`400 validation_error`). Sin login (RT-12): no hay filtro por propietario; todas documentan `403` (CU-00).
+Las operaciones están publicadas en `/openapi.json` con DTOs Pydantic (`app/application/{modulo}/dtos.py`) y un ejemplo en la respuesta de éxito y en cada error. Las marcadas **(real)** tienen su caso de uso implementado (R-004, día 3); **el resto responde `501 not_implemented`** hasta que se implemente; la validación de entrada ya está activa (`400 validation_error`). Sin login (RT-12): no hay filtro por propietario; todas documentan `403` (CU-00).
 
 | Operación | Éxito | Errores además de `403`/`501` | CU |
 |---|---|---|---|
-| `GET /sistema/estado` | 200 `EstadoSistemaDTO` | — | CU-03 |
+| `GET /sistema/estado` **(real)** | 200 `EstadoSistemaDTO` | — | CU-03 |
 | `POST /cargas/vista-previa` (multipart `archivo`) | 200 `VistaPreviaCargaDTO` | 400, 409, 413 | CU-01 |
 | `POST /cargas` (multipart `archivo`; revalida, sin estado entre vista previa y confirmación) | 201 `CargaDTO` | 400, 409, 413, 422 | CU-01 |
-| `POST /listas` | 201 `ListaPriorizadaDTO` | 400, 409 | CU-04 |
-| `GET /listas/ultima` | 200 `ListaPriorizadaDTO` | 404 | CU-05 |
-| `GET /listas/{lista_id}` | 200 `ListaPriorizadaDTO` | 400, 404 | CU-05 |
-| `GET /listas/{lista_id}/excel` | 200 `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | 400, 404 | CU-12 |
+| `POST /listas` **(real)** | 201 `ListaPriorizadaDTO` | 400 (horizonte fuera de 1..31, K menor que 1 o fecha inválida), 409 (sistema no `LISTO`: migración en curso o sin modelo; tiene precedencia sobre el 422), 422 `domain_rule_violated` "La fecha de la lista debe ser hoy o posterior." (R-005) | CU-04 |
+| `GET /listas` **(real; nuevo en R-004)** | 200 `[ListaResumenDTO]`, de la más reciente a la más antigua | — | CU-05 |
+| `GET /listas/ultima` **(real)** | 200 `ListaPriorizadaDTO` | 404 (no hay listas) | CU-05 |
+| `GET /listas/{lista_id}` **(real)** | 200 `ListaPriorizadaDTO` | 400, 404 | CU-05 |
+| `GET /listas/{lista_id}/excel` **(real)** | 200 `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, `Content-Disposition: attachment; filename="lista_<id>_<fecha>.xlsx"` (sin datos personales) | 400, 404 | CU-12 |
 | `GET /campanias` | 200 `[CampaniaDTO]` | — | CU-06 |
 | `POST /campanias` | 201 `CampaniaDTO` | 400 | CU-06 |
 | `PUT /campanias/{campania_id}` | 200 `CampaniaDTO` | 400, 404 | CU-06 |
@@ -78,4 +79,11 @@ Convenciones de los DTOs:
 - Decimales (`score`, `umbral_*`, `tasa_renovacion`) viajan como **string** decimal; nunca como número de coma flotante.
 - `version` del modelo (`modelo_vigente.version`, `modelo_version`, `estado_modelo.version`) es **string** `"v<n>"` (p. ej. `"v1"`); en BD es `INTEGER` ([09](backend/09-esquema-base-de-datos.md)). Corrige el texto previo de T26 de R-002, que la describía como número.
 - Catálogos (`plan`, `nivel_riesgo`, respuestas SI/NO/…) con los valores de los enums del dominio; `planes` de campaña excluye `DIARIO`; `campania_ofrecida` admite SI/NO/NO_APLICA.
-- Límites propios: `nombre` de campaña 1..120, `descripcion` ≤ 500 (decisión propia, 03 no la fija), `observaciones` ≤ 500, `responsable` ≤ 120; `horizonte_dias` 1..365 (defecto 30), `top_k` ≥ 1 (defecto 25), `fecha_referencia` null = hoy del reloj.
+- Listas (cambio de contrato de R-004, decisión (b)):
+  - `ListaPriorizadaDTO`: `id`, `modelo_version`, `fecha_generacion` (**`date`**: fecha de referencia de la cartera; antes `datetime`), `creada_en` (**nuevo**, `datetime` con zona: instante en que se guardó), `horizonte_dias`, `top_k`, `umbral_alto`, `umbral_medio` (string decimal), `advertencia_datos_antiguos`, `items` ordenados por `prioridad`.
+  - `PrediccionDTO` añade `monto_cobrado` (string decimal o `null`; lo usa el Excel). `score` es string decimal de 8 decimales. `factores_principales` = hasta 3 textos; `[]` → la UI y el Excel muestran "Sin factores de riesgo destacados". `gestion_estado` y `campania_asignada` salen `null` hasta CU-08 (día 5).
+  - `ListaResumenDTO` (nuevo): `id`, `fecha_generacion`, `creada_en`, `modelo_version`, `horizonte_dias`, `top_k`, `total_items`.
+  - Una lista guardada es inmutable (RN-04.5): sus ítems se devuelven aunque el socio tenga después `deleted_at`.
+  - **R-005 (cambio de contrato):** `PrediccionDTO` ya no tiene `correo`; tiene `cedula` (string con el cero inicial, o `null` en listas antiguas con socios sin cédula). Ninguna respuesta de la API devuelve el correo (sigue en la base). Los socios sin cédula no entran en las listas nuevas. Los DTO de **respuesta** aceptan `horizonte_dias` 1..365 para leer listas antiguas; la entrada solo 1..31.
+- `GET /sistema/estado`: `INICIALIZANDO` mientras migra CU-03; `LISTO` con `modelo_vigente`; `FALTAN_DATOS_HISTORICOS` si faltan los libros o la migración falló (el motivo solo va al log; se reintenta al reiniciar el backend, ADR-004).
+- Límites propios: `nombre` de campaña 1..120, `descripcion` ≤ 500 (decisión propia, 03 no la fija), `observaciones` ≤ 500, `responsable` ≤ 120; `horizonte_dias` 1..31 en `POST /listas` (defecto 30; antes 1..365, R-005), `top_k` ≥ 1 (defecto 25), `fecha_referencia` null = hoy de negocio (Ecuador, UTC−5: `hoy_en_negocio(clock.now())`); una fecha anterior a ese día → `422`.

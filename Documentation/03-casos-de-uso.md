@@ -364,9 +364,11 @@ Los libros históricos no siguen la plantilla: una hoja por mes, el encabezado e
 
 | Parámetro | Valor por defecto | Editable |
 |---|---|---|
-| Fecha de generación | Fecha actual del reloj | Sí |
-| Horizonte | 30 días | Sí |
-| Top K (capacidad de contacto) | 25 | Sí |
+| Fecha de generación ("Fecha de la lista") | Hoy (fecha de Ecuador) | Sí; no puede ser anterior a hoy |
+| Horizonte ("Buscar socios que vencen en los próximos (días)") | 30 días | Sí; de 1 a 31 días |
+| Top K ("Socios prioritarios a contactar") | 25 | Sí |
+
+> Ajuste de R-005 (petición del usuario tras el Día 3): la fecha no puede ser pasada, el horizonte máximo es 31 días y las etiquetas de pantalla usan los nombres entre paréntesis. Guía para el personal: [06-como-funciona-la-lista.md](06-como-funciona-la-lista.md).
 
 Si la última carga de datos tiene más de 30 días respecto a la fecha de generación, la pantalla muestra una advertencia: la lista puede incluir socios que ya renovaron pero cuya renovación aún no se cargó.
 
@@ -374,7 +376,7 @@ Si la última carga de datos tiene más de 30 días respecto a la fecha de gener
 
 1. El usuario confirma los parámetros y pulsa **Generar lista**.
 2. El sistema selecciona las membresías que vencen entre la fecha de generación y el horizonte.
-3. Excluye planes `DIARIO`, duraciones implausibles y socios que ya registraron una membresía posterior, con las mismas reglas de la Sección 13.8 del notebook. El estado del registro no se usa.
+3. Excluye planes `DIARIO`, duraciones implausibles y socios que ya registraron una membresía posterior, con las mismas reglas de la Sección 13.8 del notebook. El estado del registro no se usa. Excluye también a los socios **sin cédula** (R-005): siguen en la base y en el entrenamiento, pero no aparecen en la lista.
 4. Calcula las variables con las mismas reglas del entrenamiento.
 5. Aplica el modelo vigente y obtiene el score de no renovación de cada socio.
 6. Calcula los factores principales de cada predicción.
@@ -384,7 +386,9 @@ Si la última carga de datos tiene más de 30 días respecto a la fecha de gener
 
 ### Información mostrada por socio
 
-Prioridad, nombre, celular, correo, plan, fecha de vencimiento, días para vencer, score, nivel de riesgo, factores principales, si está dentro del top K, estado de la gestión y campaña asignada, si existe.
+Prioridad, nombre, cédula, celular, plan, fecha de vencimiento, días para vencer, nivel de riesgo, motivos principales (sin el aporte numérico), estado de la gestión y campaña asignada, si existe. Los socios dentro del top K se muestran en una tabla propia ("Socios prioritarios a contactar") y el resto en "Otros socios por vencer".
+
+> Ajuste de R-005: la pantalla ya no muestra el correo, el score ni una columna de top K; el score y los aportes siguen en el Excel (CU-12).
 
 ### Reglas de negocio
 
@@ -399,7 +403,8 @@ Prioridad, nombre, celular, correo, plan, fecha de vencimiento, días para vence
 - Ningún socio que ya renovó aparece en la lista.
 - Ningún `DIARIO` aparece en la lista.
 - Los socios aparecen ordenados de mayor a menor score, con una sola fila por socio.
-- Con los datos migrados y la fecha 31-08-2026, la lista coincide con la lista operativa de septiembre del notebook (Sección 13.8).
+- Con los datos migrados y la fecha 31-08-2026, la lista coincide con la lista operativa de septiembre del notebook (Sección 13.8). Desde R-005 esa fecha ya no se puede pedir en la aplicación: la conciliación se verifica con `Backend/scripts/verificar_lista.py`, que trata a todos los socios como "con cédula".
+- Una fecha anterior a hoy se rechaza con el mensaje "La fecha de la lista debe ser hoy o posterior." (R-005).
 - Sin modelo vigente, o mientras CU-03 está en curso, el sistema informa que no puede generar la lista todavía.
 
 ---
@@ -672,7 +677,7 @@ El dashboard muestra **resultados observados, no causalidad**. Se puede decir: *
 | `cartera_completa` | Toda la cartera ordenada por score. |
 | `resumen` | Fecha de generación, horizonte, K, versión del modelo, umbrales de riesgo y conteos. |
 
-**Columnas:** prioridad, nombre, celular, correo, plan, fecha de vencimiento, días para vencer, monto cobrado, score, nivel de riesgo, factores principales, estado de la gestión y campaña asignada. Las columnas se validarán con la asesora durante la semana; el cambio de orden o nombres no afecta al diseño.
+**Columnas:** prioridad, nombre, celular, cédula (texto, con el cero inicial; desde R-005 sustituye al correo), plan, fecha de vencimiento, días para vencer, monto cobrado, score, nivel de riesgo, factores principales, estado de la gestión y campaña asignada. Las columnas se validarán con la asesora durante la semana; el cambio de orden o nombres no afecta al diseño.
 
 ### Reglas de negocio
 

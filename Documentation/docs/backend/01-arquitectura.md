@@ -30,7 +30,9 @@ Dependencias hacia dentro: `api → infrastructure → application → domain`. 
 
 **Contrato de la API (R-002):** `api/openapi.py` concentra `error_responses(...)`, `success_response(...)` y `raise_not_implemented()`; los routers `sistema`, `cargas`, `listas`, `campanias`, `gestiones` y `dashboard` publican las 18 operaciones con DTOs en `application/{modulo}/dtos.py` y responden `501` hasta tener su caso de uso ([API_CONTRACT](../API_CONTRACT.md)).
 
-**Histórico (R-003):** paquetes nuevos `domain/historico/` (conversiones, normalización, identidad, registro, ciclos y etiqueta; solo librería estándar), `application/historial/` (puertos `LectorHistorico`, `SocioRepository`, `MembresiaRepository`, `CargaRepository` y servicio `ProcesarHistorico`), `infrastructure/historico/` (lector de libros con pandas) e `infrastructure/persistence/repositories/historial.py` (inserción masiva sin `commit`/`rollback`: la transacción es de quien llama). Detalle en [11-historico.md](11-historico.md). Aún no están enlazados en el composition root (día 3, D3-BE-04).
+**Histórico (R-003):** paquetes nuevos `domain/historico/` (conversiones, normalización, identidad, registro, ciclos y etiqueta; solo librería estándar), `application/historial/` (puertos `LectorHistorico`, `SocioRepository`, `MembresiaRepository`, `CargaRepository` y servicio `ProcesarHistorico`), `infrastructure/historico/` (lector de libros con pandas) e `infrastructure/persistence/repositories/historial.py` (inserción masiva sin `commit`/`rollback`: la transacción es de quien llama). Detalle en [11-historico.md](11-historico.md). Enlazados en el composition root desde R-004 (migración al arrancar).
+
+**Modelo, migración y listas (R-004):** `domain/modelo/{variables,cartera,umbrales}.py`; el puerto `PredictorModel` pasa a recibir `Decimal | int | str | None` y devolver `score: Decimal` (corrige lo dicho arriba sobre `float`: el cruce `Decimal ↔ float` queda solo dentro de `infrastructure/ml/random_forest.py`); `application/{modelo,sistema,listas}/` (casos de uso `EntrenarModeloInicial`, `MigrarHistorico`, `ConsultarEstado`, `GenerarLista`, consultas de listas); unidades de trabajo `infrastructure/persistence/unit_of_work*.py`; `infrastructure/exportacion/excel_lista.py`. `main.py` lanza `MigrarHistorico` en un hilo al arrancar. Detalle en [12-modelo-y-listas.md](12-modelo-y-listas.md).
 
 **Composition root:** `app/main.py` (crea el engine en el `lifespan`, registra handlers de error y CORS, monta routers bajo `/api/v1`) y `app/api/dependencies.py` (enlaza puertos con implementaciones vía `Depends`). Ningún otro módulo instancia infraestructura. La app **no** crea tablas ni ejecuta migraciones al arrancar.
 
@@ -60,6 +62,8 @@ El router recibe y devuelve DTOs; nunca entidades de dominio ni ORM.
 | `CORS_ORIGINS` | lista separada por comas; cada origen `http(s)://host[:port]`; `*` rechazado |
 | `APP_ENV` | `development` · `test` · `production` |
 | `DEBUG` | `False` por defecto; solo se permite `True` con `APP_ENV` explícito `development` o `test` |
+| `HISTORICO_PATH` | carpeta de los libros dentro del contenedor; por defecto `/data/historico` (R-004) |
+| `MIGRAR_HISTORICO_AL_ARRANCAR` | `True` por defecto; lanza CU-03 en segundo plano al arrancar (R-004) |
 
 ## Errores
 
@@ -69,7 +73,7 @@ Handlers globales en `api/errors.py` con formato único `{"error":{"code","messa
 
 ## Pruebas
 
-`Backend/tests/{unit,integration}` espejando `app/`. Unit: dominio y aplicación con dobles, sin FastAPI ni BD. Integration: infraestructura y API contra PostgreSQL real (`TEST_DATABASE_URL` obligatoria; sin ella fallan, no se saltan). 132 pruebas al cierre de R-001; 729 al cierre de R-003 (`mypy app`: 67 archivos). `mypy` se ejecuta solo sobre `app/`; sobre `tests/` quedan avisos pendientes (stubs de `openpyxl` y dos puntuales). Comandos en `Backend/README.md`.
+`Backend/tests/{unit,integration}` espejando `app/`. Unit: dominio y aplicación con dobles, sin FastAPI ni BD. Integration: infraestructura y API contra PostgreSQL real (`TEST_DATABASE_URL` obligatoria; sin ella fallan, no se saltan). 132 pruebas al cierre de R-001; 729 al cierre de R-003 (`mypy app`: 67 archivos); 1.082 al cierre de R-004 (`mypy app`: 92 archivos). `mypy` se ejecuta solo sobre `app/`; sobre `tests/` quedan avisos pendientes (stubs de `openpyxl` y dos puntuales). Comandos en `Backend/README.md`.
 
 ## Pendiente (fuera de R-001)
 

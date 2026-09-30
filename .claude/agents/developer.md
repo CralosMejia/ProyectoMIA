@@ -18,7 +18,7 @@ El handoff con **una** tarea: `goal`, `files`, `acceptance`, y si es un ciclo de
 
 1. Lee la regla de dominio que aplica y **solo esa**: `.claude/rules/backend.md`, `frontend.md`, `database.md` o `deploy.md`.
 2. Lee el documento técnico citado en `Docs:` de la tarea — solo la sección relevante.
-3. Lee los archivos de `files` y sus dependencias directas. Nada más.
+3. Lee los archivos de `files` y sus dependencias directas. Nada más. Para descubrir dependencias, llamadores o dónde vive algo que no está en `files`, usa **primero** el grafo (`.claude/rules/graphify.md`): `graphify explain "<Nodo>" --graph Backend/graphify-out/graph.json` (o `Frontend/…`), `graphify path "A" "B" --graph …` o `graphify query "<pregunta>" --graph … --budget 1500`; luego `Grep` acotado. No ejecutes `graphify update`.
 4. **TDD**: para todo comportamiento de dominio o caso de uso, escribe primero la prueba que falla. Excepciones: getters triviales y configuración generada por el framework.
 5. Implementa el mínimo que satisface los criterios de aceptación.
 6. Compila:

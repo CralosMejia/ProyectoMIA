@@ -5,6 +5,9 @@ export interface EstadoSistemaPanelProps {
 }
 
 const FECHA_HORA = new Intl.DateTimeFormat('es-EC', { dateStyle: 'long', timeStyle: 'short' })
+const FECHA = new Intl.DateTimeFormat('es-EC', { dateStyle: 'long' })
+
+export const SIN_MODELO = 'El modelo de predicción aún no está disponible'
 
 function formatear(fecha: Date | null): string {
   return fecha ? FECHA_HORA.format(fecha) : 'Sin registro'
@@ -40,23 +43,12 @@ export function EstadoSistemaPanel({ estado }: EstadoSistemaPanelProps) {
   return (
     <div className="rounded-card border border-ink/20 p-4 font-sans text-ink">
       <h2 className="mb-4 text-lg font-semibold">Sistema listo</h2>
-      {modelo ? (
-        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
-          <dt className="text-ink/70">Versión del modelo</dt>
-          <dd>{modelo.version}</dd>
-          <dt className="text-ink/70">Fecha de entrenamiento</dt>
-          <dd>{formatear(modelo.fechaEntrenamiento)}</dd>
-          <dt className="text-ink/70">Última carga</dt>
-          <dd>{formatear(estado.ultimaCargaEn)}</dd>
-        </dl>
-      ) : (
-        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
-          <dt className="text-ink/70">Modelo</dt>
-          <dd>Sin modelo vigente</dd>
-          <dt className="text-ink/70">Última carga</dt>
-          <dd>{formatear(estado.ultimaCargaEn)}</dd>
-        </dl>
-      )}
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
+        <dt className="text-ink/70">Modelo de predicción</dt>
+        <dd>{modelo ? `Activo desde ${FECHA.format(modelo.fechaEntrenamiento)}` : SIN_MODELO}</dd>
+        <dt className="text-ink/70">Última carga</dt>
+        <dd>{formatear(estado.ultimaCargaEn)}</dd>
+      </dl>
     </div>
   )
 }

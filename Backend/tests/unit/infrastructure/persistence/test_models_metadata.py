@@ -340,6 +340,14 @@ def test_membresias_query_indexes() -> None:
     assert [c.name for c in by_socio.columns] == ["socio_id", "fecha_vencimiento"]
     by_date = index("membresias", "ix_membresias_fecha_vencimiento")
     assert [c.name for c in by_date.columns] == ["fecha_vencimiento"]
+    by_actividad = index("membresias", "ix_membresias_socio_id_fecha_actividad")
+    assert [c.name for c in by_actividad.columns] == ["socio_id", "fecha_actividad"]
+
+
+def test_membresias_fecha_actividad_is_required_date() -> None:
+    fecha_actividad = col("membresias", "fecha_actividad")
+    assert isinstance(fecha_actividad.type, Date)
+    assert fecha_actividad.nullable is False
 
 
 # ------------------------------------------------------------------ modelos

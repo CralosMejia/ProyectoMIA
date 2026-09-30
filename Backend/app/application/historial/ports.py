@@ -1,4 +1,4 @@
-"""Puertos del historial: lector de libros historicos y repositorios de escritura masiva.
+"""Puertos del historial: lector de libros, escritura masiva y lecturas para predecir.
 
 Unidad de trabajo: la transaccion la gestiona siempre quien llama. Los repositorios reciben
 la sesion ya abierta en su construccion (infraestructura) y **nunca** hacen ``commit`` ni
@@ -64,7 +64,11 @@ class NuevoSocio:
 
 @dataclass(frozen=True, slots=True)
 class NuevaMembresia:
-    """Membresia a insertar. ``socio_id`` es obligatorio (``NOT NULL`` desde la ``0003``)."""
+    """Membresia a insertar.
+
+    ``socio_id`` es obligatorio (``NOT NULL`` desde la ``0003``). ``fecha_actividad`` (inicio,
+    o el mes de la hoja si falta) tambien (``NOT NULL`` desde la ``0004``).
+    """
 
     socio_id: int
     carga_id: int
@@ -72,6 +76,7 @@ class NuevaMembresia:
     forma_pago: FormaPago
     origen: OrigenMembresia
     inicio_aproximado: bool
+    fecha_actividad: date
     estado_registro: EstadoRegistro | None = None
     fecha_inicio: date | None = None
     fecha_vencimiento: date | None = None
@@ -82,6 +87,26 @@ class NuevaMembresia:
     referencia_origen: ReferenciaOrigen | None = None
     plan_original: str | None = None
     forma_pago_original: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class MembresiaParaPrediccion:
+    """Membresia vigente (no borrada) con los datos que necesitan las variables y la cartera.
+
+    ``socio_con_cedula`` indica si el socio tiene cedula registrada: la lista priorizada
+    excluye a los socios sin cedula (no se entrega su valor, solo si existe).
+    """
+
+    membresia_id: int
+    socio_id: int
+    plan: Plan
+    forma_pago: FormaPago
+    fecha_inicio: date | None
+    fecha_vencimiento: date | None
+    fecha_actividad: date
+    monto_cobrado: Decimal | None
+    inicio_aproximado: bool
+    socio_con_cedula: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,17 +146,32 @@ class SocioRepository(Protocol):
 
 @runtime_checkable
 class MembresiaRepository(Protocol):
-    """Escritura de membresias dentro de la transaccion de quien llama (sin ``commit``)."""
+    """Membresias dentro de la transaccion de quien llama (sin ``commit``)."""
 
     def insertar_en_bloque(self, membresias: Sequence[NuevaMembresia]) -> int:
         """Inserta ``membresias`` y devuelve cuantas se insertaron."""
         ...
 
+    def listar_para_prediccion(self) -> list[MembresiaParaPrediccion]:
+        """Todas las membresias no borradas logicamente, en una sola consulta.
+
+        Cada una indica si su socio tiene cedula (``socio_con_cedula``).
+        """
+        ...
+
 
 @runtime_checkable
 class CargaRepository(Protocol):
-    """Registro de cargas dentro de la transaccion de quien llama (sin ``commit``)."""
+    """Cargas dentro de la transaccion de quien llama (sin ``commit``)."""
 
     def crear(self, carga: NuevaCarga) -> int:
         """Inserta la carga y devuelve su id."""
+        ...
+
+    def ultima_fecha_carga(self) -> datetime | None:
+        """Mayor ``fecha_carga`` de las cargas no borradas, o ``None`` si no hay ninguna."""
+        ...
+
+    def hay_migracion_o_membresias(self) -> bool:
+        """``True`` si existe la migracion historica o alguna membresia (no borradas)."""
         ...

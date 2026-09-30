@@ -19,6 +19,8 @@ git -C Backend diff        # o Frontend, según la tarea
 git -C Backend diff --stat
 ```
 
+Para saber a quién afecta lo cambiado (llamadores, endpoints expuestos, capas que cruza) usa el grafo antes de abrir archivos fuera del diff: `graphify explain "<Nodo>" --graph Backend/graphify-out/graph.json` o `graphify path "<Router>" "<Repositorio>" --graph …` (Frontend: `Frontend/graphify-out/graph.json`) (`.claude/rules/graphify.md`). El grafo orienta; el hallazgo se basa en el diff.
+
 ## Checklist (en este orden de prioridad)
 
 **Aislamiento entre usuarios / tenants — normalmente el riesgo número uno**

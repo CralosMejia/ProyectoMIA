@@ -7,7 +7,14 @@ pytestmark = pytest.mark.unit
 
 FAKE_DB_CREDENTIAL = "fake-credential-for-tests"
 DB_URL = f"postgresql+psycopg://app_user:{FAKE_DB_CREDENTIAL}@localhost:5432/appdb"
-ENV_VARS = ("DATABASE_URL", "CORS_ORIGINS", "APP_ENV", "DEBUG")
+ENV_VARS = (
+    "DATABASE_URL",
+    "CORS_ORIGINS",
+    "APP_ENV",
+    "DEBUG",
+    "HISTORICO_PATH",
+    "MIGRAR_HISTORICO_AL_ARRANCAR",
+)
 
 
 @pytest.fixture(autouse=True)
@@ -306,3 +313,25 @@ def test_settings_debug_false_without_explicit_app_env_is_accepted(
     monkeypatch.setenv("DEBUG", "false")
 
     assert Settings().DEBUG is False
+
+
+def test_settings_historico_defaults_to_container_path_and_migrates_on_startup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", DB_URL)
+
+    settings = Settings()
+
+    assert settings.HISTORICO_PATH.as_posix() == "/data/historico"
+    assert settings.MIGRAR_HISTORICO_AL_ARRANCAR is True
+
+
+def test_settings_historico_reads_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", DB_URL)
+    monkeypatch.setenv("HISTORICO_PATH", "/otra/carpeta")
+    monkeypatch.setenv("MIGRAR_HISTORICO_AL_ARRANCAR", "false")
+
+    settings = Settings()
+
+    assert settings.HISTORICO_PATH.as_posix() == "/otra/carpeta"
+    assert settings.MIGRAR_HISTORICO_AL_ARRANCAR is False

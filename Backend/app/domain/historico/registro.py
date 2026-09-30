@@ -68,6 +68,8 @@ class RegistroHistorico:
     duracion_dias: int | None
     monto_cobrado: Decimal | None
     referencia: tuple[int, str, int]
+    celular: str | None = field(default=None, repr=False)
+    correo: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,6 +114,13 @@ def _texto_original(valor: object) -> str | None:
     return texto or None
 
 
+def _texto_contacto(valor: object) -> str | None:
+    """Celular o correo como texto; un numero entero de celda no arrastra ``.0``."""
+    if isinstance(valor, float) and valor.is_integer():
+        valor = int(valor)
+    return _texto_original(valor)
+
+
 def _registro(fila: FilaCruda, nombre_normalizado: str) -> tuple[RegistroHistorico, bool]:
     """Construye el registro; el booleano indica si el monto era invalido (negativo)."""
     fecha_inicio = convertir_fecha(fila.fecha_inicio)
@@ -140,6 +149,8 @@ def _registro(fila: FilaCruda, nombre_normalizado: str) -> tuple[RegistroHistori
         duracion_dias=duracion,
         monto_cobrado=None if monto_invalido else monto,
         referencia=(fila.anio, fila.hoja, fila.fila),
+        celular=_texto_contacto(fila.celular),
+        correo=_texto_contacto(fila.correo),
     )
     return registro, monto_invalido
 

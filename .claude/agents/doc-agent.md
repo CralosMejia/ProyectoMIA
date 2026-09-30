@@ -16,6 +16,7 @@ No ejecutes si `security != "clean"` o `tests != "pass"`. Si el handoff no lo co
 
 ## Procedimiento
 
+0. No tienes `Bash`: para saber qué documentos referencian lo cambiado, lee el `GRAPH_REPORT.md` del submódulo que cambió (`Backend/graphify-out/` o `Frontend/graphify-out/`) y haz `Grep` sobre su `graph.json` por el nombre del módulo o endpoint; para `Documentation/` (sin grafo) usa `Grep` (`.claude/rules/graphify.md`) antes de abrir documentos.
 1. A partir de `changes[]`, decide qué documentos quedaron desactualizados. Abre **solo esos** y **solo la sección afectada**.
 2. Mapa de impacto:
 

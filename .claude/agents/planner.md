@@ -18,7 +18,7 @@ El requerimiento en texto y, si existe, el contenido de `.harness/handoff.json`.
 
 1. Lee `Documentation/ACTION_PLAN.md` (es un board corto, no el roadmap completo).
 2. Identifica el producto activo `P##` y lee **solo** `Documentation/products/P##-*.md`.
-3. Localiza los archivos afectados con `Grep`/`Glob`. Si el proyecto tiene un índice o grafo de código, consúltalo antes de explorar a mano.
+3. Localiza los archivos afectados **primero con el grafo** (`.claude/rules/graphify.md`): el `GRAPH_REPORT.md` del submódulo afectado (`Backend/` o `Frontend/graphify-out/`) y `Grep` sobre su `graph.json` para medir impacto. Solo después acota con `Grep`/`Glob` sobre lo que el grafo señaló. Cita en cada tarea los archivos que devolvió el grafo en `files`, para que el developer no tenga que buscarlos. No tienes `Bash`, así que no ejecutas `graphify`: lees el grafo como archivo.
 4. Lee **solo los documentos técnicos que vas a citar** (`Documentation/docs/backend/*` o `docs/frontend/*`) y solo la sección relevante.
 5. Verifica alcance: si el requerimiento cae en el §"fuera de alcance" de `Documentation/DEVELOPMENT_GUIDELINES.md`, detente y devuelve `state: BLOCKED`.
 

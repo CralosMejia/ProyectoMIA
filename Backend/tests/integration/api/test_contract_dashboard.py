@@ -27,6 +27,7 @@ BUSINESS_OPERATIONS: set[tuple[str, str]] = {
     ("post", "/api/v1/cargas/vista-previa"),
     ("post", "/api/v1/cargas"),
     ("post", "/api/v1/listas"),
+    ("get", "/api/v1/listas"),
     ("get", "/api/v1/listas/ultima"),
     ("get", "/api/v1/listas/{lista_id}"),
     ("get", "/api/v1/listas/{lista_id}/excel"),
@@ -45,6 +46,17 @@ BUSINESS_OPERATIONS: set[tuple[str, str]] = {
 SUCCESS_CODES = {"200", "201"}
 # El Excel es binario: su exito se documenta con el media type y el schema, sin ejemplo JSON.
 BINARY_OPERATIONS = {("get", "/api/v1/listas/{lista_id}/excel")}
+# Exito documentado con varios ejemplos (``examples``): un ejemplo por estado (R-004, T14).
+MULTI_EXAMPLE_OPERATIONS = {("get", "/api/v1/sistema/estado")}
+# Operaciones ya implementadas: dejan de declarar ``501`` (R-004: sistema y listas).
+IMPLEMENTED_OPERATIONS = {
+    ("get", "/api/v1/sistema/estado"),
+    ("post", "/api/v1/listas"),
+    ("get", "/api/v1/listas"),
+    ("get", "/api/v1/listas/ultima"),
+    ("get", "/api/v1/listas/{lista_id}"),
+    ("get", "/api/v1/listas/{lista_id}/excel"),
+}
 
 
 @pytest.mark.parametrize("params", [{}, {"mes": "2026-09"}, {"mes": "2026-12"}])
@@ -65,7 +77,7 @@ def test_openapi_dashboard_declares_examples(openapi_spec: dict[str, Any]) -> No
     )
 
 
-def test_openapi_contains_exactly_the_18_business_operations_plus_health(
+def test_openapi_contains_exactly_the_19_business_operations_plus_health(
     openapi_spec: dict[str, Any],
 ) -> None:
     published = {
@@ -75,7 +87,7 @@ def test_openapi_contains_exactly_the_18_business_operations_plus_health(
         if method in {"get", "post", "put", "patch", "delete"}
     }
 
-    assert len(BUSINESS_OPERATIONS) == 18
+    assert len(BUSINESS_OPERATIONS) == 19
     assert published == BUSINESS_OPERATIONS | {("get", "/api/v1/health")}
 
 
@@ -86,9 +98,15 @@ def test_openapi_business_operation_declares_success_and_501_examples(
     op = operation(openapi_spec, method, path)
     success = SUCCESS_CODES & set(op["responses"])
     assert len(success) == 1, f"{method.upper()} {path} debe declarar una respuesta de exito"
-    if (method, path) not in BINARY_OPERATIONS:
+    if (method, path) in MULTI_EXAMPLE_OPERATIONS:
+        media = op["responses"][success.pop()]["content"]["application/json"]
+        assert media["examples"]
+    elif (method, path) not in BINARY_OPERATIONS:
         assert json_example(op, int(success.pop())) is not None
-    assert json_example(op, 501)["error"]["code"] == "not_implemented"
+    if (method, path) in IMPLEMENTED_OPERATIONS:
+        assert "501" not in op["responses"]
+    else:
+        assert json_example(op, 501)["error"]["code"] == "not_implemented"
 
 
 def test_dashboard_example_serializes_tasa_renovacion_as_string(

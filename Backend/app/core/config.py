@@ -1,5 +1,6 @@
 """Configuracion de la aplicacion, cargada y validada desde variables de entorno."""
 
+from pathlib import Path
 from typing import Annotated, Literal, Self
 from urllib.parse import urlsplit
 
@@ -10,6 +11,8 @@ WILDCARD_ORIGIN = "*"
 ALLOWED_ORIGIN_SCHEMES = frozenset({"http", "https"})
 DATABASE_URL_SCHEME = "postgresql+psycopg://"
 DEBUG_ALLOWED_ENVS = frozenset({"development", "test"})
+# Carpeta de los libros historicos dentro del contenedor (volumen :ro de HISTORICO_DIR).
+HISTORICO_PATH_POR_DEFECTO = Path("/data/historico")
 
 
 def _is_valid_origin(origin: str) -> bool:
@@ -49,6 +52,9 @@ class Settings(BaseSettings):
     CORS_ORIGINS: Annotated[list[str], NoDecode] = []
     APP_ENV: Literal["development", "test", "production"] = "development"
     DEBUG: bool = False
+    # CU-03 (ADR-004): migracion del historico en segundo plano al arrancar con la base vacia.
+    HISTORICO_PATH: Path = HISTORICO_PATH_POR_DEFECTO
+    MIGRAR_HISTORICO_AL_ARRANCAR: bool = True
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

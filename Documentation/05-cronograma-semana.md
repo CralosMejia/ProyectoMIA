@@ -159,28 +159,77 @@
 
 **Base de datos**
 
-| ID | Tarea | Resp. | Depende de | Hecho cuando |
-|---|---|---|---|---|
-| D3-BD-01 | Repositorios de `modelo` (guarda el artefacto en `bytea`; solo uno vigente), `estado_sistema` (con bloqueo consultivo de PostgreSQL) y `lista_priorizada` + `prediccion`. | A | D1-BD-02 | Pruebas de integración: un solo modelo vigente; el bloqueo impide una segunda migración simultánea. |
+| ID | Tarea | Resp. | Depende de | Hecho cuando | Estado |
+|---|---|---|---|---|---|
+| D3-BD-01 | Repositorios de `modelo` (guarda el artefacto en `bytea`; solo uno vigente), `estado_sistema` (con bloqueo consultivo de PostgreSQL) y `lista_priorizada` + `prediccion`. | A | D1-BD-02 | Pruebas de integración: un solo modelo vigente; el bloqueo impide una segunda migración simultánea. | Hecho (R-004 T2–T5); además `membresias.fecha_actividad NOT NULL` (T1, migración `0004`) |
 
 **Backend**
 
-| ID | Tarea | Resp. | Depende de | Hecho cuando |
-|---|---|---|---|---|
-| D3-BE-01 | **TDD** · Variables en T−30 (Sección 7.2 a 7.4): historial previo, antigüedad, monto histórico, días desde la última membresía, imputaciones y `mes_vencimiento`. | A | D2-BE-04 | Pruebas con historiales pequeños conocidos. |
-| D3-BE-02 | Adaptador de scikit-learn que implementa `PredictorModel`: pipeline y parámetros del notebook, entrenamiento, `predict_proba`, factores principales (Sección 13.3) y serialización. | A | D3-BE-01 | Prueba: entrenar con datos sintéticos, serializar, deserializar y obtener los mismos scores. |
-| D3-BE-03 | Umbrales por percentiles (20 / 30 / 50 sobre los últimos 3 meses con resultado conocido). | A | D3-BE-02 | Prueba unitaria. |
-| D3-BE-04 | Migración atómica al arrancar: en segundo plano, con bloqueo y en una sola transacción (datos + modelo v1 + próxima fecha de reentrenamiento + informe). Si falla, se revierte todo. Endpoint de estado del sistema. | A | D2-BD-01, D3-BD-01, D3-BE-03 | Arranque en limpio con datos sintéticos → `COMPLETADA`; un fallo forzado del entrenamiento → base vacía; `/health` responde durante la migración. |
-| D3-BE-05 | CU-04 · Generar lista: cartera en el horizonte, exclusión de renovados y `DIARIO`, score, factores, orden, una fila por socio, top K y nivel. Se guarda con su versión de modelo. Advertencia si la última carga tiene más de 30 días. | A | D3-BE-04 | Con los libros reales y la fecha 31-08-2026, coincide con la lista de septiembre del notebook. |
-| D3-BE-06 | CU-12 · Excel en memoria (`top_K`, `cartera_completa`, `resumen`) con neutralización de fórmulas. | A | D3-BE-05 | Prueba: un nombre que empieza por `=` queda como texto. |
+| ID | Tarea | Resp. | Depende de | Hecho cuando | Estado |
+|---|---|---|---|---|---|
+| D3-BE-01 | **TDD** · Variables en T−30 (Sección 7.2 a 7.4): historial previo, antigüedad, monto histórico, días desde la última membresía, imputaciones y `mes_vencimiento`. | A | D2-BE-04 | Pruebas con historiales pequeños conocidos. | Hecho (R-004 T6) |
+| D3-BE-02 | Adaptador de scikit-learn que implementa `PredictorModel`: pipeline y parámetros del notebook, entrenamiento, `predict_proba`, factores principales (Sección 13.3) y serialización. | A | D3-BE-01 | Prueba: entrenar con datos sintéticos, serializar, deserializar y obtener los mismos scores. | Hecho (R-004 T9, T10) |
+| D3-BE-03 | Umbrales por percentiles (20 / 30 / 50 sobre los últimos 3 meses con resultado conocido). | A | D3-BE-02 | Prueba unitaria. | Hecho (R-004 T8, T10) |
+| D3-BE-04 | Migración atómica al arrancar: en segundo plano, con bloqueo y en una sola transacción (datos + modelo v1 + próxima fecha de reentrenamiento + informe). Si falla, se revierte todo. Endpoint de estado del sistema. | A | D2-BD-01, D3-BD-01, D3-BE-03 | Arranque en limpio con datos sintéticos → `COMPLETADA`; un fallo forzado del entrenamiento → base vacía; `/health` responde durante la migración. | Hecho (R-004 T11–T14) |
+| D3-BE-05 | CU-04 · Generar lista: cartera en el horizonte, exclusión de renovados y `DIARIO`, score, factores, orden, una fila por socio, top K y nivel. Se guarda con su versión de modelo. Advertencia si la última carga tiene más de 30 días. | A | D3-BE-04 | Con los libros reales y la fecha 31-08-2026, coincide con la lista de septiembre del notebook. | Hecho (R-004 T7, T15, T16, T19): 25/25 iguales al notebook |
+| D3-BE-06 | CU-12 · Excel en memoria (`top_K`, `cartera_completa`, `resumen`) con neutralización de fórmulas. | A | D3-BE-05 | Prueba: un nombre que empieza por `=` queda como texto. | Hecho (R-004 T17–T18) |
 
 **Frontend**
 
-| ID | Tarea | Resp. | Depende de | Hecho cuando |
-|---|---|---|---|---|
-| D3-FE-01 | Página Lista: parámetros (fecha, horizonte, K), botón Generar, tabla (prioridad, contacto, plan, vencimiento, días, score, nivel, factores, top K) y advertencia de datos antiguos. | B | D1-FE-03 | Pruebas con datos simulados. |
-| D3-FE-02 | Botón de descarga del Excel de la lista. | B | D3-FE-01 | Prueba: llama al endpoint con el id de la lista. |
-| D3-FE-03 | Historial de listas generadas (selector de listas anteriores). | B | D3-FE-01 | Prueba con dos listas simuladas. |
+| ID | Tarea | Resp. | Depende de | Hecho cuando | Estado |
+|---|---|---|---|---|---|
+| D3-FE-01 | Página Lista: parámetros (fecha, horizonte, K), botón Generar, tabla (prioridad, contacto, plan, vencimiento, días, score, nivel, factores, top K) y advertencia de datos antiguos. | B | D1-FE-03 | Pruebas con datos simulados. | Hecho (R-004 T20–T21); verificada también contra la API real (T25) |
+| D3-FE-02 | Botón de descarga del Excel de la lista. | B | D3-FE-01 | Prueba: llama al endpoint con el id de la lista. | Hecho (R-004 T22) |
+| D3-FE-03 | Historial de listas generadas (selector de listas anteriores). | B | D3-FE-01 | Prueba con dos listas simuladas. | Hecho (R-004 T23) |
+
+#### Avance y resumen del Día 3
+
+**Estado:** cerrado · 10 de 10 tareas hechas en un solo requerimiento (R-004, `DONE`, 25 tareas de desarrollo + documentación). Hito verificado: `docker compose down -v && up -d --build` con los libros reales → `migrate` 0 → estado `INICIALIZANDO` → `LISTO` en unos 5 s (`/health` 200 todo el tiempo), modelo v1 vigente con 1.564 ciclos de entrenamiento, 2.748 membresías y 1.410 socios; en http://localhost:8080 (sin MSW) la lista al 31-08-2026 da 57 socios y el top 25 igual al del notebook; el Excel se descarga con sus 3 hojas.
+
+**Realizado**
+- Base de datos: migración `0004` (`membresias.fecha_actividad DATE NOT NULL` + índice `(socio_id, fecha_actividad)`); repositorios de modelo, intentos, `estado_sistema` con bloqueo consultivo, listas y predicciones; unidades de trabajo. Detalle: [09-esquema-base-de-datos](docs/backend/09-esquema-base-de-datos.md).
+- Backend: variables en T−30 (TDD), cartera y top K, umbrales por percentiles, adaptador scikit-learn (pipeline §9.5, factores §13.3, artefacto joblib en `bytea`, scores `Decimal` de 8 decimales), `EntrenarModeloInicial`, `MigrarHistorico` atómico en segundo plano al arrancar, `GET /sistema/estado` real, `POST /listas`, `GET /listas` (nuevo), `/listas/ultima`, `/listas/{id}` y `/listas/{id}/excel` (Excel en memoria, fórmulas neutralizadas). Detalle: [12-modelo-y-listas](docs/backend/12-modelo-y-listas.md); contrato: [API_CONTRACT](docs/API_CONTRACT.md).
+- Frontend: página Lista (parámetros, Generar, tabla con `RiskBadge`, advertencia de datos antiguos, `409` si el sistema no está listo), botón Excel, historial de listas e Inicio que vuelve a consultar cada 5 s mientras inicializa ([frontend/01-arquitectura](docs/frontend/01-arquitectura.md)).
+- Despliegue: `compose.yaml` pasa `HISTORICO_PATH=/data/historico` al backend; `Backend/README.md` §Primer arranque.
+- Pruebas: Backend 1.082 pytest, `ruff`, `format` (198 archivos), `mypy app` (92), `lint-imports` (7 contratos); Frontend 323 Vitest, `lint` 0; E2E Playwright 1/1.
+
+**Conciliación con el notebook (libros reales, `scripts/verificar_lista.py`)**
+- Salida `0` con scikit-learn 1.8.0: cartera 59, ya renovaron 2, a priorizar 57 (57 socios), 1.564 ciclos de entrenamiento; top 25 con probabilidades, orden y factores iguales al notebook. El empate en el corte (posición 25) se acepta como conjunto.
+- Con scikit-learn 1.9.1 el bosque cambiaba (24/25 del top iguales, probabilidades ±0,001–0,016): se fija 1.8.0, la versión del notebook.
+- Corregido durante la conciliación: la referencia de los factores pasa de "todo el entrenamiento" a los evaluables con vencimiento en 2025, como `X_train` del notebook (con la primera no coincidían los factores).
+
+**Desviaciones**
+- Niveles de riesgo por percentiles 20/30/50 (CU-05) en lugar de los umbrales fijos 0,70/0,50 del notebook: el score y el orden coinciden, el nivel puede diferir (por diseño).
+- Cambio de contrato: `GET /listas` nuevo; `fecha_generacion` pasa a `date`, se añaden `creada_en` y `monto_cobrado`.
+- Un fallo de la migración deja `FALTAN_DATOS_HISTORICOS` (sin estado nuevo) y se reintenta al reiniciar el backend; el motivo solo va al log.
+- El localizador lee solo `*Control*Gym*.xlsx` e ignora la plantilla de carga de la misma carpeta.
+- Adelanto del día 4: Inicio y Lista ya funcionan contra la API real en el stack de Compose (parte de D4-FE-01).
+- Revisión de seguridad no ejecutada: diferida a la revisión única del día 7 (§1).
+
+**Qué puede probar el usuario**
+1. En `.env`, `HISTORICO_DIR` apunta a la carpeta con los `Control Gym*.xlsx`; `docker compose up -d --build` y abrir http://localhost:8080: Inicio muestra "Sistema listo" con el modelo v1.
+2. Lista: fecha 2026-08-31, horizonte 30, K 25 → "Generar lista" → 57 socios, top 25 marcados, con nivel y factores. "Descargar Excel" → libro con `top_25`, `cartera_completa` y `resumen`. El historial permite volver a listas anteriores.
+3. Desde `Backend/`: `python scripts/verificar_lista.py ../plantillas` y `python scripts/verificar_historico.py ../plantillas` → conciliación con el notebook (salida `0`).
+4. `docker compose down -v && docker compose up -d --build` → vuelve a migrar solo y llega a `LISTO`.
+
+**Pendientes que pasan a los días siguientes**
+- **Día 5:** `gestion_estado` y `campania_asignada` de la lista salen siempre `null` hasta CU-08.
+- **Día 7:** S23 y revisión de seguridad de lo hecho el día 3 (D7-OP-02).
+- Menores: dos `POST /listas` simultáneos sin probar; `mypy` sobre `tests/` con errores de tipado estricto en dobles; el motivo de un fallo de migración vive solo en memoria.
+
+#### Ajustes posteriores al Día 3 (R-005)
+
+Petición del usuario tras revisar la lista. **Estado:** `DONE` (12 tareas de desarrollo + 2 de documentación). No se reentrena ni se recargan datos: el modelo v1 no cambia.
+
+- **Fecha y horizonte:** la lista solo se genera desde hoy (fecha de Ecuador, UTC−5) hacia adelante; una fecha pasada → `422` "La fecha de la lista debe ser hoy o posterior."; por defecto, hoy. Horizonte de 1 a 31 días (`400` fuera de rango). Las listas antiguas se conservan tal cual.
+- **Socios sin cédula:** se excluyen de la lista antes de predecir y del top K; siguen en la base y en el entrenamiento.
+- **Cédula en lugar de correo:** en la API, en el Excel (columna "Cédula", texto con el cero inicial) y en el repositorio de listas; el correo sigue solo en la base. El Excel conserva score y aportes.
+- **Pantalla para usuario no técnico:** fecha por defecto hoy (`min` = hoy), días máx. 31, dos tablas ("Socios prioritarios a contactar" y "Otros socios por vencer"), sin score ni columna Top, motivos sin el aporte, etiquetas amigables; Inicio muestra "Modelo de predicción: activo desde <fecha>". Detalle: [frontend/01-arquitectura](docs/frontend/01-arquitectura.md), [12-modelo-y-listas](docs/backend/12-modelo-y-listas.md), [API_CONTRACT](docs/API_CONTRACT.md).
+- **Guía funcional** para el personal: [06-como-funciona-la-lista](06-como-funciona-la-lista.md).
+- **Conciliación:** la fecha 31-08-2026 ya no se puede pedir en la aplicación; `scripts/verificar_lista.py` sigue saliendo con `0` (su propia ventana, todos "con cédula"). Sustituye al paso 2 de "Qué puede probar el usuario": ahora se genera la lista con la fecha de hoy.
+- Pruebas: Backend 1.122 pytest, `ruff`, `mypy app` (92), `lint-imports` (7); Frontend 347 Vitest, `build`, `lint` 0.
+- Revisión de seguridad no ejecutada: diferida a la revisión única del día 7 (§1); incluye la exposición de la cédula en la API y el Excel.
+- **Registrado para días siguientes (no implementado):** D4-FE-03 (botón de ayuda en la Lista) y D6-BE-06 / D6-FE-04 (alerta de datos del mes).
 
 ---
 
@@ -208,6 +257,7 @@
 | D4-FE-01 | Conectar Inicio, Carga y Lista a la API real (MSW solo en pruebas). Estados "Inicializando" y "Faltan datos". | B | D3-BE-04, D4-BE-04 | Recorrido en el navegador con el stack de Compose. |
 | D4-FE-02 | Resumen posterior a la carga: guardadas, duplicadas y socios enlazados u homónimos. | B | D4-FE-01 | Prueba con respuesta simulada. |
 | D4-OP-01 | E2E Playwright: carga válida → generar lista → descargar Excel (con datos sintéticos). | B | D4-FE-01 | Prueba en verde contra el stack local. |
+| D4-FE-03 | Botón de ayuda "¿Cómo funciona esta lista?" en la pantalla Lista, con la explicación de [06-como-funciona-la-lista](06-como-funciona-la-lista.md) (añadida por R-005; pendiente). | B | D3-FE-01 | Prueba: el botón abre la explicación sin términos técnicos. |
 
 ---
 
@@ -257,6 +307,7 @@
 | D6-BE-03 | **TDD** · CU-02 · Servicio de reentrenamiento: criterios, conjunto de comparación de 3 meses, PR-AUC del candidato contra la del vigente, reentrenamiento completo, `OMITIDO` y cálculo de la próxima fecha. | A | D3-BE-02, D6-BD-02 | Pruebas de todos los flujos alternativos de CU-02 con reloj simulado. |
 | D6-BE-04 | Planificador dentro del backend (revisa al arrancar y una vez al día si hoy es la fecha programada; si ya pasó, registra `OMITIDO`) y comando `python -m app.cli reentrenar`. | A | D6-BE-03 | Arranque con fecha pasada → `OMITIDO`; el comando crea v2 con datos sintéticos suficientes. |
 | D6-BE-05 | CU-00 · Filtro de IP: lista en `.env` (por defecto `127.0.0.1`), IP tomada de la conexión, sin `X-Forwarded-For`, `/health` exento, `403` con el formato único de error. | A | — | Criterios de aceptación de CU-00. |
+| D6-BE-06 | Exponer a Inicio (el endpoint lo decide el planner del día 6) si no hay ninguna carga (CU-01) con `fecha_carga` dentro del mes actual (fecha de negocio, reloj inyectable) (añadida por R-005; pendiente). | A | D4-BE-04 | Pruebas con reloj fijo: con y sin carga en el mes. |
 
 **Frontend**
 
@@ -265,6 +316,7 @@
 | D6-FE-01 | Contadores de alertas en Inicio; al pulsar, lista de gestiones que abre el formulario. | B | D5-FE-02 | Prueba de los tres contadores y la navegación. |
 | D6-FE-02 | Página Dashboard: filtro por mes, embudo (barras), tabla por campaña ("casos insuficientes" bajo 10) y tarjeta del estado del modelo. | B | D1-FE-03 | Pruebas con datos simulados. |
 | D6-FE-03 | Página de acceso denegado para respuestas `403`. | B | D1-FE-02 | Prueba de render. |
+| D6-FE-04 | Alerta en Inicio "Aún no se han cargado los datos de este mes" cuando D6-BE-06 lo indique (añadida por R-005; pendiente). | B | D6-BE-06 | Prueba con respuesta simulada con y sin carga del mes. |
 | D6-OP-01 | `Backend/README.md`: instalación en el PC, dónde poner los libros, comando manual de reentrenamiento y cómo hacer y restaurar un respaldo. | B | D6-BE-04 | Documento revisado por A. |
 
 ---
