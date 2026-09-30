@@ -3,8 +3,10 @@ import { File as NodeFile } from 'node:buffer'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { server } from '../../../mocks/server'
+import { MENSAJES_CARGA } from '../api/carga-api.handlers'
 import CargaPage from './CargaPage'
 import pageSource from './CargaPage.tsx?raw'
 import vistaPreviaSource from '../components/VistaPreviaCarga.tsx?raw'
@@ -54,6 +56,15 @@ function setup() {
   return userEvent.setup({ applyAccept: false })
 }
 
+/** El resumen enlaza a /lista con `Link`: la pagina necesita un router. */
+function renderPage() {
+  return render(
+    <MemoryRouter>
+      <CargaPage />
+    </MemoryRouter>,
+  )
+}
+
 function input(): HTMLInputElement {
   return screen.getByLabelText(/archivo de la plantilla/i)
 }
@@ -68,7 +79,7 @@ describe('CargaPage', () => {
   })
 
   it('mantiene el titulo y ofrece un input .xlsx con etiqueta accesible', () => {
-    render(<CargaPage />)
+    renderPage()
 
     expect(screen.getByRole('heading', { level: 1, name: 'Carga de datos' })).toBeInTheDocument()
     const campo = input()
@@ -85,7 +96,7 @@ describe('CargaPage', () => {
       }),
     )
     const user = setup()
-    render(<CargaPage />)
+    renderPage()
 
     await user.upload(input(), archivo('a,b', 'datos.csv', 'text/csv'))
 
@@ -96,7 +107,7 @@ describe('CargaPage', () => {
 
   it('valida.xlsx → conteos, rango de vencimientos y "Confirmar" habilitado', async () => {
     const user = setup()
-    render(<CargaPage />)
+    renderPage()
 
     await user.upload(input(), xlsx('valida.xlsx'))
 
@@ -116,7 +127,7 @@ describe('CargaPage', () => {
 
   it('con-errores.xlsx → tabla con una fila por error y "Confirmar" deshabilitado', async () => {
     const user = setup()
-    render(<CargaPage />)
+    renderPage()
 
     await user.upload(input(), xlsx('con-errores.xlsx'))
 
@@ -128,9 +139,9 @@ describe('CargaPage', () => {
     const filas = within(tabla).getAllByRole('row').slice(1)
     expect(filas).toHaveLength(2)
     expect(filas[0]).toHaveTextContent('7')
-    expect(filas[0]).toHaveTextContent('FECHA_VENCIMIENTO')
-    expect(filas[0]).toHaveTextContent('La fecha no tiene un formato valido.')
-    expect(filas[1]).toHaveTextContent('El plan no pertenece al catalogo.')
+    expect(filas[0]).toHaveTextContent('H')
+    expect(filas[0]).toHaveTextContent('La fecha de vencimiento debe ser posterior a la de inicio.')
+    expect(filas[1]).toHaveTextContent('La cédula no tiene un dígito verificador válido.')
     expect(botonConfirmar()).toBeDisabled()
   })
 
@@ -150,7 +161,7 @@ describe('CargaPage', () => {
       ),
     )
     const user = setup()
-    render(<CargaPage />)
+    renderPage()
 
     await user.upload(input(), xlsx('duplicada.xlsx'))
 
@@ -168,7 +179,7 @@ describe('CargaPage', () => {
       ),
     )
     const user = setup()
-    render(<CargaPage />)
+    renderPage()
 
     await user.upload(input(), xlsx('otra.xlsx'))
 
@@ -200,7 +211,7 @@ describe('CargaPage', () => {
       }),
     )
     const user = setup()
-    render(<CargaPage />)
+    renderPage()
 
     await user.upload(input(), xlsx('valida.xlsx'))
     await user.click(await screen.findByRole('button', { name: 'Confirmar' }))
@@ -209,7 +220,7 @@ describe('CargaPage', () => {
     const valor = (termino: string) =>
       within(resumen).getByText(termino).nextElementSibling?.textContent
     expect(valor('Filas guardadas')).toBe('118')
-    expect(valor('Filas duplicadas')).toBe('2')
+    expect(valor('Filas duplicadas (no se guardaron)')).toBe('2')
     expect(
       within(resumen).getByText(
         'Nombre repetido en el historico: se creo un socio nuevo (fila 9).',
@@ -228,7 +239,7 @@ describe('CargaPage', () => {
       http.post(CARGAS_PATH, () => HttpResponse.json(errorBody(code, message), { status })),
     )
     const user = setup()
-    render(<CargaPage />)
+    renderPage()
 
     await user.upload(input(), xlsx('valida.xlsx'))
     await user.click(await screen.findByRole('button', { name: 'Confirmar' }))
@@ -263,7 +274,7 @@ describe('CargaPage', () => {
       }),
     )
     const user = setup()
-    render(<CargaPage />)
+    renderPage()
 
     await user.upload(input(), xlsx('valida.xlsx'))
     const boton = await screen.findByRole('button', { name: 'Confirmar' })
@@ -279,7 +290,7 @@ describe('CargaPage', () => {
 
   it('cambiar de archivo limpia la vista previa anterior', async () => {
     const user = setup()
-    render(<CargaPage />)
+    renderPage()
 
     await user.upload(input(), xlsx('con-errores.xlsx'))
     await screen.findByRole('table')
@@ -306,7 +317,7 @@ describe('CargaPage', () => {
       }),
     )
     const user = setup()
-    render(<CargaPage />)
+    renderPage()
 
     await user.upload(input(), xlsx('valida.xlsx'))
     await user.click(await screen.findByRole('button', { name: 'Confirmar' }))
@@ -339,7 +350,7 @@ describe('CargaPage', () => {
       }),
     )
     const user = setup()
-    render(<CargaPage />)
+    renderPage()
 
     await user.upload(input(), xlsx('lenta.xlsx'))
 
@@ -348,6 +359,173 @@ describe('CargaPage', () => {
     liberar()
     await screen.findByRole('region', { name: 'Vista previa' })
     expect(input()).toBeEnabled()
+  })
+
+  function cargaSimulada(avisos: string[]) {
+    return {
+      id: 3,
+      fecha_carga: '2026-09-29T15:00:00Z',
+      nombre_archivo: 'valida.xlsx',
+      filas_leidas: 6,
+      filas_guardadas: 4,
+      filas_duplicadas: 2,
+      socios_enlazados: 1,
+      avisos_enlace: avisos,
+    }
+  }
+
+  it('resumen: cuatro numeros, "Para revisar" con el aviso y enlace a /lista', async () => {
+    const aviso =
+      'Fila 5: hay varios socios históricos con el mismo nombre; se creó un socio nuevo.'
+    server.use(
+      http.post(CARGAS_PATH, () => HttpResponse.json(cargaSimulada([aviso]), { status: 201 })),
+    )
+    const user = setup()
+    renderPage()
+
+    await user.upload(input(), xlsx('valida.xlsx'))
+    await user.click(await screen.findByRole('button', { name: 'Confirmar' }))
+
+    const resumen = await screen.findByRole('region', { name: 'Carga guardada' })
+    const valor = (termino: string) =>
+      within(resumen).getByText(termino).nextElementSibling?.textContent
+    expect(valor('Filas leídas')).toBe('6')
+    expect(valor('Filas guardadas')).toBe('4')
+    expect(valor('Filas duplicadas (no se guardaron)')).toBe('2')
+    expect(valor('Socios enlazados con su historia')).toBe('1')
+    const revisar = within(resumen).getByRole('region', { name: 'Para revisar' })
+    expect(within(revisar).getByRole('listitem')).toHaveTextContent(aviso)
+    expect(
+      within(resumen).getByRole('link', { name: 'Ver la lista de socios por vencer' }),
+    ).toHaveAttribute('href', '/lista')
+  })
+
+  it('resumen sin avisos → no aparece "Para revisar" y sigue el enlace a /lista', async () => {
+    server.use(
+      http.post(CARGAS_PATH, () => HttpResponse.json(cargaSimulada([]), { status: 201 })),
+    )
+    const user = setup()
+    renderPage()
+
+    await user.upload(input(), xlsx('valida.xlsx'))
+    await user.click(await screen.findByRole('button', { name: 'Confirmar' }))
+
+    const resumen = await screen.findByRole('region', { name: 'Carga guardada' })
+    expect(within(resumen).queryByText('Para revisar')).not.toBeInTheDocument()
+    expect(
+      within(resumen).getByRole('link', { name: 'Ver la lista de socios por vencer' }),
+    ).toHaveAttribute('href', '/lista')
+  })
+
+  it('413 en la vista previa → ErrorAlert "El archivo supera el tamaño máximo permitido."', async () => {
+    const user = setup()
+    renderPage()
+
+    await user.upload(input(), xlsx('grande.xlsx'))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'El archivo supera el tamaño máximo permitido.',
+    )
+    expect(screen.queryByRole('region', { name: 'Vista previa' })).not.toBeInTheDocument()
+  })
+
+  it('413 sin cuerpo del backend (proxy) → mismo mensaje fijo', async () => {
+    server.use(http.post(VISTA_PREVIA_PATH, () => new HttpResponse(null, { status: 413 })))
+    const user = setup()
+    renderPage()
+
+    await user.upload(input(), xlsx('valida.xlsx'))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'El archivo supera el tamaño máximo permitido.',
+    )
+  })
+
+  it('422 al confirmar → mensaje del servidor y vuelve a la vista previa', async () => {
+    server.use(
+      http.post(CARGAS_PATH, () =>
+        HttpResponse.json(errorBody('domain_rule_violated', MENSAJES_CARGA.sinFilasNuevas), {
+          status: 422,
+        }),
+      ),
+    )
+    const user = setup()
+    renderPage()
+
+    await user.upload(input(), xlsx('valida.xlsx'))
+    await user.click(await screen.findByRole('button', { name: 'Confirmar' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(MENSAJES_CARGA.sinFilasNuevas)
+    expect(screen.getByRole('region', { name: 'Vista previa' })).toBeInTheDocument()
+    expect(botonConfirmar()).toBeEnabled()
+    expect(screen.queryByRole('region', { name: 'Carga guardada' })).not.toBeInTheDocument()
+  })
+
+  it('413 al confirmar → mensaje fijo de tamaño y vuelve a la vista previa sin resumen', async () => {
+    server.use(http.post(CARGAS_PATH, () => new HttpResponse(null, { status: 413 })))
+    const user = setup()
+    renderPage()
+
+    await user.upload(input(), xlsx('valida.xlsx'))
+    await user.click(await screen.findByRole('button', { name: 'Confirmar' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(MENSAJES_CARGA.tamano)
+    expect(screen.getByRole('region', { name: 'Vista previa' })).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Carga guardada' })).not.toBeInTheDocument()
+  })
+
+  it('handler por defecto: confirmar valida.xlsx → resumen coherente y aviso en "Para revisar"', async () => {
+    const user = setup()
+    renderPage()
+
+    await user.upload(input(), xlsx('valida.xlsx'))
+    await user.click(await screen.findByRole('button', { name: 'Confirmar' }))
+
+    const resumen = await screen.findByRole('region', { name: 'Carga guardada' })
+    const valor = (termino: string) =>
+      within(resumen).getByText(termino).nextElementSibling?.textContent
+    expect(valor('Filas leídas')).toBe('120')
+    expect(valor('Filas guardadas')).toBe('116')
+    expect(valor('Filas duplicadas (no se guardaron)')).toBe('2')
+    expect(
+      within(within(resumen).getByRole('region', { name: 'Para revisar' })).getAllByRole(
+        'listitem',
+      ),
+    ).toHaveLength(1)
+  })
+
+  it('el enlace "Ver la lista de socios por vencer" navega a /lista', async () => {
+    server.use(
+      http.post(CARGAS_PATH, () => HttpResponse.json(cargaSimulada([]), { status: 201 })),
+    )
+    const user = setup()
+    render(
+      <MemoryRouter initialEntries={['/carga']}>
+        <Routes>
+          <Route path="/carga" element={<CargaPage />} />
+          <Route path="/lista" element={<p>Destino lista</p>} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await user.upload(input(), xlsx('valida.xlsx'))
+    await user.click(await screen.findByRole('button', { name: 'Confirmar' }))
+    await user.click(await screen.findByRole('link', { name: 'Ver la lista de socios por vencer' }))
+
+    expect(await screen.findByText('Destino lista')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['antiguo.xlsx', MENSAJES_CARGA.formatoAntiguo],
+    ['sin-registros.xlsx', MENSAJES_CARGA.sinRegistros],
+    ['pendiente.xlsx', MENSAJES_CARGA.migracionPendiente],
+  ])('handler por defecto: %s → ErrorAlert con el mensaje del backend', async (nombre, mensaje) => {
+    const user = setup()
+    renderPage()
+
+    await user.upload(input(), xlsx(nombre))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(mensaje)
   })
 
   it('arquitectura: la pagina no importa api/ ni core/http ni usa fetch', () => {

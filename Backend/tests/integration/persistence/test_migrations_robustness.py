@@ -66,7 +66,7 @@ def test_alembic_current_with_test_database_url_exits_zero_at_head(
     )
     output = result.stdout + result.stderr
     assert result.returncode == 0, output
-    assert "0004 (head)" in output
+    assert "0005 (head)" in output
     if test_database_url.password:
         assert test_database_url.password not in output
 

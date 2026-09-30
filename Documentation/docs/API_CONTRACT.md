@@ -49,13 +49,13 @@ Público. Informa si el servicio y la base de datos responden (`SELECT 1`, timeo
 
 ### Operaciones de negocio (contrato del día 1, R-002)
 
-Las operaciones están publicadas en `/openapi.json` con DTOs Pydantic (`app/application/{modulo}/dtos.py`) y un ejemplo en la respuesta de éxito y en cada error. Las marcadas **(real)** tienen su caso de uso implementado (R-004, día 3); **el resto responde `501 not_implemented`** hasta que se implemente; la validación de entrada ya está activa (`400 validation_error`). Sin login (RT-12): no hay filtro por propietario; todas documentan `403` (CU-00).
+Las operaciones están publicadas en `/openapi.json` con DTOs Pydantic (`app/application/{modulo}/dtos.py`) y un ejemplo en la respuesta de éxito y en cada error. Las marcadas **(real)** tienen su caso de uso implementado (R-004, día 3; cargas en R-007, día 4); **el resto responde `501 not_implemented`** hasta que se implemente; la validación de entrada ya está activa (`400 validation_error`). Sin login (RT-12): no hay filtro por propietario; todas documentan `403` (CU-00).
 
 | Operación | Éxito | Errores además de `403`/`501` | CU |
 |---|---|---|---|
 | `GET /sistema/estado` **(real)** | 200 `EstadoSistemaDTO` | — | CU-03 |
-| `POST /cargas/vista-previa` (multipart `archivo`) | 200 `VistaPreviaCargaDTO` | 400, 409, 413 | CU-01 |
-| `POST /cargas` (multipart `archivo`; revalida, sin estado entre vista previa y confirmación) | 201 `CargaDTO` | 400, 409, 413, 422 | CU-01 |
+| `POST /cargas/vista-previa` **(real; R-007)** (multipart `archivo`; no guarda nada) | 200 `VistaPreviaCargaDTO` | 400, 409, 413 (detalle en [Cargas](#cargas-cu-01-r-007)) | CU-01 |
+| `POST /cargas` **(real; R-007)** (multipart `archivo`; revalida, sin estado entre vista previa y confirmación; todo o nada) | 201 `CargaDTO` | 400, 409, 413, 422 | CU-01 |
 | `POST /listas` **(real)** | 201 `ListaPriorizadaDTO` | 400 (horizonte fuera de 1..31, K menor que 1 o fecha inválida), 409 (sistema no `LISTO`: migración en curso o sin modelo; tiene precedencia sobre el 422), 422 `domain_rule_violated` "La fecha de la lista debe ser hoy o posterior." (R-005) | CU-04 |
 | `GET /listas` **(real; nuevo en R-004)** | 200 `[ListaResumenDTO]`, de la más reciente a la más antigua | — | CU-05 |
 | `GET /listas/ultima` **(real)** | 200 `ListaPriorizadaDTO` | 404 (no hay listas) | CU-05 |
@@ -86,4 +86,29 @@ Convenciones de los DTOs:
   - Una lista guardada es inmutable (RN-04.5): sus ítems se devuelven aunque el socio tenga después `deleted_at`.
   - **R-005 (cambio de contrato):** `PrediccionDTO` ya no tiene `correo`; tiene `cedula` (string con el cero inicial, o `null` en listas antiguas con socios sin cédula). Ninguna respuesta de la API devuelve el correo (sigue en la base). Los socios sin cédula no entran en las listas nuevas. Los DTO de **respuesta** aceptan `horizonte_dias` 1..365 para leer listas antiguas; la entrada solo 1..31.
 - `GET /sistema/estado`: `INICIALIZANDO` mientras migra CU-03; `LISTO` con `modelo_vigente`; `FALTAN_DATOS_HISTORICOS` si faltan los libros o la migración falló (el motivo solo va al log; se reintenta al reiniciar el backend, ADR-004).
-- Límites propios: `nombre` de campaña 1..120, `descripcion` ≤ 500 (decisión propia, 03 no la fija), `observaciones` ≤ 500, `responsable` ≤ 120; `horizonte_dias` 1..31 en `POST /listas` (defecto 30; antes 1..365, R-005), `top_k` ≥ 1 (defecto 25), `fecha_referencia` null = hoy de negocio (Ecuador, UTC−5: `hoy_en_negocio(clock.now())`); una fecha anterior a ese día → `422`.
+- Límites propios (cargas): plantilla ≤ 5 MB y ≤ 500 filas con datos (R-007). Resto: `nombre` de campaña 1..120, `descripcion` ≤ 500 (decisión propia, 03 no la fija), `observaciones` ≤ 500, `responsable` ≤ 120; `horizonte_dias` 1..31 en `POST /listas` (defecto 30; antes 1..365, R-005), `top_k` ≥ 1 (defecto 25), `fecha_referencia` null = hoy de negocio (Ecuador, UTC−5: `hoy_en_negocio(clock.now())`); una fecha anterior a ese día → `422`.
+
+### Cargas (CU-01, R-007)
+
+Detalle del proceso en [backend/13-cargas](backend/13-cargas.md). Los DTOs son los publicados el día 1 (sin cambios de forma); se retiró el `501`.
+
+- **`VistaPreviaCargaDTO`**: `filas_leidas` (filas con algún valor en A..N; O y P se ignoran), `filas_validas` (sin error; **incluye** las duplicadas), `filas_con_error`, `filas_duplicadas` (⊆ válidas), `vencimiento_desde`/`vencimiento_hasta` (mín./máx. de H entre las válidas, `null` si no hay), `errores` [`ErrorFilaDTO` {`fila` = número real de la fila en Excel, `columna` = letra A..M, `motivo`}], `puede_confirmar` = `filas_con_error == 0` y al menos una fila nueva (válida no duplicada).
+- **`CargaDTO`**: `id`, `fecha_carga` (del reloj), `nombre_archivo` (solo el nombre base, ≤ 255), `filas_leidas`, `filas_guardadas` (= válidas − duplicadas), `filas_duplicadas`, `socios_enlazados` (socios existentes distintos que recibieron al menos una fila nueva), `avisos_enlace` (p. ej. `"Fila 22: hay varios socios históricos con el mismo nombre; se creó un socio nuevo."`).
+- Ningún `motivo` ni mensaje contiene valores de celdas (nombres, cédulas, celulares, correos).
+
+Orden de comprobación y mensajes exactos (`error.message`):
+
+| Orden | HTTP · `code` | Cuándo | Mensaje |
+|---|---|---|---|
+| 1 | 413 `payload_too_large` | Archivo > 5 MB (se leen como máximo 5 MB + 1 byte) | "El archivo supera el tamaño máximo permitido." |
+| 0 | 400 `validation_error` | Sin campo `archivo` (validación de entrada, antes de leer) | Mensaje genérico de validación |
+| 2 | 400 `validation_error` | Bytes que no son `.xlsx` o libro dañado | "El archivo está dañado o no es un .xlsx válido." |
+| 2 | 400 `validation_error` | Sin hoja `Registros` (y sin hojas de meses) | "El archivo no tiene la hoja Registros." |
+| 2 | 400 `validation_error` | Sin `Registros` y con hojas con nombre de mes | "El archivo tiene el formato antiguo de hojas mensuales; use la plantilla oficial de carga." |
+| 2 | 400 `validation_error` | Títulos A..N de la fila 1 distintos de la plantilla oficial | "Los títulos de la hoja Registros no coinciden con la plantilla oficial." |
+| 2 | 400 `validation_error` | Más de 500 filas con datos | "El archivo tiene más de 500 filas con datos; divídalo en varios archivos." |
+| 3 | 409 `conflict` | Migración histórica (CU-03) no `COMPLETADA` | "La migracion del historico aun no se ha completado." |
+| 4 | 422 `domain_rule_violated` | `POST /cargas` con alguna fila con error | "Hay filas con error; corrija el archivo y vuelva a subirlo." |
+| 4 | 422 `domain_rule_violated` | `POST /cargas` sin filas nuevas (vacío o todo duplicado, incluida una segunda confirmación concurrente) | "El archivo no tiene filas nuevas para guardar." |
+
+Un archivo ilegible da `400` aunque la migración esté pendiente (el archivo se lee antes de consultar el estado). La vista previa nunca devuelve `422`: los errores por fila van en `errores` con `200`.

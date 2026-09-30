@@ -268,6 +268,13 @@ def test_socios_indexes() -> None:
     assert [c.name for c in by_name.columns] == ["nombre_normalizado"]
 
 
+def test_socios_partial_index_by_name_without_cedula() -> None:
+    sin_cedula = index("socios", "ix_socios_nombre_normalizado_sin_cedula")
+    assert not sin_cedula.unique
+    assert [c.name for c in sin_cedula.columns] == ["nombre_normalizado"]
+    assert index_where(sin_cedula) == "cedula IS NULL AND deleted_at IS NULL"
+
+
 # ------------------------------------------------------------------ cargas
 def test_cargas_columns_and_checks() -> None:
     assert check_literals("cargas", "tipo") == values(TipoCarga)

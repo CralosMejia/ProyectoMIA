@@ -381,6 +381,36 @@ describe('ListaPage', () => {
     expect(llamadas).toBe(2)
   })
 
+  it('con lista generada → boton "¿Cómo funciona esta lista?" abre la ayuda y "Cerrar" devuelve el foco', async () => {
+    const user = userEvent.setup()
+    render(<ListaPage />)
+    await tablaCargada()
+
+    const ayuda = screen.getByRole('button', { name: '¿Cómo funciona esta lista?' })
+    await user.click(ayuda)
+
+    const dialogo = screen.getByRole('dialog', { name: '¿Cómo funciona esta lista?' })
+    expect(within(dialogo).getByRole('heading', { name: 'Casos frecuentes' })).toBeInTheDocument()
+    await user.click(within(dialogo).getByRole('button', { name: 'Cerrar' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(ayuda).toHaveFocus()
+  })
+
+  it('sin listas → el boton de ayuda tambien esta y cierra con Escape', async () => {
+    server.use(...escenariosLista.sinListas)
+    const user = userEvent.setup()
+    render(<ListaPage />)
+    await screen.findByText(/Aún no se ha generado ninguna lista/)
+
+    const ayuda = screen.getByRole('button', { name: '¿Cómo funciona esta lista?' })
+    await user.click(ayuda)
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(ayuda).toHaveFocus()
+  })
+
   it('arquitectura: la pagina no importa api/ ni core/http ni usa fetch', () => {
     expect(pageSource).not.toMatch(/from\s+['"][^'"]*\/api\//)
     expect(pageSource).not.toMatch(/core\/http/)

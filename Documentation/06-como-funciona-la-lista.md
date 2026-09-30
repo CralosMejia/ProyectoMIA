@@ -55,7 +55,8 @@ Los socios **sin cédula registrada no aparecen en la lista**. No se borran: sig
 
 ## 7. Próximamente
 
-Están planificados, todavía no disponibles:
+Está planificada, todavía no disponible:
 
-- una **alerta** cuando no se hayan cargado los datos del mes;
-- un **botón de ayuda** en la pantalla de la lista con esta misma explicación.
+- una **alerta** cuando no se hayan cargado los datos del mes.
+
+Ya disponible: en la pantalla de la lista, el botón **"¿Cómo funciona esta lista?"** abre un resumen de esta misma explicación.

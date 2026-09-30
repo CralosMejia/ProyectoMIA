@@ -1,6 +1,7 @@
 import type { FormEvent } from 'react'
 import { ErrorAlert } from '../../../shared/ui/ErrorAlert'
 import { LoadingIndicator } from '../../../shared/ui/LoadingIndicator'
+import { AyudaLista } from '../components/AyudaLista'
 import { DescargarExcelButton } from '../components/DescargarExcelButton'
 import { HistorialListas } from '../components/HistorialListas'
 import { TablaLista } from '../components/TablaLista'
@@ -87,9 +88,12 @@ export default function ListaPage() {
 
   return (
     <section aria-labelledby="lista-title" className="flex flex-col gap-6 font-sans text-ink">
-      <h1 id="lista-title" className="text-2xl font-semibold">
-        Lista priorizada
-      </h1>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <h1 id="lista-title" className="text-2xl font-semibold">
+          Lista priorizada
+        </h1>
+        <AyudaLista />
+      </div>
 
       <form
         aria-label="Parámetros de la lista"

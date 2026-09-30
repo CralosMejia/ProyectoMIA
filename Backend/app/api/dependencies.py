@@ -9,6 +9,8 @@ from typing import Annotated
 from fastapi import Depends, Request
 from sqlalchemy import Engine
 
+from app.application.cargas.ports import LectorPlantilla, UnidadDeTrabajoCargas
+from app.application.cargas.procesar_carga import ConfirmarCarga, PrevisualizarCarga
 from app.application.health.ports import DatabaseProbe
 from app.application.health.queries import GetHealthQueryHandler
 from app.application.listas.consultar_listas import ConsultarListas
@@ -20,6 +22,7 @@ from app.application.sistema.ports import LectorEstadoSistema, RegistroMigracion
 from app.core.config import Settings
 from app.domain.common.clock import Clock
 from app.domain.common.predictor import PredictorModel
+from app.infrastructure.cargas.lector_plantilla import LectorPlantillaOpenpyxl
 from app.infrastructure.clock.system_clock import SystemClock
 from app.infrastructure.exportacion.excel_lista import ExcelListaOpenpyxl
 from app.infrastructure.historico.lector_libros import LectorLibrosExcel
@@ -31,6 +34,7 @@ from app.infrastructure.persistence.unit_of_work import (
     AbridorBloqueoMigracion,
     FabricaUnidadDeTrabajoSqlAlchemy,
 )
+from app.infrastructure.persistence.unit_of_work_cargas import SqlAlchemyUnidadDeTrabajoCargas
 from app.infrastructure.persistence.unit_of_work_listas import SqlAlchemyUnidadDeTrabajoListas
 
 
@@ -53,6 +57,35 @@ def get_health_query_handler(
     clock: Annotated[Clock, Depends(get_clock)],
 ) -> GetHealthQueryHandler:
     return GetHealthQueryHandler(probe=probe, clock=clock)
+
+
+# ---------------------------------------------------------------- cargas (CU-01)
+
+
+def get_lector_plantilla() -> LectorPlantilla:
+    return LectorPlantillaOpenpyxl()
+
+
+def get_unidad_de_trabajo_cargas(
+    engine: Annotated[Engine, Depends(get_engine)],
+    clock: Annotated[Clock, Depends(get_clock)],
+) -> UnidadDeTrabajoCargas:
+    return SqlAlchemyUnidadDeTrabajoCargas(engine, clock)
+
+
+def get_previsualizar_carga(
+    lector: Annotated[LectorPlantilla, Depends(get_lector_plantilla)],
+    uow: Annotated[UnidadDeTrabajoCargas, Depends(get_unidad_de_trabajo_cargas)],
+) -> PrevisualizarCarga:
+    return PrevisualizarCarga(lector, uow)
+
+
+def get_confirmar_carga(
+    lector: Annotated[LectorPlantilla, Depends(get_lector_plantilla)],
+    uow: Annotated[UnidadDeTrabajoCargas, Depends(get_unidad_de_trabajo_cargas)],
+    clock: Annotated[Clock, Depends(get_clock)],
+) -> ConfirmarCarga:
+    return ConfirmarCarga(lector, uow, clock)
 
 
 # ---------------------------------------------------------------- listas (CU-04, CU-05, CU-12)

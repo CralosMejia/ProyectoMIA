@@ -5,9 +5,197 @@
 
 ## ACTIVO
 
-_(ninguno)_
+(ninguno)
 
 ## TERMINADOS RECIENTEMENTE
+
+### R-007 — Día 4 del cronograma: carga por plantilla (CU-01) de punta a punta, integración real y ayuda de la lista · **DONE** 2026-09-29
+
+**Cierre:** Backend 1.409 pytest, `ruff`, `format` (226), `mypy app` (104), `lint-imports` (7); Frontend 404 Vitest, `build`, `lint` 0; E2E `health` en 8080 y 8081, `carga-lista-excel` en verde en el stack aislado 8081 y saltado a propósito en 8080. Stack principal en `0005`, `LISTO`, datos intactos (socios 1.410, membresías 2.748, cargas 1); solo vista previa, sin confirmar. Seguridad diferida al día 7 (05 §1). Sin ADR: el contrato de cargas no cambia de forma (solo se retira el `501`), el modelo de datos solo gana un índice y (l) es una práctica operativa → [13-cargas](docs/backend/13-cargas.md), [10-docker](docs/backend/10-docker.md).
+
+**Objetivo:** el personal sube la plantilla oficial, ve la vista previa con errores por fila y duplicados, confirma (todo o nada, sin duplicar) y la carga alimenta la lista (sin aviso de datos antiguos y con las membresías nuevas en la cartera); E2E carga → lista → Excel con datos sintéticos.
+
+**Fuente:** [05 §3 Día 4](05-cronograma-semana.md) (D4-BD-01, D4-BE-01..04, D4-FE-01..03, D4-OP-01) · [03 §4 CU-01](03-casos-de-uso.md) (formato, flujo, excepciones, RN-01.1..11, criterios) · [04 §2 D-03, D-04](04-pendientes-para-iniciar-desarrollo.md) · `docs/API_CONTRACT.md` (`POST /cargas/vista-previa`, `POST /cargas`) · `Backend/tests/fixtures/generar_fixtures.py` (`TITULOS_REGISTROS`, `fila_plantilla`, `cedula_valida`) y `tests/fixtures/esperado.py` (`FILAS_CON_DATOS`, `FILAS_CON_ERROR`) · plantilla oficial `plantillas/Plantilla_Carga_Datos_Mtabolic.xlsx` **solo para comprobar estructura** (hojas y títulos; nunca se copian filas).
+
+**Notas de alcance del planner**
+- No existe `products/P##-*.md`. Nada cae en `DEVELOPMENT_GUIDELINES.md` §Fuera de alcance. **Fuera de R-007:** anular cargas (RN-01.3, sin endpoint en el contrato), reentrenar tras la carga (RN-01.11: la carga no dispara nada), alerta de datos del mes (D6-BE-06/D6-FE-04), CU-00, revisión de seguridad (día 7), D7-FE-01.
+- **Proceso (05 §1):** TDD **solo en T5 y T6** (D4-BE-02: test en rojo primero). El resto, pruebas de sus criterios. Seguridad diferida a la revisión única del día 7. Sin login (RT-12): no hay pruebas de aislamiento entre usuarios; cada archivo nuevo de prueba de API/repositorio lo deja escrito en un comentario.
+- **Sin datos personales reales:** pruebas solo con los fixtures sintéticos o libros construidos en el test (`tmp_path`) con nombres y cédulas ficticios (`cedula_valida`). Ni logs ni mensajes de error contienen nombres, cédulas, celulares ni correos: los errores citan fila y columna, nunca el valor.
+- **Contrato:** se mantienen `VistaPreviaCargaDTO`, `ErrorFilaDTO` y `CargaDTO` de `app/application/cargas/dtos.py` (publicados el día 1); solo cambian los ejemplos y se retira el `501`.
+- **Decisiones del planner (reversibles; se avisan al usuario):**
+  - (a) **Conteos:** `filas_leidas` = filas con algún valor en A..N (O y P se ignoran siempre); `filas_validas` = sin error (incluye duplicadas); `filas_duplicadas` ⊆ válidas; nuevas = válidas − duplicadas = `filas_guardadas`. `puede_confirmar` = `filas_con_error == 0 and nuevas > 0`. `vencimiento_desde/hasta` = mín./máx. de H entre las válidas (`null` si no hay).
+  - (b) **Duplicado (RN-01.8 / D-04):** misma identidad resuelta (socio existente) + `fecha_inicio` + `fecha_vencimiento` + `plan`, contra membresías no borradas (históricas o de cargas) **y** contra filas anteriores del mismo archivo. Una fila de un socio nuevo solo puede ser duplicada de otra fila del mismo archivo.
+  - (c) **Enlace (RN-01.9 / D-03):** 1) cédula existente → ese socio (se cuenta como enlazado); 2) si no, exactamente un socio **sin cédula** con el mismo `nombre_normalizado` → se enlaza y se le asigna la cédula (celular y correo solo si estaban vacíos); 3) dos o más → socio nuevo y aviso `"Fila N: hay varios socios históricos con el mismo nombre; se creó un socio nuevo."` (sin el nombre). Varias filas con la misma cédula nueva → un solo socio. Un candidato por nombre enlazado con una cédula ya no está disponible para otra cédula distinta del mismo archivo. `socios_enlazados` = socios existentes distintos a los que se asoció al menos una fila **nueva**.
+  - (d) **Cédula histórica sin cero inicial:** el histórico guardó la cédula como dígitos (≥ 9, `normalizar_cedula`), así que las que empezaban por 0 quedaron con 9 dígitos. La búsqueda por cédula `0XXXXXXXXX` prueba también `XXXXXXXXX`; no se reescribe la cédula histórica.
+  - (e) **Cédula en la celda:** texto → se quitan espacios; número (Excel pierde el cero) → `str(int)` y, si quedan 9 dígitos, se antepone `0`. Validación: 10 dígitos y verificador módulo 10 (coeficientes 2,1,2,…, como `cedula_valida`), **sin** reglas de provincia (CU-01 no las pide). Pasaporte: Observaciones contiene la palabra `PASAPORTE` (sin distinguir mayúsculas) → 5..20 caracteres `[A-Za-z0-9]`.
+  - (f) **Títulos:** fila 1, columnas A..N, iguales a `TITULOS_REGISTROS[:14]` tras `strip()` (mayúsculas y tildes exactas). O y P no se validan. **Formato antiguo:** sin hoja `Registros` y con alguna hoja cuyo nombre es un mes (`MESES` de `alias_columnas.py`) → mensaje "El archivo tiene el formato antiguo de hojas mensuales; use la plantilla oficial de carga.".
+  - (g) **Tamaño máximo:** 5 MB (`MAX_BYTES_PLANTILLA`); mayor → `413`. Nombre de archivo guardado = solo el nombre base, recortado a 255.
+  - (h) **Catálogos y montos:** A, F, I se aceptan con `strip().upper()`; montos numéricos o texto con punto o coma decimal, ≥ 0 y con **máximo 2 decimales**, como `Decimal` (nunca `float` fuera del lector); asistencias entero 0..400 (acepta `7.0`). Fechas: celda fecha/fecha-hora o texto `AAAA-MM-DD`; G y H entre 2024-01-01 y 2035-12-31. Duración = H − G: `DIARIO` solo exige H > G; el resto 21..400.
+  - (i) **Membresía guardada:** `origen=PLANTILLA`, `fecha_actividad = fecha_inicio`, `inicio_aproximado=False`, `estado_registro` informativo (RN-01.7), `plan_original`/`forma_pago_original` = texto de la celda, `referencia_origen=None`. Carga `tipo=PLANTILLA`, `fecha_carga = clock.now()`.
+  - (j) **Concurrencia:** la confirmación toma `pg_advisory_xact_lock` (clave fija de cargas) antes de revalidar duplicados dentro de su transacción; dos confirmaciones del mismo archivo en paralelo → la segunda ve todo duplicado → `422`. No se añade índice único de duplicados (D-04 conserva duplicados exactos del histórico).
+  - (k) **Códigos:** archivo no `.xlsx`/dañado, sin `Registros`, títulos distintos, formato antiguo, > 500 filas o sin campo `archivo` → `400 validation_error`; > 5 MB → `413`; migración no `COMPLETADA` → `409`; confirmar con filas con error → `422 domain_rule_violated` "Hay filas con error; corrija el archivo y vuelva a subirlo."; confirmar vacío o todo duplicado → `422` "El archivo no tiene filas nuevas para guardar.".
+  - (l) **E2E y verificación con datos sintéticos en un stack aparte** (proyecto de Compose `mtabolic-e2e`, volumen propio, puertos 8081/8001/5433, `HISTORICO_DIR=./Backend/tests/fixtures/historico`). Motivo: confirmar una carga en el stack principal metería socios ficticios en la base con datos reales, y no se pueden borrar físicamente. **En el stack principal solo se hace la vista previa (no guarda) y la lista/Excel; confirmar allí queda a decisión del usuario.** La plantilla del E2E se genera en el test con fechas relativas a hoy y cédulas únicas por ejecución (devDependency `exceljs`, solo en `e2e/`).
+  - (m) **Ayuda de la lista (D4-FE-03):** botón "¿Cómo funciona esta lista?" que abre el `Modal` de `shared/ui` con un resumen de 06 §1–§6 en texto estático del componente (no se carga el `.md` en tiempo de ejecución).
+- **Excepción al límite de 4 archivos:** `__init__.py` vacíos; la línea `"0004 (head)"` → `"0005 (head)"` en `test_migrations_robustness.py` (T1); el registro del router en `main.py` si hiciera falta (ya está montado).
+
+**Tareas**
+
+- [x] **T1** · `db` · D4-BD-01 (1/2) · Índice de socios sin cédula por nombre (migración `0005`)
+  - Archivos: `Backend/alembic/versions/0005_socios_nombre_sin_cedula.py` (principal), `Backend/app/infrastructure/persistence/models/historial.py`, `Backend/tests/unit/infrastructure/persistence/test_models_metadata.py`, `Backend/tests/integration/persistence/test_migrations.py`.
+  - Docs: `.claude/rules/database.md` §Migraciones; `Documentation/docs/backend/09-esquema-base-de-datos.md` §Historial.
+  - Aceptación:
+    - `revision="0005"`, `down_revision="0004"`. `upgrade` crea `ix_socios_nombre_normalizado_sin_cedula` sobre `socios(nombre_normalizado)` `WHERE cedula IS NULL AND deleted_at IS NULL`; `downgrade` lo elimina. Aplica sobre una base con datos.
+    - ORM declara el mismo índice parcial; `alembic check` sin diferencias; `alembic current` → `0005 (head)`; ciclo `downgrade 0004` → `upgrade head` funciona.
+    - La consulta de duplicados reutiliza `ix_membresias_socio_id_fecha_vencimiento` (sin índice nuevo; lo deja escrito en el docstring de la migración).
+  - Pruebas: unitaria (metadatos) + integración.
+
+- [x] **T2** · `application` · Puertos y DTOs internos de cargas
+  - Archivos: `Backend/app/application/cargas/ports.py` (principal), `Backend/app/domain/cargas/fila.py` (nuevo: `FilaPlantilla(fila: int, valores crudos A..N)`, `PlantillaLeida(filas: tuple[FilaPlantilla, ...])`), `Backend/tests/unit/application/cargas/test_ports.py`.
+  - Contenido: `LectorPlantilla.leer(contenido: bytes) -> PlantillaLeida`; `ConsultasCarga`: `socios_por_cedulas(cedulas) -> dict[str, int]`, `socios_sin_cedula_por_nombres(nombres) -> dict[str, list[int]]`, `claves_existentes(socio_ids) -> set[ClaveMembresia]`; `EscrituraCarga`: `crear_socios(Sequence[NuevoSocio]) -> list[int]`, `asignar_cedula(socio_id, cedula, celular, correo)`, `insertar_membresias(...)`, `crear_carga(NuevaCarga) -> int` (reutiliza `NuevoSocio`/`NuevaMembresia`/`NuevaCarga` de `historial/ports.py`); `ContextoCargas` (`consultas`, `escritura`, `estado`, `bloquear()`, `commit()`) y `UnidadDeTrabajoCargas`. `ClaveMembresia` = `(socio_id, fecha_inicio, fecha_vencimiento, plan)` frozen.
+  - Docs: `docs/backend/01-arquitectura.md` §Capas, §Patrón de un caso de uso; `docs/backend/11-historico.md` §Aplicación.
+  - Aceptación:
+    - Todos `Protocol` `runtime_checkable`; un doble en memoria pasa `isinstance` y `mypy`. Docstring: ningún repositorio hace `commit`/`rollback` ni expone `delete`.
+    - `FilaPlantilla.fila < 2` → `ValueError`. `lint-imports` en verde (sin `openpyxl`, `sqlalchemy`, `pandas` en `domain`/`application`).
+  - Pruebas: unitarias.
+
+- [x] **T3** · `infra` · D4-BD-01 (2/2) · Repositorio de cargas: consultas de duplicados y de enlace, escritura
+  - Archivos: `Backend/app/infrastructure/persistence/repositories/cargas.py` (principal: `SqlAlchemyConsultasCarga`, `SqlAlchemyEscrituraCarga` con `(session, clock)`), `Backend/tests/integration/persistence/test_cargas_repository.py`.
+  - Docs: `.claude/rules/database.md` §Reparto de herramientas, §Pruebas; `docs/backend/09-esquema-base-de-datos.md` §Historial; decisiones (b), (c), (d).
+  - Aceptación (PostgreSQL `app_db_test`, datos ficticios insertados en el test):
+    - `socios_por_cedulas({"0912345678"})` encuentra un socio con cédula `"0912345678"` y otro con `"912345678"` (d); excluye `deleted_at`.
+    - `socios_sin_cedula_por_nombres({"ANA PEREZ LOPEZ"})`: 1 socio sin cédula → `[id]`; 2 homónimos → 2 ids; un socio con cédula o borrado con ese nombre no aparece. `EXPLAIN` de la consulta usa `ix_socios_nombre_normalizado_sin_cedula` (con `SET enable_seqscan=off`).
+    - `claves_existentes([s])` devuelve las claves de membresías no borradas de `s` (históricas y de plantilla); una borrada no aparece. Una sola consulta por método (sin N+1), SQL parametrizado.
+    - `asignar_cedula` actualiza cédula, `updated_at` desde el reloj y solo rellena celular/correo vacíos; ninguna escritura hace `commit`.
+  - Pruebas: integración.
+
+- [x] **T4** · `infra` · D4-BE-01 · Lector de la plantilla
+  - Archivos: `Backend/app/infrastructure/cargas/lector_plantilla.py` (principal: `LectorPlantillaOpenpyxl`, `read_only=True`, `data_only=True`, solo A..N, `MAX_FILAS_PLANTILLA = 500`), `Backend/app/domain/cargas/errores.py` (nuevo: `PlantillaInvalidaError(DomainError)` con motivos: dañado, sin `Registros`, títulos, formato antiguo, demasiadas filas), `Backend/tests/unit/infrastructure/cargas/test_lector_plantilla.py`.
+  - Docs: `03-casos-de-uso.md` §4 Formato de entrada, Flujos alternativos; decisión (f); `tests/fixtures/esperado.py`.
+  - Aceptación:
+    - `plantilla_valida.xlsx` → 6 filas, con `fila` 2..7 y valores crudos (fechas como `date`/`datetime`); las fórmulas de O/P hasta la fila 501 no cuentan. Cada fixture da `FILAS_CON_DATOS`.
+    - `plantilla_501_filas.xlsx` → `PlantillaInvalidaError` "El archivo tiene más de 500 filas con datos; divídalo en varios archivos." Uno de exactamente 500 (construido en `tmp_path`) se lee.
+    - `Control Gym 2025 sintetico.xlsx` → mensaje de formato antiguo (f). Libro sin `Registros` y sin meses → "El archivo no tiene la hoja Registros.". Un título de A..N cambiado → "Los títulos de la hoja Registros no coinciden con la plantilla oficial.". Bytes que no son xlsx → "El archivo está dañado o no es un .xlsx válido.".
+    - Filas vacías intermedias se saltan conservando el número de fila real. Ningún mensaje contiene valores de celdas.
+  - Pruebas: unitarias con fixtures sintéticos y libros en `tmp_path`.
+
+- [x] **T5** · `domain` · D4-BE-02 (1/2) · **TDD** · Cédula (módulo 10) y excepción de pasaporte
+  - Archivos: `Backend/app/domain/cargas/documento.py` (principal: `normalizar_documento(valor) -> str`, `cedula_valida(texto) -> bool`, `documento_valido(texto, observaciones) -> bool`), `Backend/tests/unit/domain/cargas/test_documento.py` (se escribe **primero**, en rojo).
+  - Docs: `03-casos-de-uso.md` §4 (columna C, criterios 3 y 4); decisión (e).
+  - Aceptación:
+    - `cedula_valida_fixture(1)` (generada como en `generar_fixtures.cedula_valida`) → `True`; mismo número con el verificador +1 → `False`; 9 u 11 dígitos, letras o vacío → `False`.
+    - Celda numérica `912345678` → `"0912345678"`; `" 1700000019 "` → sin espacios.
+    - `"AB12345"` con Observaciones `"pasaporte colombiano"` → válido; sin `PASAPORTE` → inválido; `"AB1"` o 21 caracteres o con `-` con `PASAPORTE` → inválido. Solo librería estándar.
+  - Pruebas: unitarias (TDD).
+
+- [x] **T6** · `domain` · D4-BE-02 (2/2) · **TDD** · Validación por fila
+  - Archivos: `Backend/app/domain/cargas/validacion.py` (principal: `validar_fila(FilaPlantilla) -> FilaValida | tuple[ErrorFila, ...]`; `FilaValida` y `ErrorFila(fila, columna, motivo)` frozen), `Backend/tests/unit/domain/cargas/test_validacion.py` (primero, en rojo).
+  - Docs: `03-casos-de-uso.md` §4 tabla de columnas A..P y RN-01.1, RN-01.7; decisiones (e), (h).
+  - Aceptación — **una prueba por regla**, cada una con su columna y motivo:
+    - A fuera del catálogo → error `A`; vacío → válido (`estado_registro=None`). B vacío o con menos de 5 letras tras `normalizar_nombre` → `B`. C (T5) → `C` "La cédula no tiene un dígito verificador válido." / "Falta la cédula.". E con correo mal formado → `E`; vacío → válido. F fuera de catálogo (`SEMANAL`) → `F`. G vacía, no fecha o fuera de 2024-01-01..2035-12-31 → `G`. H ≤ G → `H` "La fecha de vencimiento debe ser posterior a la de inicio.". Duración < 21 (no `DIARIO`) o > 400 → `H`; `DIARIO` de 1 día → válido. I fuera de catálogo → `I`. K negativo o con 3 decimales → `K`; vacío → válido. L vacío, negativo o no numérico → `L`. M `401`, `-1` o `2.5` → `M`; `7.0` → 7.
+    - Una fila con varios fallos devuelve todos sus errores. Montos como `Decimal` (`40.5` → `Decimal("40.50")` o `Decimal("40.5")`, nunca `float`). Ningún motivo incluye el valor de la celda.
+    - Cada fila de los fixtures: `FILAS_CON_ERROR` coincide (fila y campo).
+  - Pruebas: unitarias (TDD).
+
+- [x] **T7** · `domain` · D4-BE-03 (1/2) · Plan de carga: enlace y duplicados
+  - Archivos: `Backend/app/domain/cargas/enlace.py` (principal: función pura `planificar(filas_validas, socios_por_cedula, candidatos_por_nombre, claves_existentes) -> PlanCarga` con, por fila, socio existente o nuevo, `duplicada`, `enlazado_por_nombre` y avisos), `Backend/tests/unit/domain/cargas/test_enlace.py`.
+  - Docs: `03-casos-de-uso.md` §4 RN-01.8, RN-01.9 y criterios 1, 5, 6; `04` D-03, D-04; decisiones (b), (c).
+  - Aceptación:
+    - Cédula existente → socio existente, `socios_enlazados` 1. Nombre con 1 candidato sin cédula → enlazado y marcado para `asignar_cedula`. 2 candidatos → socio nuevo y aviso "Fila N: hay varios socios históricos con el mismo nombre; se creó un socio nuevo." (sin el nombre).
+    - Clave existente en el histórico → `duplicada`. Dos filas idénticas del archivo → la segunda `duplicada`. Dos filas de la misma cédula nueva → un solo socio nuevo.
+    - Candidato por nombre ya tomado por otra cédula del mismo archivo → la segunda crea socio nuevo. Resultado determinista (orden de fila).
+  - Pruebas: unitarias.
+
+- [x] **T8** · `application` · D4-BE-03 (2/2) · Casos de uso `PrevisualizarCarga` y `ConfirmarCarga`
+  - Archivos: `Backend/app/application/cargas/procesar_carga.py` (principal: ambos handlers comparten `_analizar` = leer → validar → consultar → planificar; `CargaConErroresError`, `CargaSinFilasNuevasError`, `MigracionNoCompletadaError`), `Backend/tests/unit/application/cargas/test_procesar_carga.py`, `Backend/tests/unit/application/cargas/dobles.py`.
+  - Docs: `03-casos-de-uso.md` §4 Flujo principal (pasos 1–8), RN-01.11; `docs/backend/01-arquitectura.md` §Patrón de un caso de uso; decisiones (a), (i), (j), (k).
+  - Aceptación (dobles, reloj fijo `2026-09-29T15:00Z`):
+    - Vista previa de 6 filas válidas nuevas → `filas_leidas 6, filas_validas 6, filas_con_error 0, filas_duplicadas 0, puede_confirmar True`, vencimientos mín./máx.; **no** llama a la escritura ni a `commit`.
+    - Con 1 fila con error → `filas_con_error 1`, `errores` con fila/columna/motivo, `puede_confirmar False`. Confirmar ese archivo → `CargaConErroresError` y nada escrito.
+    - Confirmar: `bloquear()` antes de consultar duplicados; crea socios nuevos, asigna cédulas, inserta membresías (`origen PLANTILLA`, decisión (i)) y la carga con conteos y `fecha_carga` del reloj, y hace **un** `commit`. Si la escritura falla a mitad → sin `commit`.
+    - Confirmar dos veces el mismo contenido (el doble conserva lo escrito) → la segunda lanza `CargaSinFilasNuevasError`. Archivo vacío → vista previa `puede_confirmar False`; confirmar → `CargaSinFilasNuevasError`.
+    - Migración ≠ `COMPLETADA` → `MigracionNoCompletadaError` en ambos. No se invoca ningún entrenamiento (RN-01.11). Ningún log con datos personales.
+  - Pruebas: unitarias.
+
+- [x] **T9** · `infra` · Unidad de trabajo de cargas y composición
+  - Archivos: `Backend/app/infrastructure/persistence/unit_of_work_cargas.py` (principal: sesión única, `bloquear()` = `pg_advisory_xact_lock(<clave fija>)`, rollback si no hay `commit`), `Backend/app/api/dependencies.py` (`get_previsualizar_carga`, `get_confirmar_carga`, lector), `Backend/tests/integration/persistence/test_unit_of_work_cargas.py`.
+  - Docs: `docs/backend/01-arquitectura.md` §Composition root; `unit_of_work_listas.py` como patrón; decisión (j).
+  - Aceptación:
+    - Salir sin `commit` o con excepción → no queda ninguna fila en `socios`, `membresias` ni `cargas`.
+    - Con dos sesiones, la segunda `bloquear()` espera hasta que la primera confirma (prueba con hilo y `lock_timeout` corto → la segunda espera o expira, nunca pasan a la vez).
+  - Pruebas: integración.
+
+- [x] **T10** · `api` · D4-BE-04 · Endpoints `POST /cargas/vista-previa` y `POST /cargas`
+  - Archivos: `Backend/app/api/routers/cargas.py` (principal: lectura acotada a 5 MB + 1 byte, mapeo de errores (k), ejemplos reales de `200`/`201`/`400`/`409`/`413`/`422`, sin `501`), `Backend/tests/integration/api/test_cargas_api.py` (nuevo), `Backend/tests/integration/api/test_contract_cargas.py` (quita `501`, comprueba ejemplos), `Backend/tests/integration/api/test_cargas_lista_api.py` (nuevo: la carga alimenta la lista).
+  - Docs: `docs/API_CONTRACT.md` §Operaciones de negocio; `.claude/rules/backend.md` §API; decisiones (a), (g), (k).
+  - Aceptación (PostgreSQL de pruebas, migración sintética completada, `get_clock` fijo):
+    - `vista-previa` con `plantilla_valida.xlsx` → `200` `{filas_leidas:6, filas_validas:6, filas_con_error:0, filas_duplicadas:0, puede_confirmar:true}`; los conteos de `socios`/`membresias`/`cargas` no cambian.
+    - `plantilla_cedula_invalida.xlsx` → `200` con `errores:[{fila:3, columna:"C", …}]`, `puede_confirmar:false`; `POST /cargas` → `422 domain_rule_violated` y nada guardado.
+    - `POST /cargas` con la válida → `201` `{filas_guardadas:6, filas_duplicadas:0}`; repetir → vista previa `filas_duplicadas:6, puede_confirmar:false` y `POST` → `422`; `membresias` no crece.
+    - Un socio histórico sin cédula con nombre único igual al de una fila → `socios_enlazados ≥ 1` y ahora tiene la cédula; con dos homónimos → socio nuevo y `avisos_enlace` con "Fila N". Una fila igual a una membresía migrada → duplicada.
+    - `plantilla_501_filas.xlsx`, libro histórico sintético, `.txt` renombrado y sin campo `archivo` → `400` con el formato único; 5 MB + 1 → `413`; estado `PENDIENTE` → `409`.
+    - **Alimenta la lista:** con el reloj a 45 días de la última carga, `POST /listas` → `advertencia_datos_antiguos: true`; tras `POST /cargas` con filas que vencen dentro del horizonte → `POST /listas` da `false` y incluye esas membresías (por cédula ficticia).
+    - `/openapi.json`: ambos endpoints sin `501`, con los códigos y ejemplos anteriores.
+  - Pruebas: integración (API).
+
+- [x] **T11** · `frontend` · D4-FE-01 + D4-FE-02 · Carga contra la API real y resumen posterior
+  - Archivos: `Frontend/src/features/carga/components/VistaPreviaCarga.tsx` (principal: `ResumenCarga` con "Filas leídas", "Filas guardadas", "Filas duplicadas (no se guardaron)", "Socios enlazados con su historia", sección "Para revisar" con `avisosEnlace` y enlace "Ver la lista de socios por vencer" a `/lista`), `Frontend/src/features/carga/api/carga-api.handlers.ts` (respuestas y mensajes iguales a los del backend: `400`, `409`, `413`, `422`), `Frontend/src/features/carga/pages/CargaPage.test.tsx`, `Frontend/src/features/carga/api/carga-api.test.ts`.
+  - Docs: `docs/frontend/01-arquitectura.md` §Inicio y Carga, §MSW, §`shared/ui`.
+  - Aceptación (Vitest + MSW):
+    - Respuesta simulada `{filas_leidas:6, filas_guardadas:4, filas_duplicadas:2, socios_enlazados:1, avisos_enlace:["Fila 5: …"]}` → se ven los cuatro números, la sección "Para revisar" con el aviso y el enlace a `/lista`. Sin avisos → no aparece "Para revisar".
+    - `413` → `ErrorAlert` "El archivo supera el tamaño máximo permitido."; `422` al confirmar → mensaje del servidor y vuelve a la vista previa.
+    - MSW sigue solo en pruebas y con `VITE_API_MOCKS=true` en `dev` (sin cambios en `main.tsx`); ningún dato del handler es real.
+  - Pruebas: frontend.
+
+- [x] **T12** · `frontend` · D4-FE-03 · Botón de ayuda "¿Cómo funciona esta lista?"
+  - Archivos: `Frontend/src/features/lista/components/AyudaLista.tsx` (principal, nuevo: botón + `Modal`), `Frontend/src/features/lista/components/AyudaLista.test.tsx` (nuevo), `Frontend/src/features/lista/pages/ListaPage.tsx`, `Frontend/src/features/lista/pages/ListaPage.test.tsx`.
+  - Docs: `Documentation/06-como-funciona-la-lista.md` §1–§6; `docs/frontend/01-arquitectura.md` §`shared/ui` (`Modal`); decisión (m).
+  - Aceptación:
+    - En la página Lista (con o sin lista generada) hay un botón "¿Cómo funciona esta lista?"; al pulsarlo se abre un `role="dialog"` con título y secciones: qué hace la lista, socios prioritarios, niveles alto/medio/bajo, motivos, qué datos se muestran (celular solo en el Excel) y casos frecuentes (cargar datos cada mes, socios sin cédula, fecha pasada).
+    - Cierra con "Cerrar" y con `Escape`; el foco vuelve al botón.
+    - El texto no contiene "score", "Top K", "top", "horizonte", "percentil" ni "modelo v1" (prueba que recorre el contenido del diálogo).
+  - Pruebas: frontend.
+
+- [x] **T13** · `infra-deploy` · Stack E2E aislado con datos sintéticos
+  - Archivos: `compose.yaml` (principal: puertos publicados con variables y valores por defecto actuales `DB_PORT:-5432`, `BACKEND_PORT:-8000`, `FRONTEND_PORT:-8080`), `.env.e2e.example` (nuevo: marcadores, puertos 5433/8001/8081, `CORS_ORIGINS=http://localhost:8081`, `HISTORICO_DIR=./Backend/tests/fixtures/historico`), `.env.example` (documenta las variables de puerto), `.gitignore` (`.env.e2e`).
+  - Docs: `docs/backend/10-docker.md` §Uso; `.claude/rules/deploy.md` §Configuración y secretos; decisión (l).
+  - Aceptación:
+    - `docker compose up -d --build` con el `.env` actual sigue publicando 5432/8000/8080 solo en `127.0.0.1` (sin cambio para el usuario, sin `down -v`).
+    - `docker compose -p mtabolic-e2e --env-file .env.e2e up -d --build` levanta un segundo stack con su propio volumen; `GET http://localhost:8001/api/v1/sistema/estado` → `LISTO` (migración sintética y modelo v1). Ninguna contraseña versionada.
+  - Pruebas: verificación por comandos.
+
+- [x] **T14** · `frontend` · D4-OP-01 · E2E Playwright: carga válida → generar lista → descargar Excel
+  - Archivos: `Frontend/e2e/carga-lista-excel.spec.ts` (principal), `Frontend/e2e/plantilla-sintetica.ts` (nuevo: genera la plantilla en `test.info().outputPath` con `exceljs`: hoja `Registros`, títulos A..N exactos, 3 filas MENSUAL con inicio = hoy − 20 y vencimiento = hoy + 10, nombres "SOCIO PRUEBA E2E …" y cédulas módulo 10 únicas por ejecución), `Frontend/package.json` (`exceljs` en `devDependencies`), `Frontend/README.md` (cómo correrlo contra el stack E2E).
+  - Docs: `docs/frontend/01-arquitectura.md` §Pruebas; `.claude/rules/frontend.md` §Pruebas; decisión (l).
+  - Aceptación (`E2E_BASE_URL=http://localhost:8081`):
+    - Carga → subir el archivo → vista previa "3" válidas y 0 errores → "Confirmar" → resumen con 3 guardadas.
+    - Lista → "Generar lista" con los valores por defecto → sin aviso de datos antiguos; aparece al menos uno de los socios "SOCIO PRUEBA E2E".
+    - "Descargar Excel" → `download.suggestedFilename()` termina en `.xlsx` y el archivo no está vacío.
+    - Pasa dos veces seguidas sin `down -v`. `health.spec.ts` sigue en verde.
+  - Pruebas: E2E.
+
+- [x] **T15** · `infra-deploy` · Stack principal reconstruido y verificación en el navegador
+  - Archivos: ninguno (salvo que falle algo del stack).
+  - Docs: `docs/backend/10-docker.md` §Uso; `.claude/rules/deploy.md`; decisión (l).
+  - Aceptación (el developer pega solo estados, códigos y conteos, sin datos personales):
+    1. Suites: Backend `pytest`, `ruff check`, `ruff format --check`, `mypy app`, `lint-imports`; Frontend `npm test`, `npm run lint`, `npm run build`; E2E (T14) en verde contra el stack E2E.
+    2. Stack principal: `docker compose run --rm migrate` (aplica `0005`) y `docker compose up -d --build` (sin `down -v`) → `LISTO`, modelo v1; conteos de `socios`, `membresias`, `cargas` antes/después idénticos.
+    3. En http://localhost:8080: Carga con `plantilla_valida.xlsx` → vista previa sin errores; **no** se confirma (decisión (l), salvo que el usuario diga lo contrario). Lista → generar → botón de ayuda abre la explicación → Excel descargado.
+    4. En http://localhost:8081 (stack E2E): recorrido completo carga → confirmar → lista → Excel en el navegador.
+  - Pruebas: verificación del stack y navegador.
+
+- [x] **DOC-1** · (doc-agent) · Documentación
+  - `docs/backend/13-cargas.md` (nuevo: lector, validación, enlace, duplicados, transacción y bloqueo, decisiones (a)–(k)) + índice en `Documentation/README.md`; `docs/backend/09-esquema-base-de-datos.md` (índice `0005`); `docs/API_CONTRACT.md` (códigos y mensajes reales de cargas, 5 MB); `docs/backend/10-docker.md` (stack E2E y variables de puerto); `docs/frontend/01-arquitectura.md` (resumen de carga, ayuda de la lista, E2E y `exceljs`); `03-casos-de-uso.md` §4 solo si una decisión lo precisa (d), (e), (h).
+  - `05-cronograma-semana.md`: columna/nota de avance del Día 4 (estado por ID), pruebas, desviaciones, "Qué puede probar el usuario" y pendientes; `ACTION_PLAN.md`: decisiones en DECISIONES IMPORTANTES, R-007 a TERMINADOS, PRÓXIMO = Día 5. El doc-agent decide si (l) o (d) merecen ADR.
+
+**Dependencias**
+- Backend: T1 → T3. T2 → T3, T4, T8. T5 → T6 → T7 → T8. T3 y T8 → T9 → T10. T4 → T8 (el doble del lector no depende, pero T10 sí de T4).
+- Frontend: T11 y T12 pueden empezar ya (MSW). T13 es independiente. T10, T11 y T13 → T14. Todo → T15 → DOC-1.
+- Externas: PostgreSQL con `app_db_test` (T1, T3, T9, T10); Docker Desktop (T13–T15); red para instalar `exceljs` (T14); la plantilla oficial solo para cotejar títulos en T4.
+
+**Riesgos**
+1. **Duplicados por concurrencia o por cédula sin cero.** Dos confirmaciones simultáneas o la cédula histórica de 9 dígitos podrían duplicar socios o membresías. Mitigación: bloqueo consultivo de transacción y revalidación dentro de ella (T9, T10), búsqueda con ambas variantes (T3), prueba de "cargar dos veces no duplica" (T8, T10, T14).
+2. **Datos sintéticos en la base con datos reales.** Confirmar cargas de prueba en el stack principal deja socios ficticios que no se pueden borrar físicamente. Mitigación: E2E y confirmación solo en el stack `mtabolic-e2e` (T13–T15); en el principal, solo vista previa.
+3. **Fugas de datos personales y archivos hostiles.** Mensajes de error o logs con cédulas/nombres, o un xlsx enorme o dañado. Mitigación: motivos sin valores de celda (T4, T6), lectura acotada a 5 MB y `read_only` solo A..N (T4, T10), `400` controlado ante archivos dañados; revisión completa el día 7.
 
 ### R-006 — Ajustes de presentación de la lista (continuación de R-005): borrado de las listas de prueba, nombres cortos en "Listas anteriores", resumen con rango de fechas, sin columna Celular en pantalla · **DONE** 2026-09-29
 
@@ -1351,10 +1539,18 @@ _(ninguno)_
 - 2026-09-29 · R-006 · El celular sale de la pantalla y se mantiene en la API y el Excel → [06 §5](06-como-funciona-la-lista.md).
 - 2026-09-29 · R-006 · La revisión de seguridad de R-006 se difiere a la revisión única del día 7 ([05 §1](05-cronograma-semana.md)).
 
+- 2026-09-29 · R-007 · (l) Confirmaciones de carga de prueba y E2E solo en el stack aislado `mtabolic-e2e` (8081/8001/5433, base y libros sintéticos); en el principal solo vista previa y lista; puertos e `IMAGE_TAG` configurables → [10-docker](docs/backend/10-docker.md).
+- 2026-09-29 · R-007 · (a) Las duplicadas cuentan como válidas; confirmar exige sin errores y al menos una fila nueva → [API_CONTRACT §Cargas](docs/API_CONTRACT.md#cargas-cu-01-r-007).
+- 2026-09-29 · R-007 · (d)(e) Cédula de 10 dígitos módulo 10 sin reglas de provincia; búsqueda con y sin cero inicial (sin reescribir la histórica); celda numérica de 9 dígitos → antepone `0`. Precisa CU-01 sin contradecirlo → [13-cargas](docs/backend/13-cargas.md).
+- 2026-09-29 · R-007 · (f) Títulos A..N exactos; (g) plantilla ≤ 5 MB → `413`; (h) montos con máximo 2 decimales → [13-cargas](docs/backend/13-cargas.md).
+- 2026-09-29 · R-007 · (j) Bloqueo consultivo de transacción en la confirmación; sin índice único de duplicados (D-04 conserva duplicados históricos); migración `0005` solo añade el índice parcial de socios sin cédula → [09](docs/backend/09-esquema-base-de-datos.md).
+- 2026-09-29 · R-007 · Un socio enlazado por nombre recibe la cédula aunque sus filas sean duplicadas; `ClaveMembresia` única en el dominio.
+- 2026-09-29 · R-007 · La revisión de seguridad de R-007 (incluidos 2 avisos moderados de `npm audit` por `uuid` vía `exceljs`, solo desarrollo) se difiere a la revisión única del día 7 ([05 §1](05-cronograma-semana.md)).
+
 ## PRÓXIMO
 
-Día 4 del [cronograma](05-cronograma-semana.md) (carga por plantilla CU-01 e integración real). Inicio y Lista ya funcionan contra la API real (adelanto de D4-FE-01).
+Día 5 del [cronograma](05-cronograma-semana.md) (campañas y gestión: CU-06, CU-07, CU-08, CU-10).
 
-Registrado por R-005, sin implementar: **D4-FE-03** (botón de ayuda "¿Cómo funciona esta lista?" con [06](06-como-funciona-la-lista.md)) y **D6-BE-06 / D6-FE-04** (alerta en Inicio si no hay carga en el mes actual).
+Registrado por R-005, sin implementar: **D6-BE-06 / D6-FE-04** (alerta en Inicio si no hay carga en el mes actual). D4-FE-03 quedó hecho en R-007.
 
 Registrado por R-006, sin implementar: **D7-FE-01** (mejora del diseño visual de la aplicación con los tokens de `shared/ui`, sin cambiar comportamiento; a pedido del usuario) → [05 Día 7](05-cronograma-semana.md).

@@ -25,6 +25,7 @@ Registro del paso del notebook `MVP.ipynb` a una aplicación web. Sirve de insum
 | [docs/backend/10-docker.md](docs/backend/10-docker.md) | `compose.yaml`, imágenes, variables de entorno, pendientes de seguridad |
 | [docs/backend/11-historico.md](docs/backend/11-historico.md) | Lectura de libros, limpieza, identidad, ciclos y etiquetas; repositorios del historial; conciliación con el notebook |
 | [docs/backend/12-modelo-y-listas.md](docs/backend/12-modelo-y-listas.md) | Modelo v1 (variables, adaptador scikit-learn, factores, umbrales), migración al arrancar con bloqueo y estados, lista priorizada, Excel; conciliación con la lista del notebook |
+| [docs/backend/13-cargas.md](docs/backend/13-cargas.md) | Carga por plantilla (CU-01): lector, validación por fila, enlace de socios, duplicados, transacción todo o nada con bloqueo; decisiones de R-007 |
 | [docs/frontend/01-arquitectura.md](docs/frontend/01-arquitectura.md) | Capas del Frontend, cliente HTTP, feature de referencia, estilos |
 
 ## Decisiones de arquitectura (ADR)

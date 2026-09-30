@@ -247,27 +247,55 @@ Continuación de R-005, a petición del usuario. **Estado:** `DONE` (5 tareas + 
 
 **Base de datos**
 
-| ID | Tarea | Resp. | Depende de | Hecho cuando |
-|---|---|---|---|---|
-| D4-BD-01 | Consulta de duplicados por la clave de D-04 y búsqueda de socios históricos sin cédula por nombre normalizado (con índice). | A | D2-BD-01 | Pruebas de integración de ambas consultas. |
+| ID | Tarea | Resp. | Depende de | Hecho cuando | Estado |
+|---|---|---|---|---|---|
+| D4-BD-01 | Consulta de duplicados por la clave de D-04 y búsqueda de socios históricos sin cédula por nombre normalizado (con índice). | A | D2-BD-01 | Pruebas de integración de ambas consultas. | Hecho (R-007 T1, migración `0005`; T3) |
 
 **Backend**
 
-| ID | Tarea | Resp. | Depende de | Hecho cuando |
-|---|---|---|---|---|
-| D4-BE-01 | Lector de la plantilla: hoja `Registros`, títulos exactos, máximo 500 filas; rechazo del formato antiguo. | A | D1-BE-01 | Pruebas con las plantillas de D2-OP-01. |
-| D4-BE-02 | **TDD** · Validación por fila: cédula con módulo 10, excepción de pasaporte, catálogos, fechas, montos, duración y nombre. | A | D4-BE-01 | Una prueba por regla de la tabla de CU-01. |
-| D4-BE-03 | Duplicados y enlace con el histórico (D-03): enlace único, homónimos informados en el resumen. | A | D4-BD-01, D4-BE-02 | Pruebas de los criterios de aceptación de CU-01. |
-| D4-BE-04 | Endpoints: vista previa (valida sin guardar) y confirmación (vuelve a recibir el archivo, revalida y guarda en una transacción; todo o nada). | A | D4-BE-03 | Cargar dos veces el mismo archivo no duplica; un archivo con una fila inválida no se puede confirmar. |
+| ID | Tarea | Resp. | Depende de | Hecho cuando | Estado |
+|---|---|---|---|---|---|
+| D4-BE-01 | Lector de la plantilla: hoja `Registros`, títulos exactos, máximo 500 filas; rechazo del formato antiguo. | A | D1-BE-01 | Pruebas con las plantillas de D2-OP-01. | Hecho (R-007 T2, T4) |
+| D4-BE-02 | **TDD** · Validación por fila: cédula con módulo 10, excepción de pasaporte, catálogos, fechas, montos, duración y nombre. | A | D4-BE-01 | Una prueba por regla de la tabla de CU-01. | Hecho (R-007 T5, T6; TDD) |
+| D4-BE-03 | Duplicados y enlace con el histórico (D-03): enlace único, homónimos informados en el resumen. | A | D4-BD-01, D4-BE-02 | Pruebas de los criterios de aceptación de CU-01. | Hecho (R-007 T7, T8) |
+| D4-BE-04 | Endpoints: vista previa (valida sin guardar) y confirmación (vuelve a recibir el archivo, revalida y guarda en una transacción; todo o nada). | A | D4-BE-03 | Cargar dos veces el mismo archivo no duplica; un archivo con una fila inválida no se puede confirmar. | Hecho (R-007 T9, T10) |
 
 **Frontend**
 
-| ID | Tarea | Resp. | Depende de | Hecho cuando |
-|---|---|---|---|---|
-| D4-FE-01 | Conectar Inicio, Carga y Lista a la API real (MSW solo en pruebas). Estados "Inicializando" y "Faltan datos". | B | D3-BE-04, D4-BE-04 | Recorrido en el navegador con el stack de Compose. |
-| D4-FE-02 | Resumen posterior a la carga: guardadas, duplicadas y socios enlazados u homónimos. | B | D4-FE-01 | Prueba con respuesta simulada. |
-| D4-OP-01 | E2E Playwright: carga válida → generar lista → descargar Excel (con datos sintéticos). | B | D4-FE-01 | Prueba en verde contra el stack local. |
-| D4-FE-03 | Botón de ayuda "¿Cómo funciona esta lista?" en la pantalla Lista, con la explicación de [06-como-funciona-la-lista](06-como-funciona-la-lista.md) (añadida por R-005; pendiente). | B | D3-FE-01 | Prueba: el botón abre la explicación sin términos técnicos. |
+| ID | Tarea | Resp. | Depende de | Hecho cuando | Estado |
+|---|---|---|---|---|---|
+| D4-FE-01 | Conectar Inicio, Carga y Lista a la API real (MSW solo en pruebas). Estados "Inicializando" y "Faltan datos". | B | D3-BE-04, D4-BE-04 | Recorrido en el navegador con el stack de Compose. | Hecho (Inicio y Lista desde R-004; Carga en R-007 T11; recorrido en T15) |
+| D4-FE-02 | Resumen posterior a la carga: guardadas, duplicadas y socios enlazados u homónimos. | B | D4-FE-01 | Prueba con respuesta simulada. | Hecho (R-007 T11) |
+| D4-OP-01 | E2E Playwright: carga válida → generar lista → descargar Excel (con datos sintéticos). | B | D4-FE-01 | Prueba en verde contra el stack local. | Hecho (R-007 T13 stack aislado, T14 E2E) |
+| D4-FE-03 | Botón de ayuda "¿Cómo funciona esta lista?" en la pantalla Lista, con la explicación de [06-como-funciona-la-lista](06-como-funciona-la-lista.md) (añadida por R-005). | B | D3-FE-01 | Prueba: el botón abre la explicación sin términos técnicos. | Hecho (R-007 T12) |
+
+#### Avance y resumen del Día 4
+
+**Estado:** cerrado · 8 de 8 tareas hechas en un solo requerimiento (R-007, `DONE`, 15 tareas de desarrollo + documentación). Hito verificado: en el stack aislado (http://localhost:8081, datos sintéticos) el recorrido carga → confirmar → lista → Excel funciona en el navegador y en el E2E; en el stack principal (http://localhost:8080) la base quedó en `0005`, `LISTO`, con los datos intactos (socios 1.410, membresías 2.748, cargas 1).
+
+**Realizado**
+- Base de datos: migración `0005` con el índice parcial `ix_socios_nombre_normalizado_sin_cedula`; repositorio de cargas (búsqueda de cédula con y sin cero inicial, candidatos sin cédula por nombre, claves de duplicado) y unidad de trabajo con bloqueo consultivo de transacción. Detalle: [09](docs/backend/09-esquema-base-de-datos.md).
+- Backend: lector de la plantilla (hoja `Registros`, títulos A..N exactos, máximo 500 filas, O y P ignoradas, formato antiguo y archivos dañados rechazados); validación por fila con una regla por columna (cédula módulo 10 y pasaporte por TDD); enlace por cédula o por nombre único, homónimos → socio nuevo con aviso; duplicados por la clave de D-04; `POST /cargas/vista-previa` y `POST /cargas` reales (todo o nada, un solo `commit`). La carga alimenta la lista: el aviso de datos antiguos usa la nueva fecha de carga y las membresías nuevas entran en la cartera. Detalle: [13-cargas](docs/backend/13-cargas.md); contrato: [API_CONTRACT §Cargas](docs/API_CONTRACT.md#cargas-cu-01-r-007).
+- Frontend: Carga contra la API real con vista previa (conteos, rango de vencimientos, errores por fila y columna) y resumen tras confirmar (guardadas, duplicadas, socios enlazados, "Para revisar", enlace a la Lista); botón "¿Cómo funciona esta lista?" ([frontend/01](docs/frontend/01-arquitectura.md)).
+- Despliegue: puertos e `IMAGE_TAG` configurables en `compose.yaml` y stack aislado `mtabolic-e2e` con `.env.e2e` ([10-docker](docs/backend/10-docker.md)).
+- Pruebas: Backend 1.409 pytest, `ruff`, `format` (226 archivos), `mypy app` (104), `lint-imports` (7 contratos); Frontend 404 Vitest, `build`, `lint` 0; E2E `health` en 8080 y 8081, `carga-lista-excel` en verde en 8081 (unos 10 s) y saltado a propósito en 8080.
+
+**Desviaciones**
+- Las confirmaciones de prueba y el E2E se hacen solo en el stack aislado (8081): confirmar en el principal dejaría socios ficticios que no se pueden borrar. En el principal solo se verificó la vista previa (`plantilla_valida` 6/6 con "Confirmar" habilitado sin confirmar; `plantilla_cedula_invalida` 5 válidas y 1 error con "Confirmar" deshabilitado), la ayuda y la lista (30 filas) con su Excel.
+- Las filas duplicadas cuentan como válidas; confirmar exige ninguna fila con error y al menos una fila nueva.
+- Cédula: 10 dígitos con módulo 10, sin reglas de provincia; una celda numérica de 9 dígitos recupera el `0`; la búsqueda prueba la cédula con y sin cero inicial (el histórico guardó algunas con 9 dígitos). Un socio enlazado por nombre recibe la cédula aunque sus filas resulten duplicadas.
+- Límites propios: 5 MB (`413`), 500 filas, montos con máximo 2 decimales. Sin índice único de duplicados (D-04 conserva duplicados del histórico); la concurrencia se resuelve con bloqueo consultivo.
+- Revisión de seguridad no ejecutada: diferida a la revisión única del día 7 (§1).
+
+**Qué puede probar el usuario**
+1. En http://localhost:8080 → Carga: subir la plantilla real del mes (formato oficial `Plantilla_Carga_Datos_Mtabolic.xlsx`) → revisar la vista previa y los errores por fila → "Confirmar" → ver el resumen → ir a Lista y generar: los socios nuevos aparecen y el aviso de datos antiguos desaparece. (Confirmar guarda de verdad en la base: hacerlo solo con datos reales del mes.)
+2. Lista → botón "¿Cómo funciona esta lista?": abre la explicación y cierra con "Cerrar" o `Escape`.
+3. Para probar sin tocar los datos reales: levantar el stack aislado ([10-docker §Stack E2E aislado](docs/backend/10-docker.md)), abrir http://localhost:8081 y cargar una plantilla sintética, o ejecutar el E2E (`Frontend/README.md`).
+
+**Pendientes que pasan a los días siguientes**
+- **Día 6:** D6-BE-06 / D6-FE-04 (alerta de datos del mes).
+- **Día 7:** revisión de seguridad de lo hecho el día 4 y S23 (D7-OP-02); `npm audit` con 2 avisos moderados por `uuid` < 11.1.1 vía `exceljs` (solo `devDependency` del E2E); D7-FE-01 (diseño).
+- Menor: el aviso de enlace del contrato va con tildes ("históricos", "creó"), a diferencia de otros mensajes del backend sin tildes.
 
 ---
 

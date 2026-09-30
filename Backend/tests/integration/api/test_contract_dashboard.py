@@ -51,6 +51,8 @@ MULTI_EXAMPLE_OPERATIONS = {("get", "/api/v1/sistema/estado")}
 # Operaciones ya implementadas: dejan de declarar ``501`` (R-004: sistema y listas).
 IMPLEMENTED_OPERATIONS = {
     ("get", "/api/v1/sistema/estado"),
+    ("post", "/api/v1/cargas/vista-previa"),
+    ("post", "/api/v1/cargas"),
     ("post", "/api/v1/listas"),
     ("get", "/api/v1/listas"),
     ("get", "/api/v1/listas/ultima"),

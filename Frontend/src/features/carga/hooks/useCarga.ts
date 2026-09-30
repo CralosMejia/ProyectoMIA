@@ -6,6 +6,9 @@ import type { CargaResumen, VistaPreviaCarga } from '../types'
 const EXTENSION_VALIDA = /\.xlsx$/i
 const MENSAJE_EXTENSION = 'Seleccione un archivo .xlsx con la plantilla oficial.'
 const MENSAJE_GENERICO = 'No se pudo procesar el archivo. Intente de nuevo.'
+/** Fijo: un 413 puede venir de un proxy sin el cuerpo de error del backend. */
+const MENSAJE_TAMANO = 'El archivo supera el tamaño máximo permitido.'
+const PAYLOAD_TOO_LARGE = 413
 
 export type EstadoCarga = 'inicial' | 'validando' | 'vista-previa' | 'enviando' | 'confirmada'
 
@@ -23,7 +26,8 @@ export interface UseCargaResult {
 }
 
 function toMessage(error: unknown): string {
-  return error instanceof ApiError ? error.message : MENSAJE_GENERICO
+  if (!(error instanceof ApiError)) return MENSAJE_GENERICO
+  return error.status === PAYLOAD_TOO_LARGE ? MENSAJE_TAMANO : error.message
 }
 
 /** Vista previa y confirmacion de una carga (CU-01), con cancelacion y sin doble envio. */

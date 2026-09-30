@@ -6,7 +6,9 @@ import { http, HttpResponse } from 'msw'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../../core/http/api-error'
 import { server } from '../../../mocks/server'
+import { MENSAJES_CARGA } from './carga-api.handlers'
 import source from './carga-api.ts?raw'
+import handlersSource from './carga-api.handlers.ts?raw'
 
 let previsualizarCarga: typeof import('./carga-api').previsualizarCarga
 let confirmarCarga: typeof import('./carga-api').confirmarCarga
@@ -122,6 +124,56 @@ describe('carga-api (contra MSW)', () => {
     expect(error).toBeInstanceOf(ApiError)
     expect((error as ApiError).status).toBe(422)
     expect((error as ApiError).message).toBe('El archivo no es valido.')
+  })
+
+  it('handler por defecto coherente con (a): guardadas = validas − duplicadas', async () => {
+    const vista = await previsualizarCarga(archivo('valida.xlsx'))
+    const resumen = await confirmarCarga(archivo('valida.xlsx'))
+
+    expect(resumen.filasLeidas).toBe(vista.filasLeidas)
+    expect(resumen.filasDuplicadas).toBe(vista.filasDuplicadas)
+    expect(resumen.filasGuardadas).toBe(vista.filasValidas - vista.filasDuplicadas)
+  })
+
+  it('duplicada.xlsx → vista previa sin errores pero no confirmable (todo duplicado)', async () => {
+    const vista = await previsualizarCarga(archivo('duplicada.xlsx'))
+
+    expect(vista.filasConError).toBe(0)
+    expect(vista.filasDuplicadas).toBe(vista.filasValidas)
+    expect(vista.puedeConfirmar).toBe(false)
+  })
+
+  it.each([
+    ['grande.xlsx', 413, 'payload_too_large', MENSAJES_CARGA.tamano],
+    ['antiguo.xlsx', 400, 'validation_error', MENSAJES_CARGA.formatoAntiguo],
+    ['sin-registros.xlsx', 400, 'validation_error', MENSAJES_CARGA.sinRegistros],
+    ['pendiente.xlsx', 409, 'conflict', MENSAJES_CARGA.migracionPendiente],
+  ])('vista previa de %s → ApiError %i (%s)', async (nombre, status, code, message) => {
+    const error = await previsualizarCarga(archivo(nombre)).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({ status, message, body: { error: { code, message } } })
+  })
+
+  it.each([
+    ['con-errores.xlsx', MENSAJES_CARGA.filasConError],
+    ['duplicada.xlsx', MENSAJES_CARGA.sinFilasNuevas],
+  ])('confirmar %s → 422 domain_rule_violated', async (nombre, message) => {
+    const error = await confirmarCarga(archivo(nombre)).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({
+      status: 422,
+      message,
+      body: { error: { code: 'domain_rule_violated', message } },
+    })
+  })
+
+  it('handlers sin datos personales: ni cédulas, ni celulares, ni correos, ni nombres', () => {
+    // Cedula/celular ecuatorianos: 10 digitos seguidos; correos con @.
+    expect(handlersSource).not.toMatch(/\b\d{10}\b/)
+    expect(handlersSource).not.toMatch(/[\w.+-]+@[\w-]+\.[\w.]+/)
+    expect(handlersSource).not.toMatch(/\b(nombre|cedula|celular|correo)\s*:\s*['"`]/i)
   })
 
   it('no usa fetch directo: pasa por core/http', () => {

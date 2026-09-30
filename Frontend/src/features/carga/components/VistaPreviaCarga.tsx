@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { DataTable, type DataTableColumn } from '../../../shared/ui/DataTable'
 import type { CargaResumen, ErrorFila, VistaPreviaCarga as VistaPrevia } from '../types'
 
@@ -95,7 +96,7 @@ export interface ResumenCargaProps {
   resumen: CargaResumen
 }
 
-/** Presentacional: resultado de una carga confirmada. */
+/** Presentacional: resultado de una carga confirmada, avisos para revisar y enlace a la lista. */
 export function ResumenCarga({ resumen }: ResumenCargaProps) {
   return (
     <section
@@ -107,20 +108,26 @@ export function ResumenCarga({ resumen }: ResumenCargaProps) {
       </h2>
       <dl className="mb-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
         <Dato termino="Archivo" valor={resumen.nombreArchivo} />
+        <Dato termino="Filas leídas" valor={resumen.filasLeidas} />
         <Dato termino="Filas guardadas" valor={resumen.filasGuardadas} />
-        <Dato termino="Filas duplicadas" valor={resumen.filasDuplicadas} />
-        <Dato termino="Socios enlazados" valor={resumen.sociosEnlazados} />
+        <Dato termino="Filas duplicadas (no se guardaron)" valor={resumen.filasDuplicadas} />
+        <Dato termino="Socios enlazados con su historia" valor={resumen.sociosEnlazados} />
       </dl>
       {resumen.avisosEnlace.length > 0 && (
-        <>
-          <h3 className="mb-2 font-semibold">Avisos de enlace</h3>
+        <section aria-labelledby="resumen-carga-revisar" className="mb-4">
+          <h3 id="resumen-carga-revisar" className="mb-2 font-semibold">
+            Para revisar
+          </h3>
           <ul className="list-disc pl-6">
             {resumen.avisosEnlace.map((aviso) => (
               <li key={aviso}>{aviso}</li>
             ))}
           </ul>
-        </>
+        </section>
       )}
+      <Link to="/lista" className="font-medium underline">
+        Ver la lista de socios por vencer
+      </Link>
     </section>
   )
 }

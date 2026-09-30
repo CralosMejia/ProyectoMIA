@@ -56,6 +56,12 @@ class Socio(IdMixin, TimestampMixin, SoftDeleteMixin, Base):
             postgresql_where=text("cedula IS NOT NULL AND deleted_at IS NULL"),
         ),
         Index("ix_socios_nombre_normalizado", "nombre_normalizado"),
+        # Enlace de la carga por plantilla con socios historicos sin cedula (RN-01.9, 0005).
+        Index(
+            "ix_socios_nombre_normalizado_sin_cedula",
+            "nombre_normalizado",
+            postgresql_where=text("cedula IS NULL AND deleted_at IS NULL"),
+        ),
     )
 
 

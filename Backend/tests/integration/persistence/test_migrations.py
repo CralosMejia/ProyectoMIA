@@ -1,6 +1,6 @@
 """Migraciones ``0001`` (esquema), ``0002`` (fila de ``estado_sistema``), ``0003``
-(``membresias.socio_id NOT NULL``) y ``0004`` (``membresias.fecha_actividad``) contra
-PostgreSQL 16.
+(``membresias.socio_id NOT NULL``), ``0004`` (``membresias.fecha_actividad``) y ``0005``
+(indice de socios sin cedula por nombre) contra PostgreSQL 16.
 
 Sin login (RT-12): no hay ``user_id``; las pruebas de aislamiento entre usuarios no aplican.
 Cada prueba deja la base como la encontro: transaccion con rollback, o ciclo de migraciones
@@ -26,6 +26,7 @@ pytestmark = pytest.mark.integration
 BUSINESS_TABLES = set(Base.metadata.tables)
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 LITERAL = re.compile(r"'([A-Z0-9_]+)'")
+HEAD = "0005"
 
 
 # ------------------------------------------------------------------ guarda de la BD de pruebas
@@ -410,7 +411,7 @@ def test_0003_upgrade_with_membresia_without_socio_fails_and_stays_at_0002(
     finally:
         _vaciar_historial(migrated_engine)
         command.upgrade(alembic_config, "head")
-    assert _revision_actual(migrated_engine) == "0004"
+    assert _revision_actual(migrated_engine) == HEAD
 
 
 # ------------------------------------------------------------------ 0004: fecha_actividad
@@ -456,7 +457,7 @@ def test_0004_downgrade_removes_column_and_index_and_upgrade_restores_them(
         assert INDICE_ACTIVIDAD not in _indices(migrated_engine, "membresias")
     finally:
         command.upgrade(alembic_config, "head")
-    assert _revision_actual(migrated_engine) == "0004"
+    assert _revision_actual(migrated_engine) == HEAD
     assert _is_nullable(migrated_engine, "membresias", "fecha_actividad") is False
     assert INDICE_ACTIVIDAD in _indices(migrated_engine, "membresias")
 
@@ -470,7 +471,7 @@ def test_0004_upgrade_fills_fecha_actividad_from_fecha_inicio(
             membresia_id = membresia(connection, con_actividad=False, fecha_inicio=date(2025, 1, 6))
         command.upgrade(alembic_config, "head")
 
-        assert _revision_actual(migrated_engine) == "0004"
+        assert _revision_actual(migrated_engine) == HEAD
         with migrated_engine.connect() as connection:
             stored = connection.execute(
                 text("SELECT fecha_actividad FROM membresias WHERE id = :id"),
@@ -498,7 +499,54 @@ def test_0004_upgrade_with_membresia_without_fecha_inicio_fails_and_stays_at_000
     finally:
         _vaciar_historial(migrated_engine)
         command.upgrade(alembic_config, "head")
-    assert _revision_actual(migrated_engine) == "0004"
+    assert _revision_actual(migrated_engine) == HEAD
+
+
+# ------------------------------------------------------------------ 0005: socios sin cedula
+INDICE_SIN_CEDULA = "ix_socios_nombre_normalizado_sin_cedula"
+
+
+def _definicion_indice(engine: Engine, nombre: str) -> str | None:
+    with engine.connect() as connection:
+        definicion = connection.execute(
+            text("SELECT indexdef FROM pg_indexes WHERE indexname = :nombre"),
+            {"nombre": nombre},
+        ).scalar_one_or_none()
+    return None if definicion is None else str(definicion)
+
+
+def test_0005_creates_partial_index_on_socios_without_cedula(migrated_engine: Engine) -> None:
+    definicion = _definicion_indice(migrated_engine, INDICE_SIN_CEDULA)
+
+    assert definicion is not None
+    assert "ON public.socios" in definicion
+    assert "(nombre_normalizado)" in definicion
+    assert "WHERE ((cedula IS NULL) AND (deleted_at IS NULL))" in definicion
+    assert "UNIQUE" not in definicion
+
+
+def test_0005_downgrade_removes_index_and_upgrade_restores_it_over_data(
+    migrated_engine: Engine, alembic_config: Config
+) -> None:
+    command.downgrade(alembic_config, "0004")
+    try:
+        assert _revision_actual(migrated_engine) == "0004"
+        assert _definicion_indice(migrated_engine, INDICE_SIN_CEDULA) is None
+        with migrated_engine.begin() as connection:
+            membresia(connection, socio_id=socio(connection, cedula=None))
+            socio(connection, cedula="1700000019")
+
+        command.upgrade(alembic_config, "head")
+
+        assert _revision_actual(migrated_engine) == HEAD
+        assert _definicion_indice(migrated_engine, INDICE_SIN_CEDULA) is not None
+        with migrated_engine.connect() as connection:
+            total = connection.execute(text("SELECT count(*) FROM socios")).scalar_one()
+        assert total == 2
+    finally:
+        _vaciar_historial(migrated_engine)
+        command.upgrade(alembic_config, "head")
+    assert _revision_actual(migrated_engine) == HEAD
 
 
 # ------------------------------------------------------------------ ciclos de migracion

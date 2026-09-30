@@ -2,7 +2,20 @@
 # Uso: cp .env.example .env  (rellenar valores locales)  &&  docker compose up -d --build
 # Ningun secreto vive aqui: todo entra desde .env (no versionado). Las variables
 # obligatorias usan ${VAR:?} para que compose falle rapido si faltan.
-# Los puertos se publican solo en 127.0.0.1 (no expuestos a la red local).
+# Los puertos se publican solo en 127.0.0.1 (no expuestos a la red local) y son
+# configurables (DB_PORT, BACKEND_PORT, FRONTEND_PORT); por defecto 5432/8000/8080.
+#
+# Stack E2E aislado (decision (l) de R-007): mismo archivo, otro proyecto de compose
+# (volumen, red y contenedores propios), puertos 5433/8001/8081 y libros historicos
+# SINTETICOS de Backend/tests/fixtures/historico. Sirve para el E2E y para confirmar
+# cargas sin tocar la base principal (que tiene datos reales).
+#   cp .env.e2e.example .env.e2e   (rellenar una contrasena local de prueba)
+#   docker compose -p mtabolic-e2e --env-file .env.e2e up -d --build
+#   curl http://localhost:8001/api/v1/sistema/estado        -> LISTO
+#   docker compose -p mtabolic-e2e --env-file .env.e2e down -v   (borra SOLO el volumen e2e)
+# Usar SIEMPRE -p mtabolic-e2e junto a down -v: sin -p actua sobre el stack principal.
+# Las variables exportadas en la shell ganan a --env-file: no cargues el .env principal
+# en la shell antes de operar el stack e2e.
 
 name: proyectofinal
 
@@ -17,7 +30,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
     healthcheck:
       # $$ evita la interpolacion de compose: se expande dentro del contenedor.
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
@@ -28,8 +41,9 @@ services:
 
   # Aplica las migraciones y termina. Es el unico que cambia el esquema; el backend
   # arranca solo si este sale con codigo 0. Usa la imagen que construye "backend".
+  # IMAGE_TAG separa las imagenes del stack e2e (backend:e2e) de las del principal.
   migrate:
-    image: backend:dev
+    image: backend:${IMAGE_TAG:-dev}
     pull_policy: never
     command: ["alembic", "upgrade", "head"]
     restart: "no"
@@ -44,7 +58,7 @@ services:
   backend:
     build:
       context: ./Backend
-    image: backend:dev
+    image: backend:${IMAGE_TAG:-dev}
     restart: unless-stopped
     environment:
       DATABASE_URL: ${DATABASE_URL:?defina DATABASE_URL en .env}
@@ -60,18 +74,18 @@ services:
       migrate:
         condition: service_completed_successfully
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
 
   frontend:
     build:
       context: ./Frontend
-    image: frontend:dev
+    image: frontend:${IMAGE_TAG:-dev}
     restart: unless-stopped
     depends_on:
       backend:
         condition: service_healthy
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:${FRONTEND_PORT:-8080}:8080"
 
 volumes:
   pgdata:
