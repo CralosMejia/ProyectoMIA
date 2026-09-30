@@ -36,9 +36,10 @@ function item(prioridad: number, extra: Partial<Prediccion> = {}): Prediccion {
   }
 }
 
-function lista(items: Prediccion[], topK = 2): ListaPriorizada {
+function lista(items: Prediccion[], topK = 2, nombre = 'Campaña octubre'): ListaPriorizada {
   return {
     id: 7,
+    nombre,
     modeloVersion: 'v1',
     fechaGeneracion: '2026-09-29',
     creadaEn: new Date('2026-09-29T15:00:00Z'),
@@ -70,12 +71,13 @@ describe('TablaLista', () => {
     cleanup()
   })
 
-  it('encabezado con la fecha larga y resumen sin terminos tecnicos', () => {
+  it('encabezado con el nombre de la lista y resumen sin terminos tecnicos', () => {
     render(<TablaLista lista={lista(CINCO)} />)
 
     expect(
-      screen.getByRole('heading', { level: 2, name: 'Lista del 29 de septiembre de 2026' }),
+      screen.getByRole('heading', { level: 2, name: 'Campaña octubre' }),
     ).toBeInTheDocument()
+    expect(document.body.textContent).not.toContain('Lista del 29 de septiembre de 2026')
     const rango = screen.getByText('Rango de fechas: 29 sep – 29 oct 2026')
     const resumen = rango.parentElement as HTMLElement
     expect(Array.from(resumen.children).map((p) => p.textContent)).toEqual([
@@ -85,6 +87,14 @@ describe('TablaLista', () => {
     expect(document.body.textContent).not.toMatch(/v1|versi[oó]n del modelo|top k|horizonte/i)
     expect(document.body.textContent).not.toContain('Socios por vencer en los próximos')
     expect(document.body.textContent).not.toContain('Socios prioritarios a contactar: ')
+  })
+
+  it('nombre con HTML → se muestra como texto literal', () => {
+    render(<TablaLista lista={lista(CINCO, 2, '<b>x</b>')} />)
+
+    const titulo = screen.getByRole('heading', { level: 2, name: '<b>x</b>' })
+    expect(titulo.textContent).toBe('<b>x</b>')
+    expect(titulo.querySelector('b')).toBeNull()
   })
 
   it('30 items con 25 prioritarios → "Socios priorizados para campañas: 25"', () => {

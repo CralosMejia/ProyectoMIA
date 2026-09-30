@@ -7,8 +7,8 @@ import ListaPage from '../pages/ListaPage'
 import { HistorialListas } from './HistorialListas'
 import componentSource from './HistorialListas.tsx?raw'
 
-const OPCION_RECIENTE = '28 sep 2026 · 25 prioritarios'
-const OPCION_ANTERIOR = '31 ago 2026 · 10 prioritarios'
+const OPCION_RECIENTE = 'Lista del 28 sep 2026 · 25 prioritarios'
+const OPCION_ANTERIOR = 'Lista del 31 ago 2026 · 10 prioritarios'
 
 function selector(): HTMLSelectElement {
   return screen.getByLabelText('Listas anteriores')
@@ -21,9 +21,18 @@ async function opcionesCargadas(): Promise<string[]> {
     .map((o) => o.textContent ?? '')
 }
 
+const MESES: Record<string, string> = { '08': 'ago', '09': 'sep', '10': 'oct' }
+
+/** Nombre por defecto como el del servidor, p. ej. "2026-10-01" → "Lista del 1 oct 2026". */
+function nombrePorDefecto(fecha: string): string {
+  const [anio, mes, dia] = fecha.split('-')
+  return `Lista del ${Number(dia)} ${MESES[mes ?? ''] ?? ''} ${anio}`
+}
+
 function resumen(id: number, fecha: string, creadaEn: string, topK = 25) {
   return {
     id,
+    nombre: nombrePorDefecto(fecha),
     fecha_generacion: fecha,
     creada_en: creadaEn,
     modelo_version: 'v1',
@@ -40,14 +49,14 @@ describe('HistorialListas', () => {
     vi.unstubAllGlobals()
   })
 
-  it('con dos listas simuladas → 2 opciones (fecha corta y prioritarios), la mas reciente primero', async () => {
+  it('con dos listas simuladas → 2 opciones (nombre y prioritarios), la mas reciente primero', async () => {
     render(<ListaPage />)
 
     const opciones = await opcionesCargadas()
     expect(opciones).toEqual([OPCION_RECIENTE, OPCION_ANTERIOR])
     for (const opcion of opciones) {
       expect(opcion).not.toMatch(/modelo|v1|\bK\b/i)
-      expect(opcion).not.toMatch(/Lista del|socios/i)
+      expect(opcion).not.toMatch(/socios/i)
     }
     await waitFor(() => expect(selector()).toHaveValue('42'))
   })
@@ -121,6 +130,7 @@ describe('HistorialListas', () => {
         return HttpResponse.json(
           {
             id: 43,
+            nombre: nueva.nombre,
             modelo_version: 'v1',
             fecha_generacion: '2026-10-01',
             creada_en: nueva.creada_en,
@@ -147,7 +157,7 @@ describe('HistorialListas', () => {
     const opciones = within(selector())
       .getAllByRole('option')
       .map((o) => o.textContent)
-    expect(opciones[0]).toBe('1 oct 2026 · 5 prioritarios')
+    expect(opciones[0]).toBe('Lista del 1 oct 2026 · 5 prioritarios')
     expect(selector()).toHaveValue('43')
   })
 
@@ -200,6 +210,7 @@ describe('HistorialListas', () => {
     const listas = [
       {
         id: 42,
+        nombre: 'Lista del 28 sep 2026',
         fechaGeneracion: '2026-09-28',
         creadaEn: new Date('2026-09-28T15:00:00Z'),
         modeloVersion: 'v1',
@@ -209,6 +220,7 @@ describe('HistorialListas', () => {
       },
       {
         id: 41,
+        nombre: 'Lista del 31 ago 2026',
         fechaGeneracion: '2026-08-31',
         creadaEn: new Date('2026-08-31T14:00:00Z'),
         modeloVersion: 'v1',
@@ -239,21 +251,43 @@ describe('HistorialListas', () => {
     })
 
     it.each([
-      [25, 30, '29 sep 2026 · 25 prioritarios'],
-      [1, 30, '29 sep 2026 · 1 prioritario'],
-      [25, 3, '29 sep 2026 · 3 prioritarios'],
-      [25, 1, '29 sep 2026 · 1 prioritario'],
-      [25, 0, '29 sep 2026 · 0 prioritarios'],
+      [25, 30, 'Lista del 29 sep 2026 · 25 prioritarios'],
+      [1, 30, 'Lista del 29 sep 2026 · 1 prioritario'],
+      [25, 3, 'Lista del 29 sep 2026 · 3 prioritarios'],
+      [25, 1, 'Lista del 29 sep 2026 · 1 prioritario'],
+      [25, 0, 'Lista del 29 sep 2026 · 0 prioritarios'],
     ])('topK %i y totalItems %i → %j', (topK, totalItems, esperado) => {
       render(
         <HistorialListas
-          listas={[{ ...listas[0]!, fechaGeneracion: '2026-09-29', topK, totalItems }]}
+          listas={[
+            {
+              ...listas[0]!,
+              nombre: 'Lista del 29 sep 2026',
+              fechaGeneracion: '2026-09-29',
+              topK,
+              totalItems,
+            },
+          ]}
           seleccionadaId={42}
           onSeleccionar={onSeleccionar}
         />,
       )
 
       expect(within(selector()).getByRole('option').textContent).toBe(esperado)
+    })
+
+    it('nombre editado → "<nombre> · <n> prioritarios", como texto literal', () => {
+      render(
+        <HistorialListas
+          listas={[{ ...listas[0]!, nombre: '<b>Campaña octubre</b>' }]}
+          seleccionadaId={42}
+          onSeleccionar={onSeleccionar}
+        />,
+      )
+
+      const opcion = within(selector()).getByRole('option')
+      expect(opcion.textContent).toBe('<b>Campaña octubre</b> · 25 prioritarios')
+      expect(opcion.querySelector('b')).toBeNull()
     })
 
     it('respeta el orden recibido y mantiene la etiqueta "Listas anteriores"', () => {

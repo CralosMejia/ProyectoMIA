@@ -10,6 +10,7 @@ import { MENSAJES_CARGA } from '../api/carga-api.handlers'
 import CargaPage from './CargaPage'
 import pageSource from './CargaPage.tsx?raw'
 import vistaPreviaSource from '../components/VistaPreviaCarga.tsx?raw'
+import selectorSource from '../components/SelectorArchivo.tsx?raw'
 
 const VISTA_PREVIA_PATH = '*/api/v1/cargas/vista-previa'
 const CARGAS_PATH = '*/api/v1/cargas'
@@ -70,7 +71,21 @@ function input(): HTMLInputElement {
 }
 
 function botonConfirmar(): HTMLButtonElement {
-  return screen.getByRole('button', { name: 'Confirmar' })
+  return screen.getByRole('button', { name: 'Confirmar carga' })
+}
+
+function botonSeleccionar(): HTMLButtonElement {
+  return screen.getByRole('button', { name: 'Seleccionar archivo de carga (.xlsx)' })
+}
+
+function botonRevisar(): HTMLButtonElement {
+  return screen.getByRole('button', { name: 'Revisar archivo' })
+}
+
+/** Pasos 1 y 2 de la carga: elegir el archivo y pulsar "Revisar archivo". */
+async function elegirYRevisar(user: ReturnType<typeof setup>, file: File) {
+  await user.upload(input(), file)
+  await user.click(botonRevisar())
 }
 
 describe('CargaPage', () => {
@@ -101,7 +116,7 @@ describe('CargaPage', () => {
     await user.upload(input(), archivo('a,b', 'datos.csv', 'text/csv'))
 
     expect(await screen.findByText(/archivo \.xlsx/i)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Confirmar' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Confirmar carga' })).not.toBeInTheDocument()
     expect(llamadas).toBe(0)
   })
 
@@ -109,7 +124,7 @@ describe('CargaPage', () => {
     const user = setup()
     renderPage()
 
-    await user.upload(input(), xlsx('valida.xlsx'))
+    await elegirYRevisar(user, xlsx('valida.xlsx'))
 
     const resumen = await screen.findByRole('region', { name: 'Vista previa' })
     const conteo = (termino: string) =>
@@ -129,7 +144,7 @@ describe('CargaPage', () => {
     const user = setup()
     renderPage()
 
-    await user.upload(input(), xlsx('con-errores.xlsx'))
+    await elegirYRevisar(user, xlsx('con-errores.xlsx'))
 
     const tabla = await screen.findByRole('table')
     const encabezados = within(tabla)
@@ -163,7 +178,7 @@ describe('CargaPage', () => {
     const user = setup()
     renderPage()
 
-    await user.upload(input(), xlsx('duplicada.xlsx'))
+    await elegirYRevisar(user, xlsx('duplicada.xlsx'))
 
     await screen.findByRole('region', { name: 'Vista previa' })
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
@@ -181,12 +196,12 @@ describe('CargaPage', () => {
     const user = setup()
     renderPage()
 
-    await user.upload(input(), xlsx('otra.xlsx'))
+    await elegirYRevisar(user, xlsx('otra.xlsx'))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'El archivo no tiene la hoja Registros.',
     )
-    expect(screen.queryByRole('button', { name: 'Confirmar' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Confirmar carga' })).not.toBeInTheDocument()
   })
 
   it('Confirmar → POST /api/v1/cargas y resumen de la carga', async () => {
@@ -213,8 +228,8 @@ describe('CargaPage', () => {
     const user = setup()
     renderPage()
 
-    await user.upload(input(), xlsx('valida.xlsx'))
-    await user.click(await screen.findByRole('button', { name: 'Confirmar' }))
+    await elegirYRevisar(user, xlsx('valida.xlsx'))
+    await user.click(await screen.findByRole('button', { name: 'Confirmar carga' }))
 
     const resumen = await screen.findByRole('region', { name: 'Carga guardada' })
     const valor = (termino: string) =>
@@ -227,7 +242,7 @@ describe('CargaPage', () => {
       ),
     ).toBeInTheDocument()
     expect(recibido).toBe('valida.xlsx')
-    expect(screen.queryByRole('button', { name: 'Confirmar' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Confirmar carga' })).not.toBeInTheDocument()
   })
 
   it.each([
@@ -241,8 +256,8 @@ describe('CargaPage', () => {
     const user = setup()
     renderPage()
 
-    await user.upload(input(), xlsx('valida.xlsx'))
-    await user.click(await screen.findByRole('button', { name: 'Confirmar' }))
+    await elegirYRevisar(user, xlsx('valida.xlsx'))
+    await user.click(await screen.findByRole('button', { name: 'Confirmar carga' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(message)
     expect(screen.queryByRole('region', { name: 'Carga guardada' })).not.toBeInTheDocument()
@@ -276,8 +291,8 @@ describe('CargaPage', () => {
     const user = setup()
     renderPage()
 
-    await user.upload(input(), xlsx('valida.xlsx'))
-    const boton = await screen.findByRole('button', { name: 'Confirmar' })
+    await elegirYRevisar(user, xlsx('valida.xlsx'))
+    const boton = await screen.findByRole('button', { name: 'Confirmar carga' })
     await user.click(boton)
 
     await waitFor(() => expect(boton).toBeDisabled())
@@ -292,7 +307,7 @@ describe('CargaPage', () => {
     const user = setup()
     renderPage()
 
-    await user.upload(input(), xlsx('con-errores.xlsx'))
+    await elegirYRevisar(user, xlsx('con-errores.xlsx'))
     await screen.findByRole('table')
 
     await user.upload(input(), archivo('x', 'notas.txt', 'text/plain'))
@@ -300,7 +315,7 @@ describe('CargaPage', () => {
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Vista previa' })).not.toBeInTheDocument()
 
-    await user.upload(input(), xlsx('valida.xlsx'))
+    await elegirYRevisar(user, xlsx('valida.xlsx'))
     await screen.findByRole('region', { name: 'Vista previa' })
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
     expect(botonConfirmar()).toBeEnabled()
@@ -319,8 +334,8 @@ describe('CargaPage', () => {
     const user = setup()
     renderPage()
 
-    await user.upload(input(), xlsx('valida.xlsx'))
-    await user.click(await screen.findByRole('button', { name: 'Confirmar' }))
+    await elegirYRevisar(user, xlsx('valida.xlsx'))
+    await user.click(await screen.findByRole('button', { name: 'Confirmar carga' }))
     await screen.findByRole('alert')
 
     expect(screen.getByRole('region', { name: 'Vista previa' })).toBeInTheDocument()
@@ -329,7 +344,7 @@ describe('CargaPage', () => {
     await waitFor(() => expect(llamadas).toBe(2))
   })
 
-  it('mientras valida la vista previa → input de archivo deshabilitado', async () => {
+  it('mientras valida la vista previa → selector, input y ambos botones deshabilitados', async () => {
     let liberar: () => void = () => {}
     const pendiente = new Promise<void>((resolve) => {
       liberar = resolve
@@ -352,13 +367,160 @@ describe('CargaPage', () => {
     const user = setup()
     renderPage()
 
-    await user.upload(input(), xlsx('lenta.xlsx'))
+    await elegirYRevisar(user, xlsx('lenta.xlsx'))
 
     await waitFor(() => expect(input()).toBeDisabled())
-    expect(screen.getByRole('status')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Validando archivo...')
+    expect(botonSeleccionar()).toBeDisabled()
+    expect(botonRevisar()).toBeDisabled()
     liberar()
     await screen.findByRole('region', { name: 'Vista previa' })
     expect(input()).toBeEnabled()
+    expect(botonSeleccionar()).toBeEnabled()
+    expect(botonRevisar()).toBeEnabled()
+    expect(botonConfirmar()).toBeEnabled()
+  })
+
+  it('mientras envia → "Revisar archivo" y "Confirmar carga" deshabilitados', async () => {
+    let liberar: () => void = () => {}
+    const pendiente = new Promise<void>((resolve) => {
+      liberar = resolve
+    })
+    server.use(
+      http.post(CARGAS_PATH, async () => {
+        await pendiente
+        return HttpResponse.json(cargaSimulada([]), { status: 201 })
+      }),
+    )
+    const user = setup()
+    renderPage()
+
+    await elegirYRevisar(user, xlsx('valida.xlsx'))
+    await user.click(await screen.findByRole('button', { name: 'Confirmar carga' }))
+
+    await waitFor(() => expect(botonConfirmar()).toBeDisabled())
+    expect(botonRevisar()).toBeDisabled()
+    expect(botonSeleccionar()).toBeDisabled()
+    liberar()
+    await screen.findByRole('region', { name: 'Carga guardada' })
+  })
+
+  it('selector visible: boton, ayuda enlazada y "Ningún archivo seleccionado"', () => {
+    renderPage()
+
+    const boton = botonSeleccionar()
+    const ayuda = screen.getByText('Suba la plantilla oficial del mes.')
+    expect(boton).toHaveAttribute('type', 'button')
+    expect(boton.getAttribute('aria-describedby')?.split(' ')).toContain(ayuda.id)
+    expect(boton).toHaveAccessibleDescription('Suba la plantilla oficial del mes.')
+    expect(screen.getByText('Ningún archivo seleccionado')).toBeInTheDocument()
+    expect(botonRevisar()).toBeDisabled()
+  })
+
+  it('elegir plantilla.xlsx → muestra el nombre, habilita "Revisar archivo" y no pide la vista previa', async () => {
+    let llamadas = 0
+    server.use(
+      http.post(VISTA_PREVIA_PATH, () => {
+        llamadas += 1
+        return HttpResponse.json({}, { status: 500 })
+      }),
+    )
+    const user = setup()
+    renderPage()
+
+    await user.upload(input(), xlsx('plantilla.xlsx'))
+
+    expect(screen.getByText('Archivo elegido: plantilla.xlsx')).toBeInTheDocument()
+    expect(screen.queryByText('Ningún archivo seleccionado')).not.toBeInTheDocument()
+    expect(botonRevisar()).toBeEnabled()
+    expect(screen.queryByRole('region', { name: 'Vista previa' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(llamadas).toBe(0)
+  })
+
+  it('"Revisar archivo" → "Validando archivo..." y luego la vista previa', async () => {
+    let liberar: () => void = () => {}
+    const pendiente = new Promise<void>((resolve) => {
+      liberar = resolve
+    })
+    server.use(
+      http.post(VISTA_PREVIA_PATH, async () => {
+        await pendiente
+        return HttpResponse.json({
+          filas_leidas: 5,
+          filas_validas: 5,
+          filas_con_error: 0,
+          filas_duplicadas: 0,
+          vencimiento_desde: '2026-10-01',
+          vencimiento_hasta: '2026-10-31',
+          errores: [],
+          puede_confirmar: true,
+        })
+      }),
+    )
+    const user = setup()
+    renderPage()
+
+    await user.upload(input(), xlsx('plantilla.xlsx'))
+    await user.click(botonRevisar())
+
+    expect(await screen.findByText('Validando archivo...')).toBeInTheDocument()
+    liberar()
+    await screen.findByRole('region', { name: 'Vista previa' })
+    expect(screen.queryByText('Validando archivo...')).not.toBeInTheDocument()
+  })
+
+  it('teclado: Tab llega al selector y a "Revisar archivo"; el input oculto no recibe foco', async () => {
+    const user = setup()
+    renderPage()
+    await user.upload(input(), xlsx('plantilla.xlsx'))
+    ;(document.activeElement as HTMLElement | null)?.blur()
+
+    await user.tab()
+    expect(botonSeleccionar()).toHaveFocus()
+    await user.tab()
+    expect(botonRevisar()).toHaveFocus()
+    expect(input()).not.toHaveFocus()
+    expect(input()).toHaveAttribute('tabindex', '-1')
+  })
+
+  it('foco visible: el boton de seleccion y "Revisar archivo" tienen estilo focus-visible', () => {
+    renderPage()
+
+    for (const boton of [botonSeleccionar(), botonRevisar()]) {
+      expect(boton.className).toMatch(/\bfocus-visible:outline-2\b/)
+      expect(boton.className).not.toMatch(/\b(?:focus:)?outline-none\b/)
+    }
+  })
+
+  it.each([['{Enter}'], [' ']])(
+    'teclado: %s en el boton de seleccion abre el dialogo (click del input)',
+    async (tecla) => {
+      const user = setup()
+      renderPage()
+      const click = vi.spyOn(input(), 'click')
+
+      await user.tab()
+      expect(botonSeleccionar()).toHaveFocus()
+      await user.keyboard(tecla)
+
+      expect(click).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it('error de extension junto al selector y enlazado con aria-describedby', async () => {
+    const user = setup()
+    renderPage()
+
+    await user.upload(input(), archivo('a,b', 'datos.csv', 'text/csv'))
+
+    const error = await screen.findByText(
+      'Seleccione un archivo .xlsx con la plantilla oficial.',
+    )
+    expect(botonSeleccionar().getAttribute('aria-describedby')?.split(' ')).toContain(error.id)
+    expect(input().getAttribute('aria-describedby')?.split(' ')).toContain(error.id)
+    expect(screen.getByText('Ningún archivo seleccionado')).toBeInTheDocument()
+    expect(botonRevisar()).toBeDisabled()
   })
 
   function cargaSimulada(avisos: string[]) {
@@ -383,8 +545,8 @@ describe('CargaPage', () => {
     const user = setup()
     renderPage()
 
-    await user.upload(input(), xlsx('valida.xlsx'))
-    await user.click(await screen.findByRole('button', { name: 'Confirmar' }))
+    await elegirYRevisar(user, xlsx('valida.xlsx'))
+    await user.click(await screen.findByRole('button', { name: 'Confirmar carga' }))
 
     const resumen = await screen.findByRole('region', { name: 'Carga guardada' })
     const valor = (termino: string) =>
@@ -407,8 +569,8 @@ describe('CargaPage', () => {
     const user = setup()
     renderPage()
 
-    await user.upload(input(), xlsx('valida.xlsx'))
-    await user.click(await screen.findByRole('button', { name: 'Confirmar' }))
+    await elegirYRevisar(user, xlsx('valida.xlsx'))
+    await user.click(await screen.findByRole('button', { name: 'Confirmar carga' }))
 
     const resumen = await screen.findByRole('region', { name: 'Carga guardada' })
     expect(within(resumen).queryByText('Para revisar')).not.toBeInTheDocument()
@@ -421,7 +583,7 @@ describe('CargaPage', () => {
     const user = setup()
     renderPage()
 
-    await user.upload(input(), xlsx('grande.xlsx'))
+    await elegirYRevisar(user, xlsx('grande.xlsx'))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'El archivo supera el tamaño máximo permitido.',
@@ -434,7 +596,7 @@ describe('CargaPage', () => {
     const user = setup()
     renderPage()
 
-    await user.upload(input(), xlsx('valida.xlsx'))
+    await elegirYRevisar(user, xlsx('valida.xlsx'))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'El archivo supera el tamaño máximo permitido.',
@@ -452,8 +614,8 @@ describe('CargaPage', () => {
     const user = setup()
     renderPage()
 
-    await user.upload(input(), xlsx('valida.xlsx'))
-    await user.click(await screen.findByRole('button', { name: 'Confirmar' }))
+    await elegirYRevisar(user, xlsx('valida.xlsx'))
+    await user.click(await screen.findByRole('button', { name: 'Confirmar carga' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(MENSAJES_CARGA.sinFilasNuevas)
     expect(screen.getByRole('region', { name: 'Vista previa' })).toBeInTheDocument()
@@ -466,8 +628,8 @@ describe('CargaPage', () => {
     const user = setup()
     renderPage()
 
-    await user.upload(input(), xlsx('valida.xlsx'))
-    await user.click(await screen.findByRole('button', { name: 'Confirmar' }))
+    await elegirYRevisar(user, xlsx('valida.xlsx'))
+    await user.click(await screen.findByRole('button', { name: 'Confirmar carga' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(MENSAJES_CARGA.tamano)
     expect(screen.getByRole('region', { name: 'Vista previa' })).toBeInTheDocument()
@@ -478,8 +640,8 @@ describe('CargaPage', () => {
     const user = setup()
     renderPage()
 
-    await user.upload(input(), xlsx('valida.xlsx'))
-    await user.click(await screen.findByRole('button', { name: 'Confirmar' }))
+    await elegirYRevisar(user, xlsx('valida.xlsx'))
+    await user.click(await screen.findByRole('button', { name: 'Confirmar carga' }))
 
     const resumen = await screen.findByRole('region', { name: 'Carga guardada' })
     const valor = (termino: string) =>
@@ -508,8 +670,8 @@ describe('CargaPage', () => {
       </MemoryRouter>,
     )
 
-    await user.upload(input(), xlsx('valida.xlsx'))
-    await user.click(await screen.findByRole('button', { name: 'Confirmar' }))
+    await elegirYRevisar(user, xlsx('valida.xlsx'))
+    await user.click(await screen.findByRole('button', { name: 'Confirmar carga' }))
     await user.click(await screen.findByRole('link', { name: 'Ver la lista de socios por vencer' }))
 
     expect(await screen.findByText('Destino lista')).toBeInTheDocument()
@@ -523,7 +685,7 @@ describe('CargaPage', () => {
     const user = setup()
     renderPage()
 
-    await user.upload(input(), xlsx(nombre))
+    await elegirYRevisar(user, xlsx(nombre))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(mensaje)
   })
@@ -532,6 +694,15 @@ describe('CargaPage', () => {
     expect(pageSource).not.toMatch(/from\s+['"][^'"]*\/api\//)
     expect(pageSource).not.toMatch(/core\/http/)
     expect(pageSource).not.toMatch(/\bfetch\s*\(/)
+  })
+
+  it('arquitectura: SelectorArchivo es presentacional y solo usa tokens de index.css', () => {
+    expect(selectorSource).not.toMatch(/from\s+['"][^'"]*\/(api|hooks)\//)
+    expect(selectorSource).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|oklch\(/)
+    expect(selectorSource).not.toMatch(
+      /\b(?:bg|text|border|outline|ring)-(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|black|white)(?:-\d{2,3})?\b/,
+    )
+    expect(selectorSource).not.toMatch(/\bstyle=\{/)
   })
 
   it('arquitectura: VistaPreviaCarga es presentacional y reutiliza DataTable', () => {

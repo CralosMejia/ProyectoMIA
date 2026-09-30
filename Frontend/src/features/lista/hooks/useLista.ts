@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { ApiError } from '../../../core/http/api-error'
 import { generarLista, obtenerLista, obtenerUltima } from '../api/lista-api'
+import { fechaCorta } from '../components/formatoFechas'
 import type { GenerarListaParams, ListaPriorizada } from '../types'
 
 const MENSAJE_GENERICO = 'No se pudo completar la operación. Intente de nuevo.'
 const HORIZONTE_MAXIMO = 31
 const FECHA_ISO = /^(\d{4})-(\d{2})-(\d{2})$/
 const ENTERO = /^\d+$/
+const NOMBRE_MAXIMO = 80
 
 export const HORIZONTE_POR_DEFECTO = '30'
 export const TOP_K_POR_DEFECTO = '25'
@@ -16,6 +18,8 @@ export const MENSAJE_FECHA_INVALIDA = 'Ingrese una fecha válida (AAAA-MM-DD).'
 export const MENSAJE_FECHA_PASADA = 'La fecha debe ser hoy o posterior.'
 export const MENSAJE_DIAS = `Entre 1 y ${HORIZONTE_MAXIMO} días.`
 export const MENSAJE_PRIORITARIOS = 'Debe ser un número entero mayor o igual a 1.'
+export const MENSAJE_NOMBRE_VACIO = 'Escriba un nombre para la lista.'
+export const MENSAJE_NOMBRE_LARGO = `El nombre puede tener hasta ${NOMBRE_MAXIMO} caracteres.`
 
 /** Fecha local del navegador `YYYY-MM-DD` (en la instalacion, la misma que la fecha de negocio). */
 export function hoyLocal(ahora: Date = new Date()): string {
@@ -25,6 +29,8 @@ export function hoyLocal(ahora: Date = new Date()): string {
 
 /** Valores del formulario tal como los escribe el usuario (texto). */
 export interface ParametrosLista {
+  /** Nombre de la lista; por defecto el sugerido para la fecha. */
+  nombre: string
   /** `YYYY-MM-DD`; por defecto hoy; no puede ser anterior a hoy. */
   fechaReferencia: string
   horizonteDias: string
@@ -88,6 +94,23 @@ function fechaValida(texto: string): boolean {
   )
 }
 
+/**
+ * Nombre sugerido para una fecha `YYYY-MM-DD`: "Lista del 29 sep 2026" (mismo formato que el
+ * nombre por defecto del servidor). `null` si la fecha no es valida.
+ */
+export function nombreSugerido(fechaIso: string): string | null {
+  const fecha = fechaIso.trim()
+  return fechaValida(fecha) ? `Lista del ${fechaCorta(fecha)}` : null
+}
+
+function errorNombre(nombre: string): string | null {
+  // Se cuentan caracteres (puntos de codigo), como el servidor.
+  const longitud = [...nombre].length
+  if (longitud === 0) return MENSAJE_NOMBRE_VACIO
+  if (longitud > NOMBRE_MAXIMO) return MENSAJE_NOMBRE_LARGO
+  return null
+}
+
 function errorFecha(fecha: string, hoy: string): string | null {
   if (fecha === '') return MENSAJE_FECHA_VACIA
   if (!fechaValida(fecha)) return MENSAJE_FECHA_INVALIDA
@@ -105,6 +128,9 @@ export function validarParametros(
   hoy: string,
 ): { params: GenerarListaParams; errores: null } | { params: null; errores: ErroresParametros } {
   const errores: ErroresParametros = {}
+  const nombre = parametros.nombre.trim()
+  const nombreError = errorNombre(nombre)
+  if (nombreError !== null) errores.nombre = nombreError
   const fecha = parametros.fechaReferencia.trim()
   const fechaError = errorFecha(fecha, hoy)
   if (fechaError !== null) errores.fechaReferencia = fechaError
@@ -112,10 +138,33 @@ export function validarParametros(
   if (horizonteDias === null) errores.horizonteDias = MENSAJE_DIAS
   const topK = enteroValido(parametros.topK, 1)
   if (topK === null) errores.topK = MENSAJE_PRIORITARIOS
-  if (horizonteDias === null || topK === null || fechaError !== null) {
+  if (horizonteDias === null || topK === null || fechaError !== null || nombreError !== null) {
     return { params: null, errores }
   }
-  return { params: { fechaReferencia: fecha, horizonteDias, topK }, errores: null }
+  return { params: { fechaReferencia: fecha, horizonteDias, topK, nombre }, errores: null }
+}
+
+/** Parametros y ultima sugerencia de nombre (la de la ultima fecha valida). */
+interface Formulario {
+  parametros: ParametrosLista
+  sugerencia: string
+}
+
+/**
+ * Aplica un cambio. El nombre sigue a la fecha mientras coincida con la sugerencia vigente (no
+ * editado a mano); si el usuario lo cambia se respeta, y si vuelve a escribir la sugerencia,
+ * vuelve a seguirla. Una fecha incompleta o invalida no toca el nombre.
+ */
+function siguienteFormulario(actual: Formulario, campo: CampoParametro, valor: string): Formulario {
+  const parametros = { ...actual.parametros, [campo]: valor }
+  if (campo !== 'fechaReferencia') return { ...actual, parametros }
+  const sugerencia = nombreSugerido(valor)
+  if (sugerencia === null) return { ...actual, parametros }
+  const sigueLaFecha = actual.parametros.nombre === actual.sugerencia
+  return {
+    parametros: sigueLaFecha ? { ...parametros, nombre: sugerencia } : parametros,
+    sugerencia,
+  }
 }
 
 /**
@@ -123,11 +172,20 @@ export function validarParametros(
  * de la ultima lista y cambio a una lista del historial. Cancela lo pendiente al desmontar.
  */
 export function useLista({ onGenerada }: UseListaOptions = {}): UseListaResult {
-  const [parametros, setParametros] = useState<ParametrosLista>(() => ({
-    fechaReferencia: hoyLocal(),
-    horizonteDias: HORIZONTE_POR_DEFECTO,
-    topK: TOP_K_POR_DEFECTO,
-  }))
+  const [formulario, setFormulario] = useState<Formulario>(() => {
+    const hoy = hoyLocal()
+    const sugerencia = nombreSugerido(hoy) ?? ''
+    return {
+      parametros: {
+        nombre: sugerencia,
+        fechaReferencia: hoy,
+        horizonteDias: HORIZONTE_POR_DEFECTO,
+        topK: TOP_K_POR_DEFECTO,
+      },
+      sugerencia,
+    }
+  })
+  const { parametros } = formulario
   const [errores, setErrores] = useState<ErroresParametros>({})
   const [lista, setLista] = useState<ListaPriorizada | null>(null)
   const [cargandoInicial, setCargandoInicial] = useState(true)
@@ -177,7 +235,7 @@ export function useLista({ onGenerada }: UseListaOptions = {}): UseListaResult {
   }
 
   const cambiarParametro = (campo: CampoParametro, valor: string) => {
-    setParametros((actual) => ({ ...actual, [campo]: valor }))
+    setFormulario((actual) => siguienteFormulario(actual, campo, valor))
     setErrores((actual) => {
       if (!(campo in actual)) return actual
       const siguiente = { ...actual }

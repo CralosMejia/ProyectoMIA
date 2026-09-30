@@ -1,6 +1,6 @@
-import type { ChangeEvent } from 'react'
 import { ErrorAlert } from '../../../shared/ui/ErrorAlert'
 import { LoadingIndicator } from '../../../shared/ui/LoadingIndicator'
+import { SelectorArchivo } from '../components/SelectorArchivo'
 import { ResumenCarga, VistaPreviaCarga } from '../components/VistaPreviaCarga'
 import { useCarga } from '../hooks/useCarga'
 
@@ -8,18 +8,19 @@ import { useCarga } from '../hooks/useCarga'
 export default function CargaPage() {
   const {
     estado,
+    archivoSeleccionado,
     vistaPrevia,
     resumen,
     errorArchivo,
     error,
+    puedeRevisar,
     puedeConfirmar,
     seleccionarArchivo,
+    revisar,
     confirmar,
   } = useCarga()
 
-  const onChange = (event: ChangeEvent<HTMLInputElement>) => {
-    seleccionarArchivo(event.target.files?.[0] ?? null)
-  }
+  const ocupado = estado === 'validando' || estado === 'enviando'
 
   return (
     <section aria-labelledby="carga-title" className="flex flex-col gap-6">
@@ -27,24 +28,14 @@ export default function CargaPage() {
         Carga de datos
       </h1>
 
-      <div className="flex flex-col gap-2 font-sans text-ink">
-        <label htmlFor="carga-archivo" className="font-medium">
-          Archivo de la plantilla (.xlsx)
-        </label>
-        <input
-          id="carga-archivo"
-          type="file"
-          accept=".xlsx"
-          onChange={onChange}
-          disabled={estado === 'validando' || estado === 'enviando'}
-          aria-describedby={errorArchivo ? 'carga-archivo-error' : undefined}
-        />
-        {errorArchivo && (
-          <p id="carga-archivo-error" className="text-degraded">
-            {errorArchivo}
-          </p>
-        )}
-      </div>
+      <SelectorArchivo
+        archivoSeleccionado={archivoSeleccionado}
+        errorArchivo={errorArchivo}
+        deshabilitado={ocupado}
+        puedeRevisar={puedeRevisar && !ocupado}
+        onSeleccionar={seleccionarArchivo}
+        onRevisar={revisar}
+      />
 
       {estado === 'validando' && <LoadingIndicator label="Validando archivo..." />}
       {error && <ErrorAlert message={error} />}

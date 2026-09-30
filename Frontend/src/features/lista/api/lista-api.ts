@@ -76,6 +76,7 @@ interface PrediccionResponse {
 
 interface ListaPriorizadaResponse {
   id: number
+  nombre: string
   modelo_version: string
   /** Fecha de referencia `YYYY-MM-DD`. */
   fecha_generacion: string
@@ -91,6 +92,7 @@ interface ListaPriorizadaResponse {
 
 interface ListaResumenResponse {
   id: number
+  nombre: string
   fecha_generacion: string
   creada_en: string
   modelo_version: string
@@ -166,6 +168,7 @@ function toPrediccion(raw: PrediccionResponse): Prediccion {
 function toLista(raw: ListaPriorizadaResponse): ListaPriorizada {
   return {
     id: raw.id,
+    nombre: raw.nombre,
     modeloVersion: raw.modelo_version,
     fechaGeneracion: raw.fecha_generacion,
     creadaEn: new Date(raw.creada_en),
@@ -181,6 +184,7 @@ function toLista(raw: ListaPriorizadaResponse): ListaPriorizada {
 function toListaResumen(raw: ListaResumenResponse): ListaResumen {
   return {
     id: raw.id,
+    nombre: raw.nombre,
     fechaGeneracion: raw.fecha_generacion,
     creadaEn: new Date(raw.creada_en),
     modeloVersion: raw.modelo_version,
@@ -240,7 +244,8 @@ function tieneMensajeDelServidor(body: unknown): boolean {
 }
 
 /**
- * CU-04: genera una lista priorizada nueva.
+ * CU-04: genera una lista priorizada nueva. `nombre` solo viaja si llega (si no, el servidor
+ * pone el nombre por defecto); un nombre invalido → `ApiError` 400 con el mensaje del servidor.
  * 409 → `SistemaNoListoError` y 422 (fecha anterior a hoy) → `FechaListaPasadaError`,
  * ambos con el mensaje del servidor.
  */
@@ -252,6 +257,7 @@ export async function generarLista(
     fecha_referencia: params.fechaReferencia ?? null,
     horizonte_dias: params.horizonteDias,
     top_k: params.topK,
+    ...(params.nombre != null ? { nombre: params.nombre } : {}),
   }
   try {
     return toLista(await httpPost<ListaPriorizadaResponse>(LISTAS_PATH, body, { signal }))

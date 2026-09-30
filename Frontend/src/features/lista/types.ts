@@ -17,6 +17,11 @@ export interface GenerarListaParams {
   fechaReferencia?: string | null
   horizonteDias: number
   topK: number
+  /**
+   * Nombre de la lista (1..80 caracteres tras recortar). Ausente o null = el servidor usa
+   * "Lista del <d mmm aaaa>" con la fecha de la lista.
+   */
+  nombre?: string | null
 }
 
 /**
@@ -49,6 +54,8 @@ export interface Prediccion {
  */
 export interface ListaPriorizada {
   id: number
+  /** Nombre de la lista; es su titulo en pantalla. */
+  nombre: string
   modeloVersion: string
   fechaGeneracion: string
   creadaEn: Date
@@ -63,6 +70,7 @@ export interface ListaPriorizada {
 /** Resumen de una lista generada, para el historial (D3-FE-03). */
 export interface ListaResumen {
   id: number
+  nombre: string
   /** Fecha de referencia `YYYY-MM-DD`. */
   fechaGeneracion: string
   creadaEn: Date

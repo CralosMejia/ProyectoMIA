@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -18,6 +18,8 @@ const OTROS = 'Otros socios por vencer'
 const FECHA = /fecha de la lista/i
 const DIAS = /buscar socios que vencen en los próximos/i
 const K = /socios prioritarios a contactar/i
+const NOMBRE = /nombre de la lista/i
+const SUGERIDO_HOY = 'Lista del 29 sep 2026'
 
 function fechaCorta(iso: string): string {
   return new Intl.DateTimeFormat('es-EC', { dateStyle: 'medium', timeZone: 'UTC' }).format(
@@ -178,7 +180,14 @@ describe('ListaPage', () => {
     )
     expect(await filasDe(PRIORITARIOS)).toHaveLength(10)
     expect(screen.getByText('Rango de fechas: 15 oct – 4 nov 2026')).toBeInTheDocument()
-    expect(cuerpos).toEqual([{ fecha_referencia: '2026-10-15', horizonte_dias: 20, top_k: 10 }])
+    expect(cuerpos).toEqual([
+      {
+        fecha_referencia: '2026-10-15',
+        horizonte_dias: 20,
+        top_k: 10,
+        nombre: 'Lista del 15 oct 2026',
+      },
+    ])
   })
 
   it('sin tocar la fecha → envia la de hoy (nunca null)', async () => {
@@ -190,7 +199,12 @@ describe('ListaPage', () => {
     await user.click(botonGenerar())
 
     await waitFor(() => expect(cuerpos).toHaveLength(1))
-    expect(cuerpos[0]).toEqual({ fecha_referencia: HOY, horizonte_dias: 30, top_k: 25 })
+    expect(cuerpos[0]).toEqual({
+      fecha_referencia: HOY,
+      horizonte_dias: 30,
+      top_k: 25,
+      nombre: SUGERIDO_HOY,
+    })
   })
 
   it.each([
@@ -217,10 +231,10 @@ describe('ListaPage', () => {
   })
 
   it.each([
-    ['dias 1 (minimo)', HOY, '1', '25', { fecha_referencia: HOY, horizonte_dias: 1, top_k: 25 }],
-    ['dias 31 (maximo)', HOY, '31', '25', { fecha_referencia: HOY, horizonte_dias: 31, top_k: 25 }],
-    ['prioritarios 1 (minimo)', HOY, '30', '1', { fecha_referencia: HOY, horizonte_dias: 30, top_k: 1 }],
-    ['fecha futura', '2026-12-31', '30', '25', { fecha_referencia: '2026-12-31', horizonte_dias: 30, top_k: 25 }],
+    ['dias 1 (minimo)', HOY, '1', '25', { fecha_referencia: HOY, horizonte_dias: 1, top_k: 25, nombre: SUGERIDO_HOY }],
+    ['dias 31 (maximo)', HOY, '31', '25', { fecha_referencia: HOY, horizonte_dias: 31, top_k: 25, nombre: SUGERIDO_HOY }],
+    ['prioritarios 1 (minimo)', HOY, '30', '1', { fecha_referencia: HOY, horizonte_dias: 30, top_k: 1, nombre: SUGERIDO_HOY }],
+    ['fecha futura', '2026-12-31', '30', '25', { fecha_referencia: '2026-12-31', horizonte_dias: 30, top_k: 25, nombre: 'Lista del 31 dic 2026' }],
   ])('frontera valida %s → se acepta y llama a la API', async (_caso, fecha, dias, k, esperado) => {
     const cuerpos = registrarPosts()
     const user = userEvent.setup()
@@ -242,6 +256,130 @@ describe('ListaPage', () => {
     expect(campo(FECHA)).not.toHaveAttribute('aria-invalid')
     expect(campo(DIAS)).not.toHaveAttribute('aria-invalid')
     expect(campo(K)).not.toHaveAttribute('aria-invalid')
+  })
+
+  describe('nombre de la lista', () => {
+    it('al entrar es el sugerido para hoy, es el primer campo y tiene maxLength 80', async () => {
+      render(<ListaPage />)
+
+      expect(campo(NOMBRE)).toHaveValue(SUGERIDO_HOY)
+      expect(campo(NOMBRE)).toHaveAttribute('type', 'text')
+      expect(campo(NOMBRE)).toHaveAttribute('maxLength', '80')
+      const formulario = screen.getByRole('form', { name: 'Parámetros de la lista' })
+      expect(within(formulario).getAllByRole('textbox')[0]).toBe(campo(NOMBRE))
+      await tablaCargada()
+    })
+
+    it('sin tocar el nombre, sigue a la fecha', async () => {
+      const user = userEvent.setup()
+      render(<ListaPage />)
+      await tablaCargada()
+
+      await user.clear(campo(FECHA))
+      await user.type(campo(FECHA), '2026-10-02')
+
+      expect(campo(NOMBRE)).toHaveValue('Lista del 2 oct 2026')
+    })
+
+    it('editado a mano se respeta al cambiar la fecha; si vuelve a la sugerencia, la sigue otra vez', async () => {
+      const user = userEvent.setup()
+      render(<ListaPage />)
+      await tablaCargada()
+
+      await user.clear(campo(NOMBRE))
+      await user.type(campo(NOMBRE), 'Campaña octubre')
+      await user.clear(campo(FECHA))
+      await user.type(campo(FECHA), '2026-10-02')
+      expect(campo(NOMBRE)).toHaveValue('Campaña octubre')
+
+      await user.clear(campo(NOMBRE))
+      await user.type(campo(NOMBRE), 'Lista del 2 oct 2026')
+      await user.clear(campo(FECHA))
+      await user.type(campo(FECHA), '2026-10-05')
+      expect(campo(NOMBRE)).toHaveValue('Lista del 5 oct 2026')
+    })
+
+    it.each([
+      ['vacio', ''],
+      ['solo espacios', '   '],
+    ])('%s → "Escriba un nombre para la lista." y no llama a la API', async (_caso, valor) => {
+      const cuerpos = registrarPosts()
+      const user = userEvent.setup()
+      render(<ListaPage />)
+      await tablaCargada()
+
+      await user.clear(campo(NOMBRE))
+      if (valor !== '') await user.type(campo(NOMBRE), valor)
+      await user.click(botonGenerar())
+
+      const mensaje = await screen.findByText('Escriba un nombre para la lista.')
+      expect(campo(NOMBRE)).toHaveAttribute('aria-invalid', 'true')
+      expect(campo(NOMBRE).getAttribute('aria-describedby')).toContain(mensaje.id)
+      expect(cuerpos).toHaveLength(0)
+    })
+
+    it('mas de 80 no se puede escribir; si llegara → "El nombre puede tener hasta 80 caracteres."', async () => {
+      const cuerpos = registrarPosts()
+      const user = userEvent.setup()
+      render(<ListaPage />)
+      await tablaCargada()
+
+      await user.clear(campo(NOMBRE))
+      await user.type(campo(NOMBRE), 'x'.repeat(85))
+      expect(campo(NOMBRE)).toHaveValue('x'.repeat(80))
+
+      fireEvent.change(campo(NOMBRE), { target: { value: 'x'.repeat(81) } })
+      await user.click(botonGenerar())
+
+      expect(await screen.findByText('El nombre puede tener hasta 80 caracteres.')).toBeInTheDocument()
+      expect(campo(NOMBRE)).toHaveAttribute('aria-invalid', 'true')
+      expect(cuerpos).toHaveLength(0)
+    })
+
+    it('Generar lista envia el nombre recortado y la lista generada lo muestra como titulo', async () => {
+      const cuerpos = registrarPosts()
+      const user = userEvent.setup()
+      render(<ListaPage />)
+      await tablaCargada()
+
+      await user.clear(campo(NOMBRE))
+      await user.type(campo(NOMBRE), '  Campaña octubre  ')
+      await user.click(botonGenerar())
+
+      expect(
+        await screen.findByRole('heading', { level: 2, name: 'Campaña octubre' }),
+      ).toBeInTheDocument()
+      expect(cuerpos).toEqual([
+        { fecha_referencia: HOY, horizonte_dias: 30, top_k: 25, nombre: 'Campaña octubre' },
+      ])
+    })
+
+    it('400 del servidor → ErrorAlert con su mensaje', async () => {
+      server.use(
+        http.post(LISTAS_PATH, () =>
+          HttpResponse.json(
+            { error: { code: 'validation_error', message: 'El nombre no es valido.' } },
+            { status: 400 },
+          ),
+        ),
+      )
+      const user = userEvent.setup()
+      render(<ListaPage />)
+      await tablaCargada()
+
+      await user.click(botonGenerar())
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('El nombre no es valido.')
+      expect(botonGenerar()).toBeEnabled()
+    })
+
+    it('la ultima lista muestra su nombre como titulo', async () => {
+      render(<ListaPage />)
+
+      expect(
+        await screen.findByRole('heading', { level: 2, name: 'Lista del 28 sep 2026' }),
+      ).toBeInTheDocument()
+    })
   })
 
   it('corregir un valor invalido quita el mensaje local', async () => {
@@ -390,7 +528,9 @@ describe('ListaPage', () => {
     await user.click(ayuda)
 
     const dialogo = screen.getByRole('dialog', { name: '¿Cómo funciona esta lista?' })
-    expect(within(dialogo).getByRole('heading', { name: 'Casos frecuentes' })).toBeInTheDocument()
+    expect(within(dialogo).getByRole('heading', { name: 'Qué hace la lista' })).toBeInTheDocument()
+    expect(within(dialogo).queryByRole('heading', { name: 'Casos frecuentes' })).toBeNull()
+    expect(within(dialogo).queryByRole('heading', { name: 'Qué datos se muestran' })).toBeNull()
     await user.click(within(dialogo).getByRole('button', { name: 'Cerrar' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(ayuda).toHaveFocus()

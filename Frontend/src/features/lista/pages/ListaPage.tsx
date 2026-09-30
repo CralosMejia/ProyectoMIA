@@ -17,9 +17,10 @@ interface CampoProps {
   campo: CampoParametro
   etiqueta: string
   ayuda?: string
-  type: 'date' | 'number'
+  type: 'text' | 'date' | 'number'
   min?: number | string
   max?: number
+  maxLength?: number
   valor: string
   error?: string
   deshabilitado: boolean
@@ -34,6 +35,7 @@ function Campo({
   type,
   min,
   max,
+  maxLength,
   valor,
   error,
   deshabilitado,
@@ -52,6 +54,7 @@ function Campo({
         type={type}
         min={min}
         max={max}
+        maxLength={maxLength}
         step={type === 'number' ? 1 : undefined}
         value={valor}
         onChange={(event) => onCambiar(campo, event.target.value)}
@@ -101,6 +104,18 @@ export default function ListaPage() {
         onSubmit={onSubmit}
         className="flex flex-wrap items-start gap-4"
       >
+        <Campo
+          id="lista-nombre"
+          campo="nombre"
+          etiqueta="Nombre de la lista"
+          ayuda="Hasta 80 caracteres."
+          type="text"
+          maxLength={80}
+          valor={parametros.nombre}
+          error={errores.nombre}
+          deshabilitado={vista.generando}
+          onCambiar={vista.cambiarParametro}
+        />
         <Campo
           id="lista-fecha"
           campo="fechaReferencia"

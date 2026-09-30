@@ -1,12 +1,11 @@
 import type { ChangeEvent } from 'react'
 import type { ListaResumen } from '../types'
-import { fechaCorta } from './formatoFechas'
 
-/** Texto de una opcion: "<d mmm aaaa> · <n> prioritarios", con n = min(topK, totalItems). */
+/** Texto de una opcion: "<nombre> · <n> prioritarios", con n = min(topK, totalItems). */
 function etiquetaLista(lista: ListaResumen): string {
   const n = Math.min(lista.topK, lista.totalItems)
   const prioritarios = n === 1 ? '1 prioritario' : `${n} prioritarios`
-  return `${fechaCorta(lista.fechaGeneracion)} · ${prioritarios}`
+  return `${lista.nombre} · ${prioritarios}`
 }
 
 export interface HistorialListasProps {

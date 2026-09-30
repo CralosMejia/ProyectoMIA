@@ -86,7 +86,7 @@ export function VistaPreviaCarga({
         disabled={!puedeConfirmar || enviando}
         className="rounded-pill bg-ink px-4 py-2 text-sm font-medium text-surface disabled:opacity-50"
       >
-        Confirmar
+        Confirmar carga
       </button>
     </section>
   )

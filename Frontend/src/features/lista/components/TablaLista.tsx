@@ -8,7 +8,6 @@ export const TITULO_PRIORITARIOS = 'Socios prioritarios a contactar'
 export const TITULO_OTROS = 'Otros socios por vencer'
 
 const FECHA_CORTA = new Intl.DateTimeFormat('es-EC', { dateStyle: 'medium', timeZone: 'UTC' })
-const FECHA_LARGA = new Intl.DateTimeFormat('es-EC', { dateStyle: 'long', timeZone: 'UTC' })
 /** Aporte numerico al final del texto de un factor, p. ej. " (+0,12)". */
 const APORTE_FINAL = /\s*\([^()]*\)\s*$/
 
@@ -90,7 +89,7 @@ export function TablaLista({ lista }: TablaListaProps) {
   return (
     <section aria-labelledby="tabla-lista-title" className="flex flex-col gap-4 font-sans text-ink">
       <h2 id="tabla-lista-title" className="text-lg font-semibold">
-        Lista del {formatearFecha(lista.fechaGeneracion, FECHA_LARGA)}
+        {lista.nombre}
       </h2>
       <div className="flex flex-col gap-1">
         <p>{`Rango de fechas: ${rangoFechas(lista.fechaGeneracion, lista.horizonteDias)}`}</p>

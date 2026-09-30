@@ -10,18 +10,30 @@ const MENSAJE_GENERICO = 'No se pudo procesar el archivo. Intente de nuevo.'
 const MENSAJE_TAMANO = 'El archivo supera el tamaño máximo permitido.'
 const PAYLOAD_TOO_LARGE = 413
 
-export type EstadoCarga = 'inicial' | 'validando' | 'vista-previa' | 'enviando' | 'confirmada'
+export type EstadoCarga =
+  | 'inicial'
+  | 'seleccionado'
+  | 'validando'
+  | 'vista-previa'
+  | 'enviando'
+  | 'confirmada'
 
 export interface UseCargaResult {
   estado: EstadoCarga
+  /** Nombre del archivo elegido (null si no hay uno valido). */
+  archivoSeleccionado: string | null
   vistaPrevia: VistaPreviaCarga | null
   resumen: CargaResumen | null
   /** Validacion local del archivo (no llega a la API). */
   errorArchivo: string | null
   /** Mensaje apto para la UI de un error de la API. */
   error: string | null
+  puedeRevisar: boolean
   puedeConfirmar: boolean
+  /** Solo guarda el archivo elegido: no llama a la API. */
   seleccionarArchivo: (file: File | null) => void
+  /** Pide la vista previa del archivo elegido. */
+  revisar: () => void
   confirmar: () => void
 }
 
@@ -30,7 +42,10 @@ function toMessage(error: unknown): string {
   return error.status === PAYLOAD_TOO_LARGE ? MENSAJE_TAMANO : error.message
 }
 
-/** Vista previa y confirmacion de una carga (CU-01), con cancelacion y sin doble envio. */
+/**
+ * Carga en tres pasos (CU-01, R-008 (d)): elegir archivo → revisar (vista previa) → confirmar.
+ * Con cancelacion de la peticion en curso y sin doble envio.
+ */
 export function useCarga(): UseCargaResult {
   const [archivo, setArchivo] = useState<File | null>(null)
   const [estado, setEstado] = useState<EstadoCarga>('inicial')
@@ -39,8 +54,8 @@ export function useCarga(): UseCargaResult {
   const [errorArchivo, setErrorArchivo] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const controllerRef = useRef<AbortController | null>(null)
-  // Guarda sincrona contra doble envio (dos clics antes de que React vuelva a pintar).
-  const enviandoRef = useRef(false)
+  // Guarda sincrona contra doble peticion (dos clics antes de que React vuelva a pintar).
+  const ocupadoRef = useRef(false)
 
   useEffect(
     () => () => {
@@ -58,8 +73,9 @@ export function useCarga(): UseCargaResult {
   }
 
   const seleccionarArchivo = (file: File | null) => {
-    const controller = nuevaPeticion()
-    enviandoRef.current = false
+    controllerRef.current?.abort()
+    controllerRef.current = null
+    ocupadoRef.current = false
     setVistaPrevia(null)
     setResumen(null)
     setError(null)
@@ -77,17 +93,30 @@ export function useCarga(): UseCargaResult {
     }
 
     setArchivo(file)
+    setEstado('seleccionado')
+  }
+
+  const puedeRevisar = archivo !== null && (estado === 'seleccionado' || estado === 'vista-previa')
+
+  const revisar = () => {
+    if (!puedeRevisar || archivo === null || ocupadoRef.current) return
+    ocupadoRef.current = true
+    const controller = nuevaPeticion()
+    setVistaPrevia(null)
+    setError(null)
     setEstado('validando')
-    previsualizarCarga(file, controller.signal).then(
+    previsualizarCarga(archivo, controller.signal).then(
       (resultado) => {
         if (controller.signal.aborted) return
+        ocupadoRef.current = false
         setVistaPrevia(resultado)
         setEstado('vista-previa')
       },
       (reason: unknown) => {
         if (controller.signal.aborted) return
+        ocupadoRef.current = false
         setError(toMessage(reason))
-        setEstado('inicial')
+        setEstado('seleccionado')
       },
     )
   }
@@ -96,21 +125,21 @@ export function useCarga(): UseCargaResult {
     estado === 'vista-previa' && archivo !== null && vistaPrevia?.puedeConfirmar === true
 
   const confirmar = () => {
-    if (!puedeConfirmar || archivo === null || enviandoRef.current) return
-    enviandoRef.current = true
+    if (!puedeConfirmar || archivo === null || ocupadoRef.current) return
+    ocupadoRef.current = true
     const controller = nuevaPeticion()
     setError(null)
     setEstado('enviando')
     confirmarCarga(archivo, controller.signal).then(
       (carga) => {
         if (controller.signal.aborted) return
-        enviandoRef.current = false
+        ocupadoRef.current = false
         setResumen(carga)
         setEstado('confirmada')
       },
       (reason: unknown) => {
         if (controller.signal.aborted) return
-        enviandoRef.current = false
+        ocupadoRef.current = false
         setError(toMessage(reason))
         setEstado('vista-previa')
       },
@@ -119,12 +148,15 @@ export function useCarga(): UseCargaResult {
 
   return {
     estado,
+    archivoSeleccionado: archivo?.name ?? null,
     vistaPrevia,
     resumen,
     errorArchivo,
     error,
+    puedeRevisar,
     puedeConfirmar,
     seleccionarArchivo,
+    revisar,
     confirmar,
   }
 }

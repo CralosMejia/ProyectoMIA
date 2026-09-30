@@ -228,6 +228,89 @@ describe('lista-api (contra MSW)', () => {
     )
   })
 
+  it('generarLista con nombre → lo envia en el cuerpo y mapea el nombre de la respuesta', async () => {
+    let body: string | null = null
+    server.use(
+      http.post('*/api/v1/listas', async ({ request }) => {
+        body = await request.clone().text()
+        return undefined
+      }),
+    )
+
+    const lista = await generarLista({ horizonteDias: 30, topK: 25, nombre: 'Campaña octubre' })
+
+    expect(body).toBe(
+      '{"fecha_referencia":null,"horizonte_dias":30,"top_k":25,"nombre":"Campaña octubre"}',
+    )
+    expect(lista.nombre).toBe('Campaña octubre')
+  })
+
+  it('generarLista sin nombre o con null → no envia la clave; el handler pone el nombre por defecto', async () => {
+    const cuerpos: string[] = []
+    server.use(
+      http.post('*/api/v1/listas', async ({ request }) => {
+        cuerpos.push(await request.clone().text())
+        return undefined
+      }),
+    )
+
+    const sinNombre = await generarLista({ horizonteDias: 30, topK: 25 })
+    await generarLista({ horizonteDias: 30, topK: 25, nombre: null })
+
+    for (const cuerpo of cuerpos) expect(cuerpo).not.toContain('nombre')
+    expect(sinNombre.nombre).toBe('Lista del 28 sep 2026')
+  })
+
+  it('handlers: el nombre por defecto sigue a la fecha de la lista ("Lista del <d mmm aaaa>")', async () => {
+    const lista = await generarLista({ fechaReferencia: '2099-01-05', horizonteDias: 30, topK: 25 })
+
+    expect(lista.nombre).toBe('Lista del 5 ene 2099')
+  })
+
+  it('obtenerLista y obtenerUltima → nombre mapeado', async () => {
+    await expect(obtenerLista(41)).resolves.toMatchObject({ nombre: 'Lista del 31 ago 2026' })
+    await expect(obtenerUltima()).resolves.toMatchObject({ nombre: 'Lista del 28 sep 2026' })
+  })
+
+  it.each([
+    ['vacio', ''],
+    ['solo espacios', '   '],
+    ['81 caracteres', 'x'.repeat(81)],
+    ['con caracter de control', 'Lista'],
+  ])('handlers: nombre %s → 400 validation_error como ApiError con el mensaje del servidor', async (_caso, nombre) => {
+    const error = await generarLista({ horizonteDias: 30, topK: 25, nombre }).catch(
+      (e: unknown) => e,
+    )
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).not.toBeInstanceOf(FechaListaPasadaError)
+    expect(error).toMatchObject({
+      status: 400,
+      message: 'El nombre de la lista debe tener entre 1 y 80 caracteres.',
+    })
+  })
+
+  it('400 del servidor → ApiError con el mensaje del servidor', async () => {
+    server.use(
+      http.post('*/api/v1/listas', () =>
+        HttpResponse.json(errorBody('validation_error', 'Nombre no valido.'), { status: 400 }),
+      ),
+    )
+
+    const error = await generarLista({ horizonteDias: 30, topK: 25, nombre: 'x' }).catch(
+      (e: unknown) => e,
+    )
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({ status: 400, message: 'Nombre no valido.' })
+  })
+
+  it('handlers: nombre con espacios alrededor → se devuelve recortado', async () => {
+    const lista = await generarLista({ horizonteDias: 30, topK: 25, nombre: '  Campaña octubre  ' })
+
+    expect(lista.nombre).toBe('Campaña octubre')
+  })
+
   it('obtenerUltima → la lista; con 404 → null', async () => {
     await expect(obtenerUltima()).resolves.toMatchObject({ id: 42 })
 
@@ -241,6 +324,7 @@ describe('lista-api (contra MSW)', () => {
     expect(listas).toEqual([
       {
         id: 42,
+        nombre: 'Lista del 28 sep 2026',
         fechaGeneracion: '2026-09-28',
         creadaEn: new Date('2026-09-28T15:00:00Z'),
         modeloVersion: 'v1',
@@ -250,6 +334,7 @@ describe('lista-api (contra MSW)', () => {
       },
       {
         id: 41,
+        nombre: 'Lista del 31 ago 2026',
         fechaGeneracion: '2026-08-31',
         creadaEn: new Date('2026-08-31T14:00:00Z'),
         modeloVersion: 'v1',

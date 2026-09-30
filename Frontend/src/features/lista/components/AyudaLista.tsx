@@ -2,7 +2,8 @@ import { useRef, useState, type ReactNode } from 'react'
 import { Modal } from '../../../shared/ui/Modal'
 
 /**
- * Resumen estatico de `Documentation/06-como-funciona-la-lista.md` §1–§6 (decision (m) de R-007).
+ * Resumen estatico de `Documentation/06-como-funciona-la-lista.md` §1–§4 (decision (m) de R-007;
+ * R-008 retira "Qué datos se muestran" y "Casos frecuentes").
  * El texto vive en el componente: no se carga el `.md` en tiempo de ejecucion.
  * Lenguaje para el personal del gimnasio, sin terminos tecnicos.
  */
@@ -49,31 +50,6 @@ function Contenido() {
           que tiene o cuántas membresías ha tenido antes. Sirven para orientar la conversación. Si
           no hay motivos destacados, se indica «Sin factores de riesgo destacados».
         </p>
-      </Seccion>
-
-      <Seccion titulo="Qué datos se muestran">
-        <p>
-          En pantalla: prioridad, nombre, cédula, plan, fecha de vencimiento, días que faltan, nivel
-          de riesgo y motivos. El celular no se muestra en pantalla: solo en el Excel, que también
-          incluye el monto cobrado. El correo no se muestra en ningún lado.
-        </p>
-      </Seccion>
-
-      <Seccion titulo="Casos frecuentes">
-        <ul className="list-disc pl-5">
-          <li>
-            Cargar los datos cada mes: si la última carga tiene más de 30 días, la lista puede salir
-            incompleta y muestra un aviso de datos antiguos.
-          </li>
-          <li>
-            Socios sin cédula: no aparecen en la lista, pero siguen en el sistema. Registre su
-            cédula en los datos del gimnasio.
-          </li>
-          <li>
-            Fecha pasada: no se permite; la lista siempre mira de hoy en adelante. Elija hoy o una
-            fecha posterior.
-          </li>
-        </ul>
       </Seccion>
     </div>
   )

@@ -37,17 +37,15 @@ describe('AyudaLista', () => {
       'Socios prioritarios a contactar',
       'Niveles de riesgo: alto, medio y bajo',
       'Motivos',
-      'Qué datos se muestran',
-      'Casos frecuentes',
     ])
     const texto = dialogo.textContent ?? ''
     expect(texto).toMatch(/alto/)
     expect(texto).toMatch(/medio/)
     expect(texto).toMatch(/bajo/)
-    expect(texto).toMatch(/celular no se muestra en pantalla: solo en el Excel/i)
-    expect(texto).toMatch(/cargar los datos cada mes/i)
-    expect(texto).toMatch(/sin cédula/i)
-    expect(texto).toMatch(/fecha pasada/i)
+    expect(texto).toMatch(/Sin factores de riesgo destacados/)
+    expect(texto).not.toMatch(/Qué datos se muestran/)
+    expect(texto).not.toMatch(/Casos frecuentes/)
+    expect(texto).not.toMatch(/celular/i)
   })
 
   it('el texto no usa terminos tecnicos', async () => {
@@ -58,6 +56,17 @@ describe('AyudaLista', () => {
 
     const texto = screen.getByRole('dialog').textContent ?? ''
     expect(texto).not.toMatch(/score|top k|\btop\b|horizonte|percentil|modelo v1/i)
+  })
+
+  it('Motivos no dice que el Excel incluye los numeros de aporte', async () => {
+    const user = userEvent.setup()
+    render(<AyudaLista />)
+
+    await user.click(boton())
+
+    const texto = screen.getByRole('dialog').textContent ?? ''
+    expect(texto).not.toMatch(/excel[^.]*(n[uú]mero|aporte|\()/i)
+    expect(texto).not.toMatch(/\([+-]\d/)
   })
 
   it('"Cerrar" cierra el dialogo y devuelve el foco al boton', async () => {
@@ -92,7 +101,7 @@ describe('AyudaLista', () => {
     await user.click(boton())
 
     const dialogo = screen.getByRole('dialog', { name: BOTON })
-    expect(within(dialogo).getAllByRole('heading', { level: 3 })).toHaveLength(6)
+    expect(within(dialogo).getAllByRole('heading', { level: 3 })).toHaveLength(4)
   })
 
   it('arquitectura: reutiliza el Modal de shared/ui y no llama a api/ ni hooks del feature', () => {

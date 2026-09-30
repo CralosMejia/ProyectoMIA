@@ -41,7 +41,12 @@ test('carga una plantilla valida, genera la lista y descarga el Excel', async ({
   await test.step('subir la plantilla y ver la vista previa', async () => {
     await page.goto('/carga')
     await expect(page.getByRole('heading', { level: 1, name: 'Carga de datos' })).toBeVisible()
+    await expect(
+      page.getByRole('button', { name: 'Seleccionar archivo de carga (.xlsx)' }),
+    ).toBeVisible()
     await page.getByLabel('Archivo de la plantilla (.xlsx)').setInputFiles(plantilla.ruta)
+    await expect(page.getByText('Archivo elegido: plantilla_e2e.xlsx')).toBeVisible()
+    await page.getByRole('button', { name: 'Revisar archivo' }).click()
 
     const vistaPrevia = page.getByRole('region', { name: 'Vista previa' })
     await expect(vistaPrevia).toBeVisible({ timeout: 30_000 })
@@ -50,7 +55,7 @@ test('carga una plantilla valida, genera la lista y descarga el Excel', async ({
   })
 
   await test.step('confirmar y ver el resumen', async () => {
-    await page.getByRole('button', { name: 'Confirmar' }).click()
+    await page.getByRole('button', { name: 'Confirmar carga' }).click()
     const resumen = page.getByRole('region', { name: 'Carga guardada' })
     await expect(resumen).toBeVisible({ timeout: 30_000 })
     await expect(dato(resumen, 'Filas guardadas')).toHaveText('3')
