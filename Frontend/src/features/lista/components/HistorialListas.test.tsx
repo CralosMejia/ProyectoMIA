@@ -7,14 +7,8 @@ import ListaPage from '../pages/ListaPage'
 import { HistorialListas } from './HistorialListas'
 import componentSource from './HistorialListas.tsx?raw'
 
-function fechaLarga(iso: string): string {
-  return new Intl.DateTimeFormat('es-EC', { dateStyle: 'long', timeZone: 'UTC' }).format(
-    new Date(`${iso}T00:00:00Z`),
-  )
-}
-
-const OPCION_RECIENTE = `Lista del ${fechaLarga('2026-09-28')} · 25 socios prioritarios`
-const OPCION_ANTERIOR = `Lista del ${fechaLarga('2026-08-31')} · 10 socios prioritarios`
+const OPCION_RECIENTE = '28 sep 2026 · 25 prioritarios'
+const OPCION_ANTERIOR = '31 ago 2026 · 10 prioritarios'
 
 function selector(): HTMLSelectElement {
   return screen.getByLabelText('Listas anteriores')
@@ -46,13 +40,15 @@ describe('HistorialListas', () => {
     vi.unstubAllGlobals()
   })
 
-  it('con dos listas simuladas → 2 opciones (fecha y socios prioritarios), la mas reciente primero', async () => {
+  it('con dos listas simuladas → 2 opciones (fecha corta y prioritarios), la mas reciente primero', async () => {
     render(<ListaPage />)
 
     const opciones = await opcionesCargadas()
     expect(opciones).toEqual([OPCION_RECIENTE, OPCION_ANTERIOR])
-    expect(opciones[0]).toBe('Lista del 28 de septiembre de 2026 · 25 socios prioritarios')
-    for (const opcion of opciones) expect(opcion).not.toMatch(/modelo|v1|\bK\b/i)
+    for (const opcion of opciones) {
+      expect(opcion).not.toMatch(/modelo|v1|\bK\b/i)
+      expect(opcion).not.toMatch(/Lista del|socios/i)
+    }
     await waitFor(() => expect(selector()).toHaveValue('42'))
   })
 
@@ -151,7 +147,7 @@ describe('HistorialListas', () => {
     const opciones = within(selector())
       .getAllByRole('option')
       .map((o) => o.textContent)
-    expect(opciones[0]).toBe(`Lista del ${fechaLarga('2026-10-01')} · 5 socios prioritarios`)
+    expect(opciones[0]).toBe('1 oct 2026 · 5 prioritarios')
     expect(selector()).toHaveValue('43')
   })
 
@@ -242,18 +238,33 @@ describe('HistorialListas', () => {
       expect(onSeleccionar).toHaveBeenCalledWith(41)
     })
 
-    it('K = 1 → "1 socio prioritario" (singular)', () => {
+    it.each([
+      [25, 30, '29 sep 2026 · 25 prioritarios'],
+      [1, 30, '29 sep 2026 · 1 prioritario'],
+      [25, 3, '29 sep 2026 · 3 prioritarios'],
+      [25, 1, '29 sep 2026 · 1 prioritario'],
+      [25, 0, '29 sep 2026 · 0 prioritarios'],
+    ])('topK %i y totalItems %i → %j', (topK, totalItems, esperado) => {
       render(
         <HistorialListas
-          listas={[{ ...listas[0]!, topK: 1 }]}
+          listas={[{ ...listas[0]!, fechaGeneracion: '2026-09-29', topK, totalItems }]}
           seleccionadaId={42}
           onSeleccionar={onSeleccionar}
         />,
       )
 
-      expect(within(selector()).getByRole('option')).toHaveTextContent(
-        `Lista del ${fechaLarga('2026-09-28')} · 1 socio prioritario`,
-      )
+      expect(within(selector()).getByRole('option').textContent).toBe(esperado)
+    })
+
+    it('respeta el orden recibido y mantiene la etiqueta "Listas anteriores"', () => {
+      render(<HistorialListas listas={listas} seleccionadaId={42} onSeleccionar={onSeleccionar} />)
+
+      expect(screen.getByText('Listas anteriores')).toBeInTheDocument()
+      expect(
+        within(selector())
+          .getAllByRole('option')
+          .map((o) => o.textContent),
+      ).toEqual([OPCION_RECIENTE, OPCION_ANTERIOR])
     })
 
     it('deshabilitado → el selector no se puede usar', () => {

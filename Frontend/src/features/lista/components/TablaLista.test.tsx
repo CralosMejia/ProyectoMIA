@@ -8,7 +8,6 @@ const COLUMNAS = [
   'Prioridad',
   'Nombre',
   'Cédula',
-  'Celular',
   'Plan',
   'Vence el',
   'Días para vencer',
@@ -77,9 +76,32 @@ describe('TablaLista', () => {
     expect(
       screen.getByRole('heading', { level: 2, name: 'Lista del 29 de septiembre de 2026' }),
     ).toBeInTheDocument()
-    expect(screen.getByText('Socios por vencer en los próximos 30 días: 5')).toBeInTheDocument()
-    expect(screen.getByText('Socios prioritarios a contactar: 2')).toBeInTheDocument()
+    const rango = screen.getByText('Rango de fechas: 29 sep – 29 oct 2026')
+    const resumen = rango.parentElement as HTMLElement
+    expect(Array.from(resumen.children).map((p) => p.textContent)).toEqual([
+      'Rango de fechas: 29 sep – 29 oct 2026',
+      'Socios priorizados para campañas: 2',
+    ])
     expect(document.body.textContent).not.toMatch(/v1|versi[oó]n del modelo|top k|horizonte/i)
+    expect(document.body.textContent).not.toContain('Socios por vencer en los próximos')
+    expect(document.body.textContent).not.toContain('Socios prioritarios a contactar: ')
+  })
+
+  it('30 items con 25 prioritarios → "Socios priorizados para campañas: 25"', () => {
+    const treinta = Array.from({ length: 30 }, (_, i) => item(i + 1, { dentroTopK: i < 25 }))
+    render(<TablaLista lista={lista(treinta, 25)} />)
+
+    expect(screen.getByText('Rango de fechas: 29 sep – 29 oct 2026')).toBeInTheDocument()
+    expect(screen.getByText('Socios priorizados para campañas: 25')).toBeInTheDocument()
+  })
+
+  it('no muestra la columna Celular ni ningun numero de celular', () => {
+    render(<TablaLista lista={lista(CINCO)} />)
+
+    expect(screen.queryByRole('columnheader', { name: 'Celular' })).not.toBeInTheDocument()
+    const texto = document.body.textContent ?? ''
+    expect(texto).not.toMatch(/celular/i)
+    for (const p of CINCO) expect(texto).not.toContain(p.celular as string)
   })
 
   it('dos tablas: prioritarios (dentroTopK) y otros, ambas en orden de prioridad', () => {
@@ -173,8 +195,8 @@ describe('TablaLista', () => {
   it('lista vacia → tabla de prioritarios con mensaje y resumen en 0', () => {
     render(<TablaLista lista={lista([])} />)
 
-    expect(screen.getByText('Socios por vencer en los próximos 30 días: 0')).toBeInTheDocument()
-    expect(screen.getByText('Socios prioritarios a contactar: 0')).toBeInTheDocument()
+    expect(screen.getByText('Rango de fechas: 29 sep – 29 oct 2026')).toBeInTheDocument()
+    expect(screen.getByText('Socios priorizados para campañas: 0')).toBeInTheDocument()
     expect(screen.getByText('No hay socios cuya membresía venza en esos días.')).toBeInTheDocument()
   })
 

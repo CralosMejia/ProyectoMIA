@@ -1,6 +1,7 @@
 import { DataTable, type DataTableColumn } from '../../../shared/ui/DataTable'
 import { RiskBadge } from '../../../shared/ui/RiskBadge'
 import type { ListaPriorizada, Prediccion } from '../types'
+import { rangoFechas } from './formatoFechas'
 
 export const SIN_FACTORES = 'Sin factores de riesgo destacados'
 export const TITULO_PRIORITARIOS = 'Socios prioritarios a contactar'
@@ -36,7 +37,6 @@ const COLUMNAS: DataTableColumn<Prediccion>[] = [
   { key: 'prioridad', header: 'Prioridad' },
   { key: 'socioNombre', header: 'Nombre' },
   { key: 'cedula', header: 'Cédula', render: (p) => p.cedula ?? '—' },
-  { key: 'celular', header: 'Celular', render: (p) => p.celular ?? '—' },
   { key: 'plan', header: 'Plan' },
   {
     key: 'fechaVencimiento',
@@ -58,12 +58,6 @@ const COLUMNAS: DataTableColumn<Prediccion>[] = [
 
 function porPrioridad(a: Prediccion, b: Prediccion): number {
   return a.prioridad - b.prioridad
-}
-
-function textoPorVencer(dias: number): string {
-  return dias === 1
-    ? 'Socios por vencer en el próximo día'
-    : `Socios por vencer en los próximos ${dias} días`
 }
 
 function Tabla({ titulo, filas }: { titulo: string; filas: Prediccion[] }) {
@@ -99,8 +93,8 @@ export function TablaLista({ lista }: TablaListaProps) {
         Lista del {formatearFecha(lista.fechaGeneracion, FECHA_LARGA)}
       </h2>
       <div className="flex flex-col gap-1">
-        <p>{`${textoPorVencer(lista.horizonteDias)}: ${lista.items.length}`}</p>
-        <p>{`${TITULO_PRIORITARIOS}: ${prioritarios.length}`}</p>
+        <p>{`Rango de fechas: ${rangoFechas(lista.fechaGeneracion, lista.horizonteDias)}`}</p>
+        <p>{`Socios priorizados para campañas: ${prioritarios.length}`}</p>
       </div>
       <Tabla titulo={TITULO_PRIORITARIOS} filas={prioritarios} />
       {otros.length > 0 && <Tabla titulo={TITULO_OTROS} filas={otros} />}

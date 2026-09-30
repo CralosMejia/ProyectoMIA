@@ -1,14 +1,12 @@
 import type { ChangeEvent } from 'react'
 import type { ListaResumen } from '../types'
+import { fechaCorta } from './formatoFechas'
 
-const FECHA = new Intl.DateTimeFormat('es-EC', { dateStyle: 'long', timeZone: 'UTC' })
-
-/** Texto de una opcion: "Lista del <fecha larga es-EC> · <K> socios prioritarios". */
+/** Texto de una opcion: "<d mmm aaaa> · <n> prioritarios", con n = min(topK, totalItems). */
 function etiquetaLista(lista: ListaResumen): string {
-  const fecha = FECHA.format(new Date(`${lista.fechaGeneracion}T00:00:00Z`))
-  const prioritarios =
-    lista.topK === 1 ? '1 socio prioritario' : `${lista.topK} socios prioritarios`
-  return `Lista del ${fecha} · ${prioritarios}`
+  const n = Math.min(lista.topK, lista.totalItems)
+  const prioritarios = n === 1 ? '1 prioritario' : `${n} prioritarios`
+  return `${fechaCorta(lista.fechaGeneracion)} · ${prioritarios}`
 }
 
 export interface HistorialListasProps {

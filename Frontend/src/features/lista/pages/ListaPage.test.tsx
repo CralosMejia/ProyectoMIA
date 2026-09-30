@@ -96,8 +96,8 @@ describe('ListaPage', () => {
     // 32 socios simulados: 25 prioritarios + 7 otros.
     expect(await filasDe(PRIORITARIOS)).toHaveLength(25)
     expect(await filasDe(OTROS)).toHaveLength(7)
-    expect(screen.getByText('Socios por vencer en los próximos 30 días: 32')).toBeInTheDocument()
-    expect(screen.getByText('Socios prioritarios a contactar: 25')).toBeInTheDocument()
+    expect(screen.getByText('Rango de fechas: 28 sep – 28 oct 2026')).toBeInTheDocument()
+    expect(screen.getByText('Socios priorizados para campañas: 25')).toBeInTheDocument()
   })
 
   it('/ultima con 404 → estado vacio, sin tabla ni boton de Excel', async () => {
@@ -119,7 +119,6 @@ describe('ListaPage', () => {
       'Prioridad',
       'Nombre',
       'Cédula',
-      'Celular',
       'Plan',
       'Vence el',
       'Días para vencer',
@@ -131,7 +130,9 @@ describe('ListaPage', () => {
     const primera = within(filas[0] as HTMLElement)
     expect(primera.getByText('Ana Prueba')).toBeInTheDocument()
     expect(primera.getByText('0000000000')).toBeInTheDocument()
-    expect(primera.getByText('0990000000')).toBeInTheDocument()
+    // El celular sigue en la API y el Excel, pero no se muestra en pantalla.
+    expect(primera.queryByText('0990000000')).not.toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/celular|099000\d{4}/i)
     expect(primera.getByText(fechaCorta('2026-10-01'))).toBeInTheDocument()
     expect(primera.getByText('Alto')).toBeInTheDocument()
     expect(primera.queryByText('0.95000000')).not.toBeInTheDocument()
@@ -173,10 +174,10 @@ describe('ListaPage', () => {
     await user.click(botonGenerar())
 
     await waitFor(() =>
-      expect(screen.getByText('Socios prioritarios a contactar: 10')).toBeInTheDocument(),
+      expect(screen.getByText('Socios priorizados para campañas: 10')).toBeInTheDocument(),
     )
     expect(await filasDe(PRIORITARIOS)).toHaveLength(10)
-    expect(screen.getByText('Socios por vencer en los próximos 20 días: 32')).toBeInTheDocument()
+    expect(screen.getByText('Rango de fechas: 15 oct – 4 nov 2026')).toBeInTheDocument()
     expect(cuerpos).toEqual([{ fecha_referencia: '2026-10-15', horizonte_dias: 20, top_k: 10 }])
   })
 
