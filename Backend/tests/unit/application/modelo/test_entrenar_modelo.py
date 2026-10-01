@@ -15,6 +15,7 @@ from app.application.modelo.entrenar_modelo import (
     EntrenarModeloInicial,
     ModeloEntrenado,
 )
+from app.application.modelo.mapeo import ciclo_modelo_desde
 from app.domain.common.enums import EstadoCiclo, FormaPago, Plan
 from app.domain.common.exceptions import DomainError
 from app.domain.common.predictor import FeatureRow, Prediction, PredictorModel, TrainedModel
@@ -269,3 +270,15 @@ def test_modelo_entrenado_repr_no_incluye_el_artefacto() -> None:
     _, resultado = entrenar(seis_evaluables())
 
     assert "artefacto=" not in repr(resultado)
+
+
+def test_ejecutar_ciclos_produce_el_mismo_modelo_que_ejecutar() -> None:
+    ciclos = seis_evaluables()
+    _, por_historico = entrenar(ciclos)
+
+    por_ciclos = EntrenarModeloInicial(PredictorDoble()).ejecutar_ciclos(
+        [ciclo_modelo_desde(c) for c in ciclos], CORTE
+    )
+
+    assert por_ciclos == por_historico
+    assert por_ciclos.metadata_tecnica["fecha_corte"] == "2026-08-31"

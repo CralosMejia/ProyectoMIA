@@ -8,10 +8,10 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import Engine
 
 from app.application.dashboard.dtos import DashboardDTO
 from tests.integration.api.contract_helpers import (
-    assert_not_implemented,
     assert_operation_contract,
     assert_validation_error,
     json_example,
@@ -67,18 +67,26 @@ IMPLEMENTED_OPERATIONS = {
     ("post", "/api/v1/campanias/{campania_id}/inactivar"),
     ("post", "/api/v1/campanias/{campania_id}/activar"),  # R-010 T4
     ("get", "/api/v1/predicciones/{prediccion_id}/campanias-sugeridas"),
-    # R-009 T12: gestiones (el filtro de pendientes y las alertas siguen en 501, dia 6).
+    # R-009 T12: gestiones.
     ("post", "/api/v1/gestiones"),
     ("get", "/api/v1/gestiones/{gestion_id}"),
     ("put", "/api/v1/gestiones/{gestion_id}/resultado"),
+    # R-011 T4: alertas y filtro de pendientes.
+    ("get", "/api/v1/gestiones"),
+    ("get", "/api/v1/alertas"),
+    # R-011 T17: dashboard.
+    ("get", "/api/v1/dashboard"),
 }
 
 
 @pytest.mark.parametrize("params", [{}, {"mes": "2026-09"}, {"mes": "2026-12"}])
-def test_get_dashboard_valid_or_absent_mes_returns_501(
-    contract_client: TestClient, params: dict[str, str]
+def test_get_dashboard_valid_or_absent_mes_returns_200(
+    migrated_engine: Engine, contract_client: TestClient, params: dict[str, str]
 ) -> None:
-    assert_not_implemented(contract_client.get(DASHBOARD_PATH, params=params))
+    response = contract_client.get(DASHBOARD_PATH, params=params)
+
+    assert response.status_code == 200
+    DashboardDTO.model_validate(response.json())
 
 
 @pytest.mark.parametrize("mes", ["2026-13", "abc", "2026-00", "2026-9", "2026-09-01", ""])
@@ -87,9 +95,7 @@ def test_get_dashboard_invalid_mes_returns_400(contract_client: TestClient, mes:
 
 
 def test_openapi_dashboard_declares_examples(openapi_spec: dict[str, Any]) -> None:
-    assert_operation_contract(
-        openapi_spec, "get", DASHBOARD_PATH, 200, (400, 403, 501), DashboardDTO
-    )
+    assert_operation_contract(openapi_spec, "get", DASHBOARD_PATH, 200, (400, 403), DashboardDTO)
 
 
 def test_openapi_contains_exactly_the_20_business_operations_plus_health(

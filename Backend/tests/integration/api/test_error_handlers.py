@@ -73,7 +73,7 @@ def app(test_database_url: URL) -> FastAPI:
 
 @pytest.fixture
 def client(app: FastAPI) -> Iterator[TestClient]:
-    with TestClient(app, raise_server_exceptions=False) as test_client:
+    with TestClient(app, client=("127.0.0.1", 50000), raise_server_exceptions=False) as test_client:
         yield test_client
 
 
@@ -258,7 +258,10 @@ def test_startup_with_malformed_database_url_raises_without_exposing_password(
     )
     application = create_app(settings)
 
-    with pytest.raises(RuntimeError) as exc_info, TestClient(application):
+    with (
+        pytest.raises(RuntimeError) as exc_info,
+        TestClient(application, client=("127.0.0.1", 50000)),
+    ):
         pass
 
     rendered = "".join(traceback.format_exception(exc_info.value))

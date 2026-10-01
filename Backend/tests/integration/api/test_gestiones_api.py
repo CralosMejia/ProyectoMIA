@@ -528,7 +528,8 @@ def test_put_resultado_fecha_fuera_de_rango_devuelve_422(client: TestClient, dat
     )
 
 
-# ------------------------------------------------------------------ siguen en 501 (dia 6)
+# ------------------------------------------------------------------ reales desde R-011 (T4)
 @pytest.mark.parametrize("path", ["/api/v1/alertas", f"{GESTIONES_PATH}?filtro=hoy"])
-def test_alertas_y_filtro_siguen_en_501(client: TestClient, path: str) -> None:
-    assert client.get(path).status_code == 501
+def test_alertas_y_filtro_ya_no_responden_501(client: TestClient, path: str) -> None:
+    # El comportamiento con datos se prueba en test_alertas_api.py.
+    assert client.get(path).status_code == 200

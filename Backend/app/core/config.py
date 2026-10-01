@@ -1,10 +1,12 @@
 """Configuracion de la aplicacion, cargada y validada desde variables de entorno."""
 
+from decimal import Decimal
+from ipaddress import IPv4Network, IPv6Network, ip_network
 from pathlib import Path
 from typing import Annotated, Literal, Self
 from urllib.parse import urlsplit
 
-from pydantic import SecretStr, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 WILDCARD_ORIGIN = "*"
@@ -13,6 +15,29 @@ DATABASE_URL_SCHEME = "postgresql+psycopg://"
 DEBUG_ALLOWED_ENVS = frozenset({"development", "test"})
 # Carpeta de los libros historicos dentro del contenedor (volumen :ro de HISTORICO_DIR).
 HISTORICO_PATH_POR_DEFECTO = Path("/data/historico")
+
+type RedPermitida = IPv4Network | IPv6Network
+# CU-00: por defecto solo el propio equipo. Nunca existe un valor que "abra a todos".
+IPS_PERMITIDAS_POR_DEFECTO: tuple[RedPermitida, ...] = (
+    ip_network("127.0.0.1"),
+    ip_network("::1"),
+)
+
+
+def _redes_permitidas(valor: str) -> tuple[RedPermitida, ...]:
+    """``"ip, cidr, ..."`` -> redes; los mensajes de error nunca repiten el valor recibido."""
+    elementos = [elemento.strip() for elemento in valor.split(",") if elemento.strip()]
+    if not elementos:
+        raise ValueError("debe contener al menos una IP o un rango CIDR")
+    redes: list[RedPermitida] = []
+    for elemento in elementos:
+        try:
+            redes.append(ip_network(elemento, strict=False))
+        except ValueError:
+            raise ValueError(
+                "cada elemento debe ser una IP o un rango CIDR valido, separados por coma"
+            ) from None
+    return tuple(redes)
 
 
 def _is_valid_origin(origin: str) -> bool:
@@ -55,6 +80,22 @@ class Settings(BaseSettings):
     # CU-03 (ADR-004): migracion del historico en segundo plano al arrancar con la base vacia.
     HISTORICO_PATH: Path = HISTORICO_PATH_POR_DEFECTO
     MIGRAR_HISTORICO_AL_ARRANCAR: bool = True
+    # CU-00: IPs o rangos CIDR autorizados, separados por coma (la IP sale de la conexion).
+    IPS_PERMITIDAS: Annotated[tuple[RedPermitida, ...], NoDecode] = IPS_PERMITIDAS_POR_DEFECTO
+    # CU-02: planificador del reentrenamiento dentro del backend (false en pruebas).
+    REENTRENAMIENTO_AUTOMATICO: bool = True
+    REENTRENAR_MIN_CICLOS_NUEVOS: int = Field(default=150, ge=0)
+    REENTRENAR_MIN_COBERTURA_VENCIMIENTO: Decimal = Field(default=Decimal("0.60"), ge=0, le=1)
+    REENTRENAR_MIN_CASOS_POR_CLASE: int = Field(default=20, ge=0)
+    REENTRENAR_MESES_COMPARACION: int = Field(default=3, ge=1)
+
+    @field_validator("IPS_PERMITIDAS", mode="before")
+    @classmethod
+    def _parse_ips_permitidas(cls, value: object) -> object:
+        """Texto de la variable -> redes; vacio o invalido falla (nunca se abre a todos)."""
+        if isinstance(value, str):
+            return _redes_permitidas(value)
+        return value
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

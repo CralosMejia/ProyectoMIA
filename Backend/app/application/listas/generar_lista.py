@@ -16,19 +16,18 @@ Flujo (todo en **una** unidad de trabajo, con un solo ``commit`` al final):
 La prediccion cruza el puerto ``PredictorModel``: aqui no se usa scikit-learn ni pandas.
 """
 
-import json
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from datetime import date
-from decimal import Decimal
 
 from app.application.historial.ports import MembresiaParaPrediccion
 from app.application.listas.consultar_listas import a_dto, advertencia_de
 from app.application.listas.dtos import GenerarListaDTO, ListaPriorizadaDTO
 from app.application.listas.ports import NuevaLista, NuevaPrediccion, UnidadDeTrabajoListas
+from app.application.modelo.mapeo import ciclo_de_membresia, medianas_de
 from app.domain.common.clock import Clock
-from app.domain.common.enums import EstadoCiclo, EstadoMigracion, Plan
+from app.domain.common.enums import EstadoCiclo, EstadoMigracion
 from app.domain.common.exceptions import DomainError
 from app.domain.common.fechas import hoy_en_negocio
 from app.domain.common.predictor import PredictorModel
@@ -42,9 +41,8 @@ from app.domain.modelo.cartera import (
     ya_renovo,
 )
 from app.domain.modelo.umbrales import Umbrales, nivel_de
-from app.domain.modelo.variables import CicloModelo, MedianasMonto, construir_variables
+from app.domain.modelo.variables import CicloModelo, construir_variables
 
-CLAVE_MEDIANAS = "medianas_monto"
 MENSAJE_NO_LISTO = "El sistema se esta inicializando; intente de nuevo en unos minutos."
 MENSAJE_FECHA_PASADA = "La fecha de la lista debe ser hoy o posterior."
 
@@ -63,58 +61,9 @@ class FechaReferenciaPasadaError(DomainError):
         super().__init__(MENSAJE_FECHA_PASADA)
 
 
-def _decimal(valor: object) -> Decimal | None:
-    if valor is None:
-        return None
-    if not isinstance(valor, str | int | Decimal):
-        raise ValueError("Las medianas del modelo deben ser texto decimal.")
-    return Decimal(valor)
-
-
-def medianas_de(metadata: Mapping[str, object]) -> MedianasMonto:
-    """Lee ``metadata_tecnica["medianas_monto"]``.
-
-    Formato: ``{"por_plan": {"MENSUAL": "45.00", ...}, "general": "50.00" | null}``, como
-    objeto o como texto JSON; los montos son texto ``Decimal``.
-    """
-    crudo = metadata.get(CLAVE_MEDIANAS)
-    if crudo is None:
-        raise ValueError("El modelo vigente no tiene las medianas de monto.")
-    if isinstance(crudo, str):
-        crudo = json.loads(crudo)
-    if not isinstance(crudo, Mapping):
-        raise ValueError("Las medianas de monto del modelo no tienen el formato esperado.")
-    por_plan = crudo.get("por_plan") or {}
-    if not isinstance(por_plan, Mapping):
-        raise ValueError("Las medianas por plan del modelo no tienen el formato esperado.")
-    medianas_plan: dict[Plan, Decimal] = {}
-    for plan, valor in por_plan.items():
-        mediana = _decimal(valor)
-        if mediana is not None:
-            medianas_plan[Plan(plan)] = mediana
-    return MedianasMonto(por_plan=medianas_plan, general=_decimal(crudo.get("general")))
-
-
 def _a_ciclo(m: MembresiaParaPrediccion, corte: date) -> CicloModelo:
     """Ciclo del modelo; ``excluido`` segun ``clasificar`` con la fecha de generacion."""
-    duracion = (
-        (m.fecha_vencimiento - m.fecha_inicio).days
-        if m.fecha_inicio is not None and m.fecha_vencimiento is not None
-        else None
-    )
-    base = CicloModelo(
-        clave_socio=str(m.socio_id),
-        ref=m.membresia_id,
-        plan=m.plan,
-        forma_pago=m.forma_pago,
-        fecha_actividad=m.fecha_actividad,
-        fecha_vencimiento=m.fecha_vencimiento,
-        duracion_dias=duracion,
-        monto_cobrado=m.monto_cobrado,
-        inicio_aproximado=m.inicio_aproximado,
-        excluido=False,
-        no_renovo=None,
-    )
+    base = ciclo_de_membresia(m)
     return replace(base, excluido=clasificar(base, corte)[0] is EstadoCiclo.EXCLUIDO)
 
 

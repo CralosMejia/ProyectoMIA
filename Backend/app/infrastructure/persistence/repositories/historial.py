@@ -6,9 +6,9 @@ inserciones masivas usan ``insert()`` con lista de parametros (executemany /
 *insertmanyvalues*), nunca ``session.add`` fila a fila. ``created_at``/``updated_at`` salen
 del ``Clock`` inyectado.
 
-Las lecturas (``listar_para_prediccion``, ``ultima_fecha_carga``,
-``hay_migracion_o_membresias``) usan SQLAlchemy Core en una sola consulta cada una y filtran
-siempre ``deleted_at IS NULL``.
+Las lecturas (``listar_para_prediccion``, ``listar_para_entrenamiento``,
+``ultima_fecha_carga``, ``hay_migracion_o_membresias``) usan SQLAlchemy Core en una sola
+consulta cada una y filtran siempre ``deleted_at IS NULL``.
 """
 
 from collections.abc import Sequence
@@ -24,6 +24,7 @@ from app.application.historial.ports import (
     NuevoSocio,
     ReferenciaOrigen,
 )
+from app.application.modelo.ports import MembresiaParaEntrenamiento
 from app.domain.common.clock import Clock
 from app.domain.common.enums import FormaPago, Plan, TipoCarga
 from app.infrastructure.persistence.models.historial import Carga, Membresia, Socio
@@ -37,6 +38,41 @@ def _referencia(referencia: ReferenciaOrigen | None) -> dict[str, object] | None
     if referencia is None:
         return None
     return {"anio": referencia.anio, "hoja": referencia.hoja, "fila": referencia.fila}
+
+
+def listar_membresias_para_entrenamiento(session: Session) -> list[MembresiaParaEntrenamiento]:
+    """Membresias no borradas, ordenadas por id, con su ``created_at`` (CU-02 y CU-11)."""
+    filas = session.execute(
+        select(
+            Membresia.id,
+            Membresia.socio_id,
+            Membresia.plan,
+            Membresia.forma_pago,
+            Membresia.fecha_inicio,
+            Membresia.fecha_vencimiento,
+            Membresia.fecha_actividad,
+            Membresia.monto_cobrado,
+            Membresia.inicio_aproximado,
+            Membresia.created_at,
+        )
+        .where(Membresia.deleted_at.is_(None))
+        .order_by(Membresia.id)
+    ).all()
+    return [
+        MembresiaParaEntrenamiento(
+            membresia_id=f.id,
+            socio_id=f.socio_id,
+            plan=Plan(f.plan),
+            forma_pago=FormaPago(f.forma_pago),
+            fecha_inicio=f.fecha_inicio,
+            fecha_vencimiento=f.fecha_vencimiento,
+            fecha_actividad=f.fecha_actividad,
+            monto_cobrado=f.monto_cobrado,
+            inicio_aproximado=f.inicio_aproximado,
+            registrada_en=f.created_at,
+        )
+        for f in filas
+    ]
 
 
 class SqlAlchemySocioRepository:
@@ -135,6 +171,9 @@ class SqlAlchemyMembresiaRepository:
             )
             for f in filas
         ]
+
+    def listar_para_entrenamiento(self) -> list[MembresiaParaEntrenamiento]:
+        return listar_membresias_para_entrenamiento(self._session)
 
 
 class SqlAlchemyCargaRepository:

@@ -24,6 +24,8 @@ def _sin_migracion_al_arrancar(monkeypatch: pytest.MonkeyPatch) -> None:
     ``Settings`` lee la variable del entorno; una prueba puede pasar el valor explicito.
     """
     monkeypatch.setenv("MIGRAR_HISTORICO_AL_ARRANCAR", "false")
+    # Ni el planificador del reentrenamiento (CU-02): quien lo necesite lo activa.
+    monkeypatch.setenv("REENTRENAMIENTO_AUTOMATICO", "false")
 
 
 @pytest.fixture
@@ -37,7 +39,9 @@ def contract_app(test_database_url: URL) -> FastAPI:
 
 @pytest.fixture
 def contract_client(contract_app: FastAPI) -> Iterator[TestClient]:
-    with TestClient(contract_app, raise_server_exceptions=False) as test_client:
+    with TestClient(
+        contract_app, client=("127.0.0.1", 50000), raise_server_exceptions=False
+    ) as test_client:
         yield test_client
 
 

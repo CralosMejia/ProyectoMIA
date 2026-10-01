@@ -1,3 +1,6 @@
+from decimal import Decimal
+from ipaddress import ip_network
+
 import pytest
 from pydantic import ValidationError
 
@@ -14,6 +17,12 @@ ENV_VARS = (
     "DEBUG",
     "HISTORICO_PATH",
     "MIGRAR_HISTORICO_AL_ARRANCAR",
+    "IPS_PERMITIDAS",
+    "REENTRENAMIENTO_AUTOMATICO",
+    "REENTRENAR_MIN_CICLOS_NUEVOS",
+    "REENTRENAR_MIN_COBERTURA_VENCIMIENTO",
+    "REENTRENAR_MIN_CASOS_POR_CLASE",
+    "REENTRENAR_MESES_COMPARACION",
 )
 
 
@@ -335,3 +344,107 @@ def test_settings_historico_reads_environment(monkeypatch: pytest.MonkeyPatch) -
 
     assert settings.HISTORICO_PATH.as_posix() == "/otra/carpeta"
     assert settings.MIGRAR_HISTORICO_AL_ARRANCAR is False
+
+
+# ---------------------------------------------------------------- dia 6 (T12)
+
+
+def test_settings_dia6_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", DB_URL)
+
+    settings = Settings()
+
+    assert (ip_network("127.0.0.1"), ip_network("::1")) == settings.IPS_PERMITIDAS
+    assert settings.REENTRENAMIENTO_AUTOMATICO is True
+    assert settings.REENTRENAR_MIN_CICLOS_NUEVOS == 150
+    assert Decimal("0.60") == settings.REENTRENAR_MIN_COBERTURA_VENCIMIENTO
+    assert settings.REENTRENAR_MIN_CASOS_POR_CLASE == 20
+    assert settings.REENTRENAR_MESES_COMPARACION == 3
+
+
+def test_settings_ips_permitidas_ip_y_rango_devuelve_dos_redes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", DB_URL)
+    monkeypatch.setenv("IPS_PERMITIDAS", "127.0.0.1, 172.30.0.0/24")
+
+    settings = Settings()
+
+    assert (ip_network("127.0.0.1"), ip_network("172.30.0.0/24")) == settings.IPS_PERMITIDAS
+
+
+@pytest.mark.parametrize("valor", ["999.1.1.1", "*", "127.0.0.1,*", "0.0.0.0/33", "localhost"])
+def test_settings_ips_permitidas_invalida_falla_sin_mostrar_el_valor(
+    monkeypatch: pytest.MonkeyPatch, valor: str
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", DB_URL)
+    monkeypatch.setenv("IPS_PERMITIDAS", valor)
+
+    with pytest.raises(ValidationError) as exc_info:
+        Settings()
+
+    message = str(exc_info.value)
+    assert "IPS_PERMITIDAS" in message
+    assert valor not in message
+    assert "input_value" not in message
+
+
+@pytest.mark.parametrize("valor", ["", " ", " , "])
+def test_settings_ips_permitidas_vacia_falla(monkeypatch: pytest.MonkeyPatch, valor: str) -> None:
+    monkeypatch.setenv("DATABASE_URL", DB_URL)
+    monkeypatch.setenv("IPS_PERMITIDAS", valor)
+
+    with pytest.raises(ValidationError) as exc_info:
+        Settings()
+
+    assert "IPS_PERMITIDAS" in str(exc_info.value)
+
+
+@pytest.mark.parametrize("valor", ["-0.01", "1.01"])
+def test_settings_cobertura_fuera_de_0_a_1_falla(
+    monkeypatch: pytest.MonkeyPatch, valor: str
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", DB_URL)
+    monkeypatch.setenv("REENTRENAR_MIN_COBERTURA_VENCIMIENTO", valor)
+
+    with pytest.raises(ValidationError) as exc_info:
+        Settings()
+
+    assert "REENTRENAR_MIN_COBERTURA_VENCIMIENTO" in str(exc_info.value)
+
+
+def test_settings_reentrenamiento_lee_el_entorno(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", DB_URL)
+    monkeypatch.setenv("REENTRENAMIENTO_AUTOMATICO", "false")
+    monkeypatch.setenv("REENTRENAR_MIN_CICLOS_NUEVOS", "10")
+    monkeypatch.setenv("REENTRENAR_MIN_COBERTURA_VENCIMIENTO", "0.5")
+    monkeypatch.setenv("REENTRENAR_MIN_CASOS_POR_CLASE", "2")
+    monkeypatch.setenv("REENTRENAR_MESES_COMPARACION", "1")
+
+    settings = Settings()
+
+    assert settings.REENTRENAMIENTO_AUTOMATICO is False
+    assert settings.REENTRENAR_MIN_CICLOS_NUEVOS == 10
+    assert Decimal("0.5") == settings.REENTRENAR_MIN_COBERTURA_VENCIMIENTO
+    assert settings.REENTRENAR_MIN_CASOS_POR_CLASE == 2
+    assert settings.REENTRENAR_MESES_COMPARACION == 1
+
+
+@pytest.mark.parametrize(
+    ("variable", "valor"),
+    [
+        ("REENTRENAR_MIN_CICLOS_NUEVOS", "-1"),
+        ("REENTRENAR_MIN_CASOS_POR_CLASE", "-1"),
+        ("REENTRENAR_MESES_COMPARACION", "0"),
+    ],
+)
+def test_settings_umbrales_de_reentrenamiento_fuera_de_rango_fallan(
+    monkeypatch: pytest.MonkeyPatch, variable: str, valor: str
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", DB_URL)
+    monkeypatch.setenv(variable, valor)
+
+    with pytest.raises(ValidationError) as exc_info:
+        Settings()
+
+    assert variable in str(exc_info.value)

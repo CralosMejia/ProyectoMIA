@@ -9,7 +9,8 @@ del ``Clock`` inyectado.
 sobre una conexion propia que le entrega quien llama (idealmente en ``AUTOCOMMIT``): el
 bloqueo no depende de ninguna transaccion y dura hasta ``liberar()`` o hasta que la
 conexion fisica se cierre. Quien llama debe llamar a ``liberar()`` antes de devolver la
-conexion al pool.
+conexion al pool. ``PgBloqueoReentrenamiento`` hace lo mismo con otra clave (CU-02): un
+reentrenamiento en curso no bloquea la migracion ni al reves.
 """
 
 from collections.abc import Mapping
@@ -32,6 +33,8 @@ from app.infrastructure.persistence.models.modelo import IntentoReentrenamiento,
 ESTADO_SISTEMA_ID = 1
 # Clave fija del bloqueo consultivo de la migracion historica (CU-03, ADR-004).
 CLAVE_BLOQUEO_MIGRACION = 7_310_003
+# Clave fija del bloqueo consultivo del reentrenamiento (CU-02); distinta de la de migracion.
+CLAVE_BLOQUEO_REENTRENAMIENTO = 7_310_002
 
 
 def _marcas(instante: datetime) -> dict[str, datetime]:
@@ -161,19 +164,31 @@ class SqlAlchemyEstadoSistemaRepository:
         )
 
 
-class PgBloqueoMigracion:
-    """Implementa ``BloqueoMigracion`` con un bloqueo consultivo de sesion de PostgreSQL."""
+class _PgBloqueoConsultivo:
+    """``pg_try_advisory_lock`` de sesion con una clave fija."""
+
+    _clave: int
 
     def __init__(self, connection: Connection) -> None:
         self._connection = connection
 
     def intentar_adquirir(self) -> bool:
         obtenido = self._connection.execute(
-            text("SELECT pg_try_advisory_lock(:clave)"), {"clave": CLAVE_BLOQUEO_MIGRACION}
+            text("SELECT pg_try_advisory_lock(:clave)"), {"clave": self._clave}
         ).scalar_one()
         return bool(obtenido)
 
     def liberar(self) -> None:
-        self._connection.execute(
-            text("SELECT pg_advisory_unlock(:clave)"), {"clave": CLAVE_BLOQUEO_MIGRACION}
-        )
+        self._connection.execute(text("SELECT pg_advisory_unlock(:clave)"), {"clave": self._clave})
+
+
+class PgBloqueoMigracion(_PgBloqueoConsultivo):
+    """Implementa ``BloqueoMigracion`` con un bloqueo consultivo de sesion de PostgreSQL."""
+
+    _clave = CLAVE_BLOQUEO_MIGRACION
+
+
+class PgBloqueoReentrenamiento(_PgBloqueoConsultivo):
+    """Implementa ``BloqueoReentrenamiento`` (clave propia, distinta de la migracion)."""
+
+    _clave = CLAVE_BLOQUEO_REENTRENAMIENTO

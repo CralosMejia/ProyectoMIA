@@ -1,13 +1,16 @@
-"""Router del modulo dashboard: resultados de retencion del mes (CU-11).
+"""Router del modulo dashboard: resultados de retencion del mes (CU-11, R-011 decision (c)).
 
-Contrato publicado; la logica responde ``501`` hasta su dia del cronograma.
+Solo HTTP: valida ``mes`` (``YYYY-MM``; invalido -> ``400 validation_error``) y delega en
+``ConsultarDashboard``. Aislamiento entre usuarios: NO APLICA (RT-12, sin login; CU-00).
 """
 
 from typing import Annotated
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, status
 
-from app.api.openapi import error_responses, raise_not_implemented, success_response
+from app.api.dependencies import get_consultar_dashboard
+from app.api.openapi import error_responses, success_response
+from app.application.dashboard.consultar_dashboard import ConsultarDashboard
 from app.application.dashboard.dtos import MES_PATTERN, DashboardDTO
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -34,11 +37,11 @@ DASHBOARD_EXAMPLE = {
         },
         {
             "campania_id": None,
-            "nombre": "Sin campana",
+            "nombre": "Sin campaña",
             "gestiones": 3,
-            "contactados": 2,
-            "renovaciones": 1,
-            "gestiones_cerradas": 2,
+            "contactados": 0,
+            "renovaciones": 0,
+            "gestiones_cerradas": 0,
             "tasa_renovacion": None,
             "casos_insuficientes": True,
         },
@@ -47,7 +50,7 @@ DASHBOARD_EXAMPLE = {
         "version": "v1",
         "fecha_entrenamiento": "2026-09-28T14:30:00Z",
         "ciclos_entrenamiento": 1843,
-        "proxima_fecha_reentrenamiento": "2026-10-28",
+        "proxima_fecha_reentrenamiento": "2027-03-28",
         "ciclos_nuevos_evaluables": 57,
     },
 }
@@ -58,11 +61,18 @@ DASHBOARD_EXAMPLE = {
     response_model=DashboardDTO,
     status_code=status.HTTP_200_OK,
     responses={
-        **success_response(status.HTTP_200_OK, "Dashboard del mes.", DASHBOARD_EXAMPLE),
+        **success_response(
+            status.HTTP_200_OK,
+            "Dashboard del mes (por instante de asignacion en fecha de Ecuador). Embudo sobre "
+            "las gestiones con campana; un resultado nulo nunca cuenta. ``gestiones_cerradas`` "
+            "= cerradas con resultado (Renovo Si o No); ``tasa_renovacion`` (texto con 8 "
+            "decimales) solo con 10 o mas, si no nula y ``casos_insuficientes``. La fila "
+            "``Sin campaña`` va al final. ``estado_modelo`` nulo si no hay modelo vigente.",
+            DASHBOARD_EXAMPLE,
+        ),
         **error_responses(
             status.HTTP_400_BAD_REQUEST,
             status.HTTP_403_FORBIDDEN,
-            status.HTTP_501_NOT_IMPLEMENTED,
             descriptions={status.HTTP_400_BAD_REQUEST: "El mes no tiene el formato YYYY-MM."},
         ),
     },
@@ -73,9 +83,11 @@ def get_dashboard(
         str | None,
         Query(
             pattern=MES_PATTERN,
-            description="Mes YYYY-MM; si se omite, el mes actual segun el reloj del sistema.",
+            description="Mes YYYY-MM; si se omite, el mes actual (fecha de Ecuador).",
             examples=["2026-09"],
         ),
     ] = None,
+    *,
+    consultar: Annotated[ConsultarDashboard, Depends(get_consultar_dashboard)],
 ) -> DashboardDTO:
-    raise_not_implemented()
+    return consultar.ejecutar(mes)

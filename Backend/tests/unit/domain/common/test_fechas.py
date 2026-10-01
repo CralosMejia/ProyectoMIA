@@ -6,7 +6,7 @@ from datetime import UTC, date, datetime, timedelta, timezone
 import pytest
 
 from app.domain.common import fechas
-from app.domain.common.fechas import hoy_en_negocio, sumar_meses
+from app.domain.common.fechas import hoy_en_negocio, limites_mes_negocio, sumar_meses
 
 pytestmark = pytest.mark.unit
 
@@ -64,3 +64,24 @@ def test_modulo_fechas_solo_usa_libreria_estandar_y_no_lee_el_reloj_del_sistema(
 def test_hoy_en_negocio_sin_zona_horaria_lanza_value_error() -> None:
     with pytest.raises(ValueError):
         hoy_en_negocio(datetime(2026, 9, 29, 12, 0))  # noqa: DTZ001 - se prueba el rechazo
+
+
+@pytest.mark.parametrize(
+    ("anio", "mes", "esperado"),
+    [
+        (
+            2026,
+            9,
+            (datetime(2026, 9, 1, 5, tzinfo=UTC), datetime(2026, 10, 1, 5, tzinfo=UTC)),
+        ),
+        (
+            2026,
+            12,
+            (datetime(2026, 12, 1, 5, tzinfo=UTC), datetime(2027, 1, 1, 5, tzinfo=UTC)),
+        ),
+    ],
+)
+def test_limites_mes_negocio_devuelve_rango_utc_de_ecuador(
+    anio: int, mes: int, esperado: tuple[datetime, datetime]
+) -> None:
+    assert limites_mes_negocio(anio, mes) == esperado

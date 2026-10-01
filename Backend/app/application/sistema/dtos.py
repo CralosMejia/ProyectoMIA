@@ -19,7 +19,11 @@ class ModeloVigenteDTO(BaseModel):
 
 
 class EstadoSistemaDTO(BaseModel):
-    """Estado del sistema: migracion historica, modelo vigente y proximo reentrenamiento."""
+    """Estado del sistema: migracion historica, modelo vigente y proximo reentrenamiento.
+
+    ``datos_mes_cargados`` (D6-BE-06): ``True`` si hay una carga ``PLANTILLA`` no borrada en
+    el mes de negocio actual (la migracion historica no cuenta); ``None`` si no esta ``LISTO``.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -28,3 +32,4 @@ class EstadoSistemaDTO(BaseModel):
     modelo_vigente: ModeloVigenteDTO | None = None
     ultima_carga_en: datetime | None = None
     proxima_fecha_reentrenamiento: date | None = None
+    datos_mes_cargados: bool | None = None

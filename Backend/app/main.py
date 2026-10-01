@@ -4,6 +4,9 @@ No crea tablas ni ejecuta migraciones de esquema al arrancar: el esquema lo gest
 como paso separado del despliegue. La unica migracion de datos al arrancar es CU-03
 (ADR-004): si ``MIGRAR_HISTORICO_AL_ARRANCAR``, se lanza en un hilo en segundo plano para que
 la API (``/health`` incluido) responda mientras tanto.
+
+Si ``REENTRENAMIENTO_AUTOMATICO``, el planificador del reentrenamiento (CU-02) corre en otro
+hilo daemon que se detiene al apagar la aplicacion.
 """
 
 import logging
@@ -16,14 +19,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 from sqlalchemy.exc import ArgumentError
 
-from app.api.dependencies import crear_migracion_historica
+from app.api.acceso_ip import FiltroAccesoIp
+from app.api.dependencies import crear_migracion_historica, crear_reentrenamiento
 from app.api.errors import register_exception_handlers
 from app.api.routers import campanias, cargas, dashboard, gestiones, health, listas, sistema
 from app.application.sistema.migrar_historico import MigrarHistorico
 from app.application.sistema.ports import RegistroMigracion, ResultadoMigracion
 from app.core.config import Settings
+from app.domain.common.clock import Clock
 from app.domain.common.predictor import PredictorModel
+from app.infrastructure.clock.system_clock import SystemClock
 from app.infrastructure.persistence.database import create_database_engine
+from app.infrastructure.planificador.reentrenamiento import PlanificadorReentrenamiento
 
 logger = logging.getLogger(__name__)
 
@@ -67,9 +74,13 @@ def lanzar_migracion_en_segundo_plano(
 
 
 def create_app(
-    settings: Settings | None = None, *, predictor: PredictorModel | None = None
+    settings: Settings | None = None,
+    *,
+    predictor: PredictorModel | None = None,
+    clock: Clock | None = None,
 ) -> FastAPI:
-    """Construye la aplicacion. ``settings`` y ``predictor`` explicitos solo para pruebas."""
+    """Construye la aplicacion. ``settings``, ``predictor`` y ``clock`` explicitos solo para
+    pruebas (``clock`` lo usa el planificador del reentrenamiento)."""
     resolved = settings if settings is not None else _load_settings()
     registro_migracion = RegistroMigracion()
 
@@ -87,9 +98,19 @@ def create_app(
             app.state.hilo_migracion = lanzar_migracion_en_segundo_plano(
                 migracion, registro_migracion
             )
+        planificador: PlanificadorReentrenamiento | None = None
+        if resolved.REENTRENAMIENTO_AUTOMATICO:
+            reloj = clock if clock is not None else SystemClock()
+            planificador = PlanificadorReentrenamiento(
+                crear_reentrenamiento(engine, resolved, predictor, reloj), reloj
+            )
+            planificador.iniciar()
+        app.state.planificador_reentrenamiento = planificador
         try:
             yield
         finally:
+            if planificador is not None:
+                planificador.detener()
             engine.dispose()
 
     app = FastAPI(title="Backend API", debug=resolved.DEBUG, lifespan=lifespan)
@@ -103,6 +124,9 @@ def create_app(
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type"],
     )
+    # CU-00: el ultimo middleware anadido es el mas externo; asi el filtro de IP corre antes
+    # que CORS y tambien cubre OPTIONS y /docs.
+    app.add_middleware(FiltroAccesoIp, redes=resolved.IPS_PERMITIDAS)
     for router in (
         health.router,
         sistema.router,

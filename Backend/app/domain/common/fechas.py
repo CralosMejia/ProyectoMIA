@@ -1,7 +1,7 @@
 """Aritmetica de fechas del dominio (sin reloj: la fecha de partida la da quien llama)."""
 
 import calendar
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 
 ZONA_NEGOCIO = timezone(timedelta(hours=-5))
 """Hora de Ecuador continental: UTC-5 fijo, sin horario de verano."""
@@ -24,3 +24,16 @@ def hoy_en_negocio(instante: datetime) -> date:
     if instante.tzinfo is None or instante.utcoffset() is None:
         raise ValueError("El instante debe tener zona horaria.")
     return instante.astimezone(ZONA_NEGOCIO).date()
+
+
+def limites_mes_negocio(anio: int, mes: int) -> tuple[datetime, datetime]:
+    """Instantes UTC ``[inicio, fin)`` del mes de calendario ``anio-mes`` en Ecuador.
+
+    Ejemplo: septiembre de 2026 -> ``[2026-09-01T05:00Z, 2026-10-01T05:00Z)``.
+    """
+    inicio = date(anio, mes, 1)
+    siguiente = sumar_meses(inicio, 1)
+    return (
+        datetime(inicio.year, inicio.month, 1, tzinfo=ZONA_NEGOCIO).astimezone(UTC),
+        datetime(siguiente.year, siguiente.month, 1, tzinfo=ZONA_NEGOCIO).astimezone(UTC),
+    )

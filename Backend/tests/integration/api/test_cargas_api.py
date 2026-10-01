@@ -58,7 +58,9 @@ class Reloj:
 @pytest.fixture
 def cliente(contract_app: FastAPI, base_migrada: Engine) -> Iterator[TestClient]:
     fijar_reloj_api(contract_app)
-    with TestClient(contract_app, raise_server_exceptions=False) as test_client:
+    with TestClient(
+        contract_app, client=("127.0.0.1", 50000), raise_server_exceptions=False
+    ) as test_client:
         yield test_client
 
 
@@ -344,7 +346,9 @@ def test_migration_pending_returns_409(
     contract_app: FastAPI, base_limpia: Engine, path: str
 ) -> None:
     fijar_reloj_api(contract_app)
-    with TestClient(contract_app, raise_server_exceptions=False) as cliente:
+    with TestClient(
+        contract_app, client=("127.0.0.1", 50000), raise_server_exceptions=False
+    ) as cliente:
         response = cliente.post(path, files=_archivo(_fixture(PLANTILLA_VALIDA)))
 
     assert response.status_code == 409

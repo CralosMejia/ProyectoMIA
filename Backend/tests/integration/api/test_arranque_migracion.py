@@ -99,7 +99,7 @@ def test_arranque_health_responde_mientras_migra_y_termina_listo(
     app = create_app(settings(test_database_url, True), predictor=PredictorRetenido(soltar))
 
     try:
-        with TestClient(app) as client:
+        with TestClient(app, client=("127.0.0.1", 50000)) as client:
             inicio = time.monotonic()
             health = client.get(HEALTH)
             assert health.status_code == 200
@@ -120,7 +120,7 @@ def test_arranque_sin_migrar_no_lanza_ningun_hilo(
 ) -> None:
     app = create_app(settings(test_database_url, False))
 
-    with TestClient(app) as client:
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
         assert not hasattr(app.state, "hilo_migracion")
         assert hilos_de_migracion() == []
         assert client.get(ESTADO).json()["estado"] == "INICIALIZANDO"
@@ -133,7 +133,7 @@ def test_arranque_sin_libros_devuelve_faltan_datos(
 ) -> None:
     app = create_app(settings(test_database_url, True, carpeta=tmp_path))
 
-    with TestClient(app) as client:
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
         app.state.hilo_migracion.join(timeout=30)
         cuerpo = client.get(ESTADO).json()
 
@@ -146,7 +146,7 @@ def test_arranque_fallo_en_el_hilo_se_registra_sin_datos_personales(
 ) -> None:
     app = create_app(settings(test_database_url, True), predictor=PredictorConDatoPersonal())
 
-    with caplog.at_level(logging.INFO), TestClient(app) as client:
+    with caplog.at_level(logging.INFO), TestClient(app, client=("127.0.0.1", 50000)) as client:
         app.state.hilo_migracion.join(timeout=60)
         assert client.get(HEALTH).status_code == 200
         cuerpo = client.get(ESTADO).json()

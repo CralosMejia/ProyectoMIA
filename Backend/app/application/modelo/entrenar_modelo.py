@@ -2,7 +2,8 @@
 
 Orquesta, sin persistir:
 
-1. Convierte los ciclos etiquetados en ``CicloModelo``.
+1. Convierte los ciclos etiquetados en ``CicloModelo`` (``ejecutar``); el reentrenamiento
+   (CU-02) entrega ya ``CicloModelo`` etiquetados (``ejecutar_ciclos``).
 2. Medianas de ``monto_cobrado`` de los ciclos no excluidos (se guardan con el modelo).
 3. Variables en T-30 de cada ciclo ``EVALUABLE``; el historial previo son los ciclos no
    excluidos (evaluables y pendientes) del mismo socio.
@@ -88,7 +89,13 @@ class EntrenarModeloInicial:
     def ejecutar(
         self, ciclos_etiquetados: Sequence[CicloEtiquetado], fecha_corte: date
     ) -> ModeloEntrenado:
-        ciclos = [ciclo_modelo_desde(c) for c in ciclos_etiquetados]
+        """Ciclos del historico (CU-03): se convierten y se delega en ``ejecutar_ciclos``."""
+        return self.ejecutar_ciclos(
+            [ciclo_modelo_desde(c) for c in ciclos_etiquetados], fecha_corte
+        )
+
+    def ejecutar_ciclos(self, ciclos: Sequence[CicloModelo], fecha_corte: date) -> ModeloEntrenado:
+        """Entrena con ciclos ya etiquetados al ``fecha_corte`` (CU-02 y CU-03)."""
         evaluables = ordenar_para_entrenamiento(
             [
                 c

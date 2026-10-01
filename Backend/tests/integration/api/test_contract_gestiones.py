@@ -3,7 +3,8 @@
 ``POST /gestiones``, ``GET /gestiones/{id}`` y ``PUT /gestiones/{id}/resultado`` son reales
 desde R-009 (T12); su comportamiento con datos se prueba en ``test_gestiones_api.py``. Aqui
 quedan la validacion de entrada, el ``404`` sin datos y el contrato OpenAPI.
-``GET /gestiones?filtro`` y ``GET /alertas`` siguen en ``501`` (dia 6).
+``GET /gestiones?filtro`` y ``GET /alertas`` son reales desde R-011 (T4); su comportamiento con
+datos se prueba en ``test_alertas_api.py``.
 
 Aislamiento entre usuarios: NO APLICA. No hay login (RT-12): el acceso se controla por IP
 (CU-00) y no existe un propietario de datos por usuario.
@@ -30,7 +31,6 @@ from app.domain.common.enums import (
     RESPUESTAS_RENOVACION,
 )
 from tests.integration.api.contract_helpers import (
-    assert_not_implemented,
     assert_operation_contract,
     assert_validation_error,
     json_example,
@@ -145,8 +145,13 @@ def test_put_resultado_invalid_body_returns_400(
 
 
 @pytest.mark.parametrize("filtro", ["vencidas", "hoy", "proximas"])
-def test_get_gestiones_valid_filtro_returns_501(contract_client: TestClient, filtro: str) -> None:
-    assert_not_implemented(contract_client.get(GESTIONES_PATH, params={"filtro": filtro}))
+def test_get_gestiones_valid_filtro_returns_200_list(
+    migrated_engine: Engine, contract_client: TestClient, filtro: str
+) -> None:
+    response = contract_client.get(GESTIONES_PATH, params={"filtro": filtro})
+
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
 
 
 @pytest.mark.parametrize("params", [{"filtro": "todas"}, {"filtro": "HOY"}, {}])
@@ -156,8 +161,13 @@ def test_get_gestiones_invalid_filtro_returns_400(
     assert_validation_error(contract_client.get(GESTIONES_PATH, params=params))
 
 
-def test_get_alertas_returns_501(contract_client: TestClient) -> None:
-    assert_not_implemented(contract_client.get("/api/v1/alertas"))
+def test_get_alertas_returns_200_counters(
+    migrated_engine: Engine, contract_client: TestClient
+) -> None:
+    response = contract_client.get("/api/v1/alertas")
+
+    assert response.status_code == 200
+    assert set(response.json()) == {"vencidas", "hoy", "proximos_7_dias"}
 
 
 def test_respuestas_dto_match_domain_subsets() -> None:
@@ -187,10 +197,15 @@ def test_openapi_gestiones_operations_declare_examples(openapi_spec: dict[str, A
         (400, 403, 404, 409, 422),
         GestionDTO,
     )
-    assert_operation_contract(
-        openapi_spec, "get", GESTIONES_PATH, 200, (400, 403, 501), list[GestionResumenDTO]
+    filtro = assert_operation_contract(
+        openapi_spec, "get", GESTIONES_PATH, 200, (400, 403), list[GestionResumenDTO]
     )
-    assert_operation_contract(openapi_spec, "get", "/api/v1/alertas", 200, (403, 501), AlertasDTO)
+    alertas = assert_operation_contract(
+        openapi_spec, "get", "/api/v1/alertas", 200, (403,), AlertasDTO
+    )
+    assert "501" not in filtro["responses"]
+    assert "501" not in alertas["responses"]
+    assert json_example(filtro, 200)[0]["prediccion_id"] == 1501
 
     assert request_body_schema_name(crear) == "CrearGestionDTO"
     assert request_body_schema_name(resultado) == "RegistrarResultadoDTO"

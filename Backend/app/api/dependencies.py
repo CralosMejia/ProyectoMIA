@@ -20,21 +20,26 @@ from app.application.campanias.ports import UnidadDeTrabajoCampanias
 from app.application.campanias.sugerir_campanias import SugerirCampanias
 from app.application.cargas.ports import LectorPlantilla, UnidadDeTrabajoCargas
 from app.application.cargas.procesar_carga import ConfirmarCarga, PrevisualizarCarga
+from app.application.dashboard.consultar_dashboard import ConsultarDashboard
+from app.application.dashboard.ports import LectorDashboard
+from app.application.gestiones.consultar_alertas import ConsultarAlertas, ListarGestionesPorAlerta
 from app.application.gestiones.consultar_gestion import ConsultarGestion
 from app.application.gestiones.crear_gestion import CrearGestion
-from app.application.gestiones.ports import UnidadDeTrabajoGestiones
+from app.application.gestiones.ports import LectorSeguimiento, UnidadDeTrabajoGestiones
 from app.application.gestiones.registrar_resultado import RegistrarResultado
 from app.application.health.ports import DatabaseProbe
 from app.application.health.queries import GetHealthQueryHandler
 from app.application.listas.consultar_listas import ConsultarListas
 from app.application.listas.generar_lista import GenerarLista
 from app.application.listas.ports import ExportadorLista, UnidadDeTrabajoListas
+from app.application.modelo.reentrenar_modelo import ReentrenarModelo
 from app.application.sistema.consultar_estado import ConsultarEstadoSistema
 from app.application.sistema.migrar_historico import MigrarHistorico
 from app.application.sistema.ports import LectorEstadoSistema, RegistroMigracion
 from app.core.config import Settings
 from app.domain.common.clock import Clock
 from app.domain.common.predictor import PredictorModel
+from app.domain.modelo.reentrenamiento import CriteriosReentrenamiento
 from app.infrastructure.cargas.lector_plantilla import LectorPlantillaOpenpyxl
 from app.infrastructure.clock.system_clock import SystemClock
 from app.infrastructure.exportacion.excel_lista import ExcelListaOpenpyxl
@@ -42,6 +47,8 @@ from app.infrastructure.historico.lector_libros import LectorLibrosExcel
 from app.infrastructure.historico.localizador_libros import LocalizadorLibrosCarpeta
 from app.infrastructure.ml.random_forest import RandomForestPredictor
 from app.infrastructure.persistence.database_probe import SqlAlchemyDatabaseProbe
+from app.infrastructure.persistence.repositories.dashboard import SqlAlchemyLectorDashboard
+from app.infrastructure.persistence.repositories.seguimiento import SqlAlchemyLectorSeguimiento
 from app.infrastructure.persistence.repositories.sistema import SqlAlchemyLectorEstadoSistema
 from app.infrastructure.persistence.unit_of_work import (
     AbridorBloqueoMigracion,
@@ -49,6 +56,10 @@ from app.infrastructure.persistence.unit_of_work import (
 )
 from app.infrastructure.persistence.unit_of_work_cargas import SqlAlchemyUnidadDeTrabajoCargas
 from app.infrastructure.persistence.unit_of_work_listas import SqlAlchemyUnidadDeTrabajoListas
+from app.infrastructure.persistence.unit_of_work_reentrenamiento import (
+    AbridorBloqueoReentrenamiento,
+    SqlAlchemyUnidadDeTrabajoReentrenamiento,
+)
 from app.infrastructure.persistence.unit_of_work_retencion import (
     SqlAlchemyUnidadDeTrabajoRetencion,
 )
@@ -204,6 +215,42 @@ def get_registrar_resultado(
     return RegistrarResultado(uow, clock)
 
 
+# ---------------------------------------------------------------- alertas (CU-09)
+
+
+def get_lector_seguimiento(engine: Annotated[Engine, Depends(get_engine)]) -> LectorSeguimiento:
+    return SqlAlchemyLectorSeguimiento(engine)
+
+
+LectorAlertas = Annotated[LectorSeguimiento, Depends(get_lector_seguimiento)]
+
+
+def get_consultar_alertas(
+    lector: LectorAlertas, clock: Annotated[Clock, Depends(get_clock)]
+) -> ConsultarAlertas:
+    return ConsultarAlertas(lector, clock)
+
+
+def get_listar_gestiones_por_alerta(
+    lector: LectorAlertas, clock: Annotated[Clock, Depends(get_clock)]
+) -> ListarGestionesPorAlerta:
+    return ListarGestionesPorAlerta(lector, clock)
+
+
+# ---------------------------------------------------------------- dashboard (CU-11)
+
+
+def get_lector_dashboard(engine: Annotated[Engine, Depends(get_engine)]) -> LectorDashboard:
+    return SqlAlchemyLectorDashboard(engine)
+
+
+def get_consultar_dashboard(
+    lector: Annotated[LectorDashboard, Depends(get_lector_dashboard)],
+    clock: Annotated[Clock, Depends(get_clock)],
+) -> ConsultarDashboard:
+    return ConsultarDashboard(lector, clock)
+
+
 # ---------------------------------------------------------------- sistema (CU-03)
 
 
@@ -242,5 +289,35 @@ def get_lector_estado_sistema(
 def get_consultar_estado_sistema(
     lector: Annotated[LectorEstadoSistema, Depends(get_lector_estado_sistema)],
     registro: Annotated[RegistroMigracion, Depends(get_registro_migracion)],
+    clock: Annotated[Clock, Depends(get_clock)],
 ) -> ConsultarEstadoSistema:
-    return ConsultarEstadoSistema(lector, registro)
+    return ConsultarEstadoSistema(lector, registro, clock)
+
+
+# ---------------------------------------------------------------- reentrenamiento (CU-02)
+
+
+def criterios_reentrenamiento(settings: Settings) -> CriteriosReentrenamiento:
+    return CriteriosReentrenamiento(
+        min_ciclos_nuevos=settings.REENTRENAR_MIN_CICLOS_NUEVOS,
+        min_cobertura_vencimiento=settings.REENTRENAR_MIN_COBERTURA_VENCIMIENTO,
+        min_casos_por_clase=settings.REENTRENAR_MIN_CASOS_POR_CLASE,
+        meses_comparacion=settings.REENTRENAR_MESES_COMPARACION,
+    )
+
+
+def crear_reentrenamiento(
+    engine: Engine,
+    settings: Settings,
+    predictor: PredictorModel | None = None,
+    clock: Clock | None = None,
+) -> ReentrenarModelo:
+    """Compone ``ReentrenarModelo`` (lo usan el planificador de ``app.main`` y ``app.cli``)."""
+    reloj = clock if clock is not None else SystemClock()
+    return ReentrenarModelo(
+        unidad_de_trabajo=SqlAlchemyUnidadDeTrabajoReentrenamiento(engine, reloj),
+        abrir_bloqueo=AbridorBloqueoReentrenamiento(engine),
+        predictor=predictor if predictor is not None else RandomForestPredictor(),
+        clock=reloj,
+        criterios=criterios_reentrenamiento(settings),
+    )

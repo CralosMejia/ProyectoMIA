@@ -45,7 +45,7 @@ def app(test_database_url: URL) -> FastAPI:
 
 @pytest.fixture
 def client(app: FastAPI) -> Iterator[TestClient]:
-    with TestClient(app) as test_client:
+    with TestClient(app, client=("127.0.0.1", 50000)) as test_client:
         yield test_client
     app.dependency_overrides.clear()
 
@@ -130,7 +130,7 @@ def unreachable_client(test_database_url: URL) -> Iterator[TestClient]:
         APP_ENV="test",
     )
     down_app = create_app(settings)
-    with TestClient(down_app) as test_client:
+    with TestClient(down_app, client=("127.0.0.1", 50000)) as test_client:
         yield test_client
 
 

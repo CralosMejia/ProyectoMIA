@@ -5,8 +5,9 @@ estado: ``404`` si la prediccion, la campana o la gestion no existen; ``409`` si
 tiene gestion o la gestion esta cerrada (una gestion sin campana nace cerrada, R-010); el
 resto de reglas de dominio (fecha fuera de rango, plazo terminado, campana que no aplica,
 resultado incoherente) -> ``422 domain_rule_violated`` por el manejador global.
-``GET /gestiones?filtro`` y ``GET /alertas`` siguen en ``501`` hasta el dia 6 del cronograma
-(R-009 decision (a)).
+``GET /alertas`` y ``GET /gestiones?filtro`` (CU-09, R-011 decision (a)) cuentan y listan solo
+gestiones ``PENDIENTE`` no borradas segun la fecha de seguimiento y "hoy" en Ecuador; un
+filtro ausente o fuera de la lista blanca -> ``400 validation_error``.
 
 Aislamiento entre usuarios: NO APLICA (RT-12, sin login; acceso restringido por IP, CU-00).
 """
@@ -15,13 +16,14 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 
-from app.api.dependencies import get_consultar_gestion, get_crear_gestion, get_registrar_resultado
-from app.api.openapi import (
-    OpenApiResponses,
-    error_responses,
-    raise_not_implemented,
-    success_response,
+from app.api.dependencies import (
+    get_consultar_alertas,
+    get_consultar_gestion,
+    get_crear_gestion,
+    get_listar_gestiones_por_alerta,
+    get_registrar_resultado,
 )
+from app.api.openapi import OpenApiResponses, error_responses, success_response
 from app.application.campanias.gestionar_campanias import (
     MENSAJE_CAMPANIA_NO_EXISTE,
     CampaniaNoExisteError,
@@ -30,6 +32,7 @@ from app.application.campanias.sugerir_campanias import (
     MENSAJE_PREDICCION_NO_EXISTE,
     PrediccionNoExisteError,
 )
+from app.application.gestiones.consultar_alertas import ConsultarAlertas, ListarGestionesPorAlerta
 from app.application.gestiones.consultar_gestion import ConsultarGestion
 from app.application.gestiones.crear_gestion import CrearGestion
 from app.application.gestiones.dtos import (
@@ -102,11 +105,12 @@ GESTION_SIN_CAMPANIA_EXAMPLE = {
 GESTIONES_RESUMEN_EXAMPLE = [
     {
         "id": 9,
+        "prediccion_id": 1501,
         "socio_nombre": "Maria Fernanda Lopez",
         "celular": "0991234567",
         "plan": "MENSUAL",
         "fecha_vencimiento": "2026-10-05",
-        "fecha_seguimiento": "2026-09-28",
+        "fecha_seguimiento": "2026-09-30",
         "nivel_riesgo": "ALTO",
         "campania_nombre": "Renovacion anticipada",
         "responsable": "Andrea",
@@ -255,12 +259,15 @@ def post_gestion(
     status_code=status.HTTP_200_OK,
     responses={
         **success_response(
-            status.HTTP_200_OK, "Gestiones pendientes del grupo.", GESTIONES_RESUMEN_EXAMPLE
+            status.HTTP_200_OK,
+            "Gestiones PENDIENTE no borradas del grupo, ordenadas por fecha de seguimiento e "
+            "id. ``vencidas``: seguimiento anterior a hoy; ``hoy``: igual a hoy; "
+            "``proximas``: de manana a hoy + 7 dias (fecha de Ecuador).",
+            GESTIONES_RESUMEN_EXAMPLE,
         ),
         **error_responses(
             status.HTTP_400_BAD_REQUEST,
             status.HTTP_403_FORBIDDEN,
-            status.HTTP_501_NOT_IMPLEMENTED,
             descriptions={status.HTTP_400_BAD_REQUEST: "Filtro ausente o no permitido."},
         ),
     },
@@ -271,8 +278,9 @@ def get_gestiones(
         FiltroGestiones,
         Query(description="Grupo de alerta: vencidas, hoy o proximas (7 dias)."),
     ],
+    listar: Annotated[ListarGestionesPorAlerta, Depends(get_listar_gestiones_por_alerta)],
 ) -> list[GestionResumenDTO]:
-    raise_not_implemented()
+    return listar.ejecutar(filtro)
 
 
 @router.get(
@@ -360,11 +368,17 @@ def put_resultado_gestion(
     status_code=status.HTTP_200_OK,
     responses={
         **success_response(
-            status.HTTP_200_OK, "Contadores de gestiones pendientes.", ALERTAS_EXAMPLE
+            status.HTTP_200_OK,
+            "Contadores de gestiones PENDIENTE no borradas por fecha de seguimiento (cada "
+            "gestion cuenta en un solo grupo; las cerradas y las creadas sin campana no "
+            "cuentan).",
+            ALERTAS_EXAMPLE,
         ),
-        **error_responses(status.HTTP_403_FORBIDDEN, status.HTTP_501_NOT_IMPLEMENTED),
+        **error_responses(status.HTTP_403_FORBIDDEN),
     },
     summary="Alertas de seguimiento",
 )
-def get_alertas() -> AlertasDTO:
-    raise_not_implemented()
+def get_alertas(
+    consultar: Annotated[ConsultarAlertas, Depends(get_consultar_alertas)],
+) -> AlertasDTO:
+    return consultar.ejecutar()

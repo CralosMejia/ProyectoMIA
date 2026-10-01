@@ -163,3 +163,48 @@ class UnidadDeTrabajoGestiones(Protocol):
     """Abre una unidad de trabajo nueva en cada llamada."""
 
     def __call__(self) -> AbstractContextManager[ContextoGestiones]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class ConteoAlertas:
+    """Gestiones ``PENDIENTE`` no borradas por grupo de alerta (CU-09)."""
+
+    vencidas: int
+    hoy: int
+    proximas: int
+
+
+@dataclass(frozen=True, slots=True)
+class GestionPendienteResumen:
+    """Fila de seguimiento: gestion ``PENDIENTE`` no borrada con los datos de su prediccion.
+
+    ``campania_nombre`` es la instantanea congelada al asignar (RN-08.2).
+    """
+
+    id: int
+    prediccion_id: int
+    socio_nombre: str
+    celular: str | None
+    plan: Plan
+    fecha_vencimiento: date
+    fecha_seguimiento: date
+    nivel_riesgo: NivelRiesgo
+    campania_nombre: str | None
+    responsable: str | None
+
+
+@runtime_checkable
+class LectorSeguimiento(Protocol):
+    """Lecturas de las alertas de seguimiento (solo lectura; sin transaccion de quien llama).
+
+    Solo gestiones ``estado = 'PENDIENTE'`` y ``deleted_at IS NULL``.
+    """
+
+    def contar(self, hoy: date) -> ConteoAlertas:
+        """Conteos por grupo segun ``app.domain.gestiones.alertas.rango_de``."""
+        ...
+
+    def listar(self, desde: date | None, hasta: date) -> list[GestionPendienteResumen]:
+        """Pendientes con ``desde <= fecha_seguimiento <= hasta`` (sin limite inferior si
+        ``desde`` es ``None``), ordenadas por ``fecha_seguimiento, id``."""
+        ...

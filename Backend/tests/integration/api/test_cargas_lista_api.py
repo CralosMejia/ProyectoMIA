@@ -38,7 +38,9 @@ class RelojTardio:
 @pytest.fixture
 def cliente(contract_app: FastAPI, base_migrada: Engine) -> Iterator[TestClient]:
     contract_app.dependency_overrides[get_clock] = RelojTardio
-    with TestClient(contract_app, raise_server_exceptions=False) as test_client:
+    with TestClient(
+        contract_app, client=("127.0.0.1", 50000), raise_server_exceptions=False
+    ) as test_client:
         yield test_client
 
 

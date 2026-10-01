@@ -10,6 +10,12 @@ MES_PATTERN = r"^\d{4}-(0[1-9]|1[0-2])$"
 
 
 class EmbudoDTO(BaseModel):
+    """Embudo del mes sobre las gestiones **con campana** (``asignadas``).
+
+    ``contactadas``: contactado si; ``ofrecidas``/``aceptadas``/``renovaron``: respuesta ``SI``.
+    Un valor nulo (sin resultado) nunca cuenta.
+    """
+
     model_config = ConfigDict(frozen=True)
 
     asignadas: int = Field(ge=0)
@@ -20,7 +26,12 @@ class EmbudoDTO(BaseModel):
 
 
 class ResultadoCampaniaDTO(BaseModel):
-    """Cifras descriptivas por campana; ``campania_id`` nulo = gestiones sin campana."""
+    """Cifras descriptivas por campana; ``campania_id`` nulo = gestiones sin campana.
+
+    ``gestiones_cerradas`` = gestiones cerradas **con resultado** (``renovo_declarado`` SI o
+    NO). ``tasa_renovacion`` = ``renovaciones / gestiones_cerradas`` con 8 decimales, solo si
+    hay al menos 10 cerradas con resultado; si no, nula y ``casos_insuficientes``.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -35,6 +46,8 @@ class ResultadoCampaniaDTO(BaseModel):
 
 
 class EstadoModeloDTO(BaseModel):
+    """Modelo vigente; ``ciclos_nuevos_evaluables`` con la misma regla que CU-02."""
+
     model_config = ConfigDict(frozen=True)
 
     version: str

@@ -21,13 +21,16 @@ ESTADO_SISTEMA_EXAMPLE = {
     },
     "ultima_carga_en": "2026-09-29T14:30:00Z",
     "proxima_fecha_reentrenamiento": "2027-03-29",
+    "datos_mes_cargados": True,
 }
+ESTADO_SIN_DATOS_MES_EXAMPLE = {**ESTADO_SISTEMA_EXAMPLE, "datos_mes_cargados": False}
 ESTADO_INICIALIZANDO_EXAMPLE = {
     "estado": "INICIALIZANDO",
     "migracion_historica": "EN_CURSO",
     "modelo_vigente": None,
     "ultima_carga_en": None,
     "proxima_fecha_reentrenamiento": None,
+    "datos_mes_cargados": None,
 }
 ESTADO_FALTAN_DATOS_EXAMPLE = {
     "estado": "FALTAN_DATOS_HISTORICOS",
@@ -35,18 +38,25 @@ ESTADO_FALTAN_DATOS_EXAMPLE = {
     "modelo_vigente": None,
     "ultima_carga_en": None,
     "proxima_fecha_reentrenamiento": None,
+    "datos_mes_cargados": None,
 }
 
 _ESTADO_RESPONSES: OpenApiResponses = {
     status.HTTP_200_OK: {
         "description": (
             "Estado actual del sistema: INICIALIZANDO mientras migra el historico, "
-            "FALTAN_DATOS_HISTORICOS si no se pudieron migrar los libros, LISTO al terminar."
+            "FALTAN_DATOS_HISTORICOS si no se pudieron migrar los libros, LISTO al terminar. "
+            "``datos_mes_cargados``: si ya hay una carga de plantilla en el mes actual (fecha "
+            "de Ecuador; la migracion historica no cuenta); nulo si el sistema no esta LISTO."
         ),
         "content": {
             "application/json": {
                 "examples": {
                     "listo": {"summary": "Sistema listo", "value": ESTADO_SISTEMA_EXAMPLE},
+                    "sin_datos_del_mes": {
+                        "summary": "Listo, sin datos cargados este mes",
+                        "value": ESTADO_SIN_DATOS_MES_EXAMPLE,
+                    },
                     "inicializando": {
                         "summary": "Migrando el historico",
                         "value": ESTADO_INICIALIZANDO_EXAMPLE,

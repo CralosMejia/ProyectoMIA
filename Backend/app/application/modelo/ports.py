@@ -9,10 +9,13 @@ modelo nuevo solo desmarca como vigente al anterior, que se conserva.
 
 ``BloqueoMigracion`` no forma parte de la transaccion: es un bloqueo de sesion sobre su
 propia conexion, para que la migracion historica no corra dos veces a la vez (ADR-004).
+``BloqueoReentrenamiento`` es el equivalente de CU-02, con una clave propia: impide dos
+reentrenamientos a la vez sin bloquear la migracion.
 Ningun puerto recibe ni devuelve sesiones, engines ni modelos ORM: solo los DTOs de aqui.
 """
 
 from collections.abc import Mapping
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
@@ -21,6 +24,8 @@ from typing import Protocol, runtime_checkable
 from app.domain.common.enums import (
     DisparadorReentrenamiento,
     EstadoMigracion,
+    FormaPago,
+    Plan,
     ResultadoReentrenamiento,
 )
 
@@ -166,3 +171,83 @@ class BloqueoMigracion(Protocol):
     def liberar(self) -> None:
         """Libera el bloqueo tomado con ``intentar_adquirir``."""
         ...
+
+
+# ---------------------------------------------------------------- reentrenamiento (CU-02)
+
+
+@dataclass(frozen=True, slots=True)
+class MembresiaParaEntrenamiento:
+    """Membresia no borrada con lo que necesitan los ciclos del modelo (sin datos personales).
+
+    ``registrada_en`` es su ``created_at``: el criterio 2 de CU-02 cuenta las membresias
+    registradas despues del ultimo entrenamiento.
+    """
+
+    membresia_id: int
+    socio_id: int
+    plan: Plan
+    forma_pago: FormaPago
+    fecha_inicio: date | None
+    fecha_vencimiento: date | None
+    fecha_actividad: date
+    monto_cobrado: Decimal | None
+    inicio_aproximado: bool
+    registrada_en: datetime
+
+
+@runtime_checkable
+class LectorMembresiasEntrenamiento(Protocol):
+    """Lectura de las membresias para reentrenar, dentro de la transaccion de quien llama."""
+
+    def listar_para_entrenamiento(self) -> list[MembresiaParaEntrenamiento]:
+        """Todas las membresias no borradas logicamente, ordenadas por id."""
+        ...
+
+
+class ContextoReentrenamiento(Protocol):
+    """Repositorios que comparten una sola transaccion (unidad de trabajo de CU-02).
+
+    Si se sale del contexto sin ``commit()`` (o con una excepcion) todo se revierte.
+    """
+
+    @property
+    def membresias(self) -> LectorMembresiasEntrenamiento: ...
+
+    @property
+    def modelos(self) -> ModeloRepository: ...
+
+    @property
+    def intentos(self) -> IntentoRepository: ...
+
+    @property
+    def estado(self) -> EstadoSistemaRepository: ...
+
+    def commit(self) -> None:
+        """Confirma la transaccion."""
+        ...
+
+
+class UnidadDeTrabajoReentrenamiento(Protocol):
+    """Abre una unidad de trabajo nueva en cada llamada."""
+
+    def __call__(self) -> AbstractContextManager[ContextoReentrenamiento]: ...
+
+
+@runtime_checkable
+class BloqueoReentrenamiento(Protocol):
+    """Bloqueo exclusivo entre procesos para el reentrenamiento (clave propia)."""
+
+    def intentar_adquirir(self) -> bool:
+        """Intenta tomar el bloqueo sin esperar; ``True`` si se obtuvo."""
+        ...
+
+    def liberar(self) -> None:
+        """Libera el bloqueo tomado con ``intentar_adquirir``."""
+        ...
+
+
+class AbrirBloqueoReentrenamiento(Protocol):
+    """Entrega un ``BloqueoReentrenamiento`` sobre una conexion propia mientras dura el ``with``."""
+
+    def __call__(self) -> AbstractContextManager[BloqueoReentrenamiento]: ...

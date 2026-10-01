@@ -4,6 +4,7 @@ Aislamiento entre usuarios: NO APLICA (RT-12, sin login; acceso restringido por 
 """
 
 from collections.abc import Iterator
+from datetime import UTC, datetime
 
 import pytest
 from fastapi import FastAPI
@@ -12,10 +13,12 @@ from pydantic import SecretStr
 from sqlalchemy import Engine, text
 from sqlalchemy.engine import URL
 
+from app.api.dependencies import get_clock
 from app.application.sistema.ports import RegistroMigracion, ResultadoMigracion
 from app.core.config import Settings
 from app.main import create_app
 from tests.fixtures import esperado
+from tests.integration.persistence.test_migrations import carga
 from tests.integration.sistema.migracion_sintetica import limpiar_base, migrar_sintetico
 
 pytestmark = pytest.mark.integration
@@ -44,7 +47,7 @@ def app(test_database_url: URL, base_limpia: Engine) -> FastAPI:
 
 @pytest.fixture
 def client(app: FastAPI) -> Iterator[TestClient]:
-    with TestClient(app) as test_client:
+    with TestClient(app, client=("127.0.0.1", 50000)) as test_client:
         yield test_client
 
 
@@ -71,6 +74,7 @@ def test_get_estado_pendiente_sin_resultado_devuelve_inicializando(client: TestC
         "modelo_vigente": None,
         "ultima_carga_en": None,
         "proxima_fecha_reentrenamiento": None,
+        "datos_mes_cargados": None,
     }
 
 
@@ -119,3 +123,88 @@ def test_get_estado_completada_devuelve_listo_con_modelo(
     assert cuerpo["modelo_vigente"]["fecha_entrenamiento"].startswith("2026-09-29T10:00:00")
     assert cuerpo["ultima_carga_en"].startswith("2026-09-29T10:00:00")
     assert cuerpo["proxima_fecha_reentrenamiento"] == "2027-03-29"
+
+
+# ------------------------------------------------------------------ datos del mes (R-011 T19)
+
+# 2026-09-30 22:00 en Ecuador: aun septiembre aunque en UTC ya sea octubre.
+RELOJ_SEPTIEMBRE = datetime(2026, 10, 1, 3, 0, tzinfo=UTC)
+
+
+class RelojSeptiembre:
+    def now(self) -> datetime:
+        return RELOJ_SEPTIEMBRE
+
+
+@pytest.fixture
+def client_septiembre(app: FastAPI, client: TestClient) -> Iterator[TestClient]:
+    app.dependency_overrides[get_clock] = RelojSeptiembre
+    try:
+        yield client
+    finally:
+        app.dependency_overrides.pop(get_clock, None)
+
+
+def sembrar_carga(engine: Engine, **valores: object) -> None:
+    with engine.begin() as conexion:
+        carga(conexion, **valores)
+
+
+def datos_mes(client: TestClient) -> object:
+    cuerpo = client.get(PATH).json()
+    assert cuerpo["estado"] == "LISTO"
+    return cuerpo["datos_mes_cargados"]
+
+
+def test_get_estado_solo_migracion_historica_devuelve_datos_mes_false(
+    client_septiembre: TestClient, base_limpia: Engine
+) -> None:
+    fijar_estado(base_limpia, "COMPLETADA")
+    sembrar_carga(
+        base_limpia, tipo="MIGRACION_HISTORICA", fecha_carga=datetime(2026, 9, 15, tzinfo=UTC)
+    )
+
+    assert datos_mes(client_septiembre) is False
+
+
+def test_get_estado_con_plantilla_del_mes_devuelve_datos_mes_true(
+    client_septiembre: TestClient, base_limpia: Engine
+) -> None:
+    fijar_estado(base_limpia, "COMPLETADA")
+    sembrar_carga(base_limpia, tipo="PLANTILLA", fecha_carga=datetime(2026, 9, 15, tzinfo=UTC))
+
+    assert datos_mes(client_septiembre) is True
+
+
+def test_get_estado_con_plantilla_de_agosto_devuelve_datos_mes_false(
+    client_septiembre: TestClient, base_limpia: Engine
+) -> None:
+    fijar_estado(base_limpia, "COMPLETADA")
+    # 2026-09-01 04:59Z = 2026-08-31 23:59 en Ecuador: agosto.
+    sembrar_carga(
+        base_limpia, tipo="PLANTILLA", fecha_carga=datetime(2026, 9, 1, 4, 59, tzinfo=UTC)
+    )
+
+    assert datos_mes(client_septiembre) is False
+
+
+def test_get_estado_con_plantilla_borrada_devuelve_datos_mes_false(
+    client_septiembre: TestClient, base_limpia: Engine
+) -> None:
+    fijar_estado(base_limpia, "COMPLETADA")
+    sembrar_carga(
+        base_limpia,
+        tipo="PLANTILLA",
+        fecha_carga=datetime(2026, 9, 15, tzinfo=UTC),
+        deleted_at=datetime(2026, 9, 16, tzinfo=UTC),
+    )
+
+    assert datos_mes(client_septiembre) is False
+
+
+def test_get_estado_no_listo_devuelve_datos_mes_nulo(
+    client_septiembre: TestClient, base_limpia: Engine
+) -> None:
+    sembrar_carga(base_limpia, tipo="PLANTILLA", fecha_carga=datetime(2026, 9, 15, tzinfo=UTC))
+
+    assert client_septiembre.get(PATH).json()["datos_mes_cargados"] is None

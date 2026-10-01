@@ -126,11 +126,15 @@ class GestionDTO(BaseModel):
 
 
 class GestionResumenDTO(BaseModel):
-    """Fila de la lista de gestiones pendientes de un grupo de alertas."""
+    """Fila de la lista de gestiones pendientes de un grupo de alertas.
+
+    ``prediccion_id`` permite abrir la ventana de gestion desde el seguimiento (R-011 (a)).
+    """
 
     model_config = ConfigDict(frozen=True)
 
     id: int = Field(ge=1)
+    prediccion_id: int = Field(ge=1)
     socio_nombre: str
     celular: str | None = None
     plan: Plan

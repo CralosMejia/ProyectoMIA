@@ -111,6 +111,11 @@ class LectorEstadoSistema(Protocol):
 
     def ultima_carga_en(self) -> datetime | None: ...
 
+    def hay_carga_plantilla_entre(self, desde: datetime, hasta: datetime) -> bool:
+        """``True`` si existe una carga ``PLANTILLA`` no borrada con ``fecha_carga`` en
+        ``[desde, hasta)``."""
+        ...
+
 
 @unique
 class ResultadoMigracion(StrEnum):
