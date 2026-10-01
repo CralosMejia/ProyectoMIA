@@ -11,11 +11,21 @@
 # cargas sin tocar la base principal (que tiene datos reales).
 #   cp .env.e2e.example .env.e2e   (rellenar una contrasena local de prueba)
 #   docker compose -p mtabolic-e2e --env-file .env.e2e up -d --build
-#   curl http://localhost:8001/api/v1/sistema/estado        -> LISTO
+#   curl http://localhost:8081/api/v1/sistema/estado        -> LISTO (via nginx)
 #   docker compose -p mtabolic-e2e --env-file .env.e2e down -v   (borra SOLO el volumen e2e)
 # Usar SIEMPRE -p mtabolic-e2e junto a down -v: sin -p actua sobre el stack principal.
 # Las variables exportadas en la shell ganan a --env-file: no cargues el .env principal
 # en la shell antes de operar el stack e2e.
+#
+# Acceso por IP (CU-00): el backend solo atiende a las IPs de IPS_PERMITIDAS (salvo
+# GET /api/v1/health). Dentro de Docker el backend ve la IP del contenedor nginx, no la del
+# navegador; por eso la red "interna" tiene subred fija y el frontend una IP fija, y esa IP
+# esta autorizada por defecto. Llamar directo al puerto del backend desde el host da 403
+# (usa el puerto del frontend: /api pasa por nginx).
+# Valores por defecto (sin tocar los .env): stack principal 172.30.0.0/24 con frontend
+# 172.30.0.10; un .env que define IMAGE_TAG y/o DB_PORT (como el del stack e2e) cambia el
+# tercer octeto (10, 20 o 120) para que las dos subredes no choquen. Para fijarlas a mano,
+# define RED_INTERNA_SUBNET y FRONTEND_IP juntas (y, si quieres, IPS_PERMITIDAS completa).
 
 name: proyectofinal
 
@@ -29,6 +39,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:?defina POSTGRES_DB en .env}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    networks:
+      - interna
     ports:
       - "127.0.0.1:${DB_PORT:-5432}:5432"
     healthcheck:
@@ -51,6 +63,8 @@ services:
       DATABASE_URL: ${DATABASE_URL:?defina DATABASE_URL en .env}
     healthcheck:
       disable: true
+    networks:
+      - interna
     depends_on:
       db:
         condition: service_healthy
@@ -65,6 +79,15 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:?defina CORS_ORIGINS en .env}
       APP_ENV: ${APP_ENV:?defina APP_ENV en .env}
       HISTORICO_PATH: /data/historico
+      # CU-00: IPs o rangos CIDR autorizados. Por defecto el propio contenedor y el frontend.
+      IPS_PERMITIDAS: ${IPS_PERMITIDAS:-127.0.0.1,::1,${FRONTEND_IP:-172.30.${IMAGE_TAG:+1}${DB_PORT:+2}0.10}}
+      # CU-02: planificador del reentrenamiento (revisa al arrancar y cada hora).
+      REENTRENAMIENTO_AUTOMATICO: ${REENTRENAMIENTO_AUTOMATICO:-true}
+      # CU-02: criterios del reentrenamiento (mismos valores por defecto que app/core/config.py).
+      REENTRENAR_MIN_CICLOS_NUEVOS: ${REENTRENAR_MIN_CICLOS_NUEVOS:-150}
+      REENTRENAR_MIN_COBERTURA_VENCIMIENTO: ${REENTRENAR_MIN_COBERTURA_VENCIMIENTO:-0.60}
+      REENTRENAR_MIN_CASOS_POR_CLASE: ${REENTRENAR_MIN_CASOS_POR_CLASE:-20}
+      REENTRENAR_MESES_COMPARACION: ${REENTRENAR_MESES_COMPARACION:-3}
     volumes:
       # Libros historicos para la migracion inicial (CU-03), solo lectura.
       - ${HISTORICO_DIR:?defina HISTORICO_DIR en .env}:/data/historico:ro
@@ -73,6 +96,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+    networks:
+      - interna
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
 
@@ -84,8 +109,18 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    networks:
+      interna:
+        # IP fija: es la que ve el backend en cada peticion que llega por nginx.
+        ipv4_address: ${FRONTEND_IP:-172.30.${IMAGE_TAG:+1}${DB_PORT:+2}0.10}
     ports:
       - "127.0.0.1:${FRONTEND_PORT:-8080}:8080"
+
+networks:
+  interna:
+    ipam:
+      config:
+        - subnet: ${RED_INTERNA_SUBNET:-172.30.${IMAGE_TAG:+1}${DB_PORT:+2}0.0/24}
 
 volumes:
   pgdata:
