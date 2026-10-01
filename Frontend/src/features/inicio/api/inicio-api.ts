@@ -17,6 +17,7 @@ interface EstadoSistemaResponse {
   modelo_vigente: ModeloVigenteResponse | null
   ultima_carga_en: string | null
   proxima_fecha_reentrenamiento: string | null
+  datos_mes_cargados?: boolean | null
 }
 
 interface AlertasResponse {
@@ -38,10 +39,15 @@ export async function getEstadoSistema(signal?: AbortSignal): Promise<EstadoSist
     },
     ultimaCargaEn: raw.ultima_carga_en ? new Date(raw.ultima_carga_en) : null,
     proximaFechaReentrenamiento: raw.proxima_fecha_reentrenamiento ?? null,
+    datosMesCargados: raw.datos_mes_cargados ?? null,
   }
 }
 
-export async function getAlertas(signal?: AbortSignal): Promise<Alertas> {
+/** CU-09: contadores de gestiones pendientes (vencidas, para hoy y proximos 7 dias). */
+export async function obtenerAlertas(signal?: AbortSignal): Promise<Alertas> {
   const raw = await httpGet<AlertasResponse>(ALERTAS_PATH, { signal })
   return { vencidas: raw.vencidas, hoy: raw.hoy, proximos7Dias: raw.proximos_7_dias }
 }
+
+/** Nombre anterior de `obtenerAlertas` (se conserva por compatibilidad). */
+export const getAlertas = obtenerAlertas

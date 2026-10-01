@@ -24,7 +24,10 @@ const MENSAJE_GENERICO = 'No se pudo completar la operación. Intente de nuevo.'
 export type EstadoVentanaGestion = 'inactivo' | 'cargando' | 'listo' | 'enviando' | 'error'
 
 export interface UseGestionOptions {
-  /** Se llama tras crear la gestion o registrar su resultado (p. ej. para recargar la lista). */
+  /**
+   * Se llama una vez tras crear la gestion o registrar su resultado con exito, despues de cerrar
+   * la ventana (p. ej. para recargar la lista).
+   */
   onGuardada?: (gestion: Gestion) => void
 }
 
@@ -44,11 +47,14 @@ export interface UseGestionResult {
   reintentar: () => void
   cerrar: () => void
   /**
-   * Crea la gestion; devuelve la creada o `null` si fallo o ya habia un envio en curso. Si nace
-   * cerrada (sin campaña), la ventana se cierra en vez de pasar al resultado.
+   * Crea la gestion; devuelve la creada o `null` si fallo o ya habia un envio en curso. Con exito
+   * la ventana se cierra (el resultado se anota despues desde la fila); con error sigue abierta.
    */
   crear: (datos: DatosNuevaGestion) => Promise<Gestion | null>
-  /** Registra el resultado; devuelve la gestion o `null` si fallo o ya habia un envio en curso. */
+  /**
+   * Registra el resultado; devuelve la gestion o `null` si fallo o ya habia un envio en curso.
+   * Con exito la ventana se cierra; con error sigue abierta con el mensaje.
+   */
   registrar: (datos: ResultadoGestionParams) => Promise<Gestion | null>
 }
 
@@ -137,7 +143,6 @@ export function useGestion({ onGuardada }: UseGestionOptions = {}): UseGestionRe
 
   const enviar = async (
     peticion: (signal: AbortSignal) => Promise<Gestion>,
-    cerrarSiNaceCerrada = false,
   ): Promise<Gestion | null> => {
     if (enviandoRef.current) return null
     enviandoRef.current = true
@@ -147,13 +152,8 @@ export function useGestion({ onGuardada }: UseGestionOptions = {}): UseGestionRe
     try {
       const guardada = await peticion(signal)
       if (signal.aborted) return null
-      if (cerrarSiNaceCerrada && guardada.estado === 'CERRADA') {
-        // Sin campaña no hay resultado que registrar: la ventana se cierra sin pasar a la parte 2.
-        cerrar()
-      } else {
-        setGestion(guardada)
-        setEstado('listo')
-      }
+      // Decision (e) de R-012: guardar con exito siempre cierra la ventana y recarga.
+      cerrar()
       onGuardada?.(guardada)
       return guardada
     } catch (reason: unknown) {
@@ -169,7 +169,7 @@ export function useGestion({ onGuardada }: UseGestionOptions = {}): UseGestionRe
   const crear = (datos: DatosNuevaGestion): Promise<Gestion | null> => {
     if (prediccion === null) return Promise.resolve(null)
     const prediccionId = prediccion.prediccionId
-    return enviar((signal) => crearGestion({ ...datos, prediccionId }, signal), true)
+    return enviar((signal) => crearGestion({ ...datos, prediccionId }, signal))
   }
 
   const registrar = (datos: ResultadoGestionParams): Promise<Gestion | null> => {

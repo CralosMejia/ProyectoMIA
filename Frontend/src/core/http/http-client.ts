@@ -1,4 +1,5 @@
 import { config } from '../config'
+import { marcarAccesoDenegado } from './acceso-denegado'
 import { ApiError } from './api-error'
 
 export interface RequestOptions {
@@ -42,15 +43,19 @@ async function readBody(response: Response): Promise<ReadBody> {
   return { body: text, malformedJson: false }
 }
 
-function extractMessage(body: unknown): string {
+function errorField(body: unknown, field: 'code' | 'message'): string | null {
   if (typeof body === 'object' && body !== null && 'error' in body) {
     const error = (body as { error: unknown }).error
-    if (typeof error === 'object' && error !== null && 'message' in error) {
-      const message = (error as { message: unknown }).message
-      if (typeof message === 'string' && message !== '') return message
+    if (typeof error === 'object' && error !== null && field in error) {
+      const value = (error as Record<string, unknown>)[field]
+      if (typeof value === 'string' && value !== '') return value
     }
   }
-  return GENERIC_ERROR_MESSAGE
+  return null
+}
+
+function extractMessage(body: unknown): string {
+  return errorField(body, 'message') ?? GENERIC_ERROR_MESSAGE
 }
 
 async function send(path: string, init: RequestInit, signal?: AbortSignal): Promise<Response> {
@@ -70,6 +75,10 @@ async function throwIfNotOk(response: Response, signal?: AbortSignal): Promise<v
   } catch (error) {
     if (isAbortError(error, signal)) throw error
     throw new ApiError(response.status, GENERIC_ERROR_MESSAGE)
+  }
+  // CU-00: este equipo no esta autorizado; el layout sustituye la aplicacion por el aviso.
+  if (response.status === 403 && errorField(result.body, 'code') === 'forbidden') {
+    marcarAccesoDenegado()
   }
   throw new ApiError(response.status, extractMessage(result.body), result.body)
 }

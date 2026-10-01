@@ -1,8 +1,8 @@
 import { http, HttpResponse } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../../core/http/api-error'
 import { server } from '../../../mocks/server'
-import { getAlertas, getEstadoSistema } from './inicio-api'
+import { getAlertas, getEstadoSistema, obtenerAlertas } from './inicio-api'
 import source from './inicio-api.ts?raw'
 
 const NOT_IMPLEMENTED = {
@@ -23,6 +23,7 @@ describe('inicio-api (contra MSW)', () => {
       },
       ultimaCargaEn: new Date('2026-09-27T16:05:00Z'),
       proximaFechaReentrenamiento: '2026-10-28',
+      datosMesCargados: true,
     })
     expect(estado.modeloVigente?.fechaEntrenamiento).toBeInstanceOf(Date)
   })
@@ -46,6 +47,7 @@ describe('inicio-api (contra MSW)', () => {
       modeloVigente: null,
       ultimaCargaEn: null,
       proximaFechaReentrenamiento: null,
+      datosMesCargados: null,
     })
   })
 
@@ -76,6 +78,72 @@ describe('inicio-api (contra MSW)', () => {
     const error = await getEstadoSistema(controller.signal).catch((e: unknown) => e)
     expect(error).not.toBeInstanceOf(ApiError)
     expect((error as Error).name).toBe('AbortError')
+  })
+
+  it('obtenerAlertas: {vencidas:2,hoy:1,proximos_7_dias:3} → {vencidas:2, hoy:1, proximos7Dias:3}', async () => {
+    server.use(
+      http.get('*/api/v1/alertas', () =>
+        HttpResponse.json({ vencidas: 2, hoy: 1, proximos_7_dias: 3 }),
+      ),
+    )
+
+    await expect(obtenerAlertas()).resolves.toEqual({ vencidas: 2, hoy: 1, proximos7Dias: 3 })
+  })
+
+  it('obtenerAlertas: error del servidor → ApiError con su status y mensaje', async () => {
+    server.use(
+      http.get('*/api/v1/alertas', () =>
+        HttpResponse.json(
+          { error: { code: 'internal_error', message: 'Error interno del servidor.' } },
+          { status: 500 },
+        ),
+      ),
+    )
+
+    const error = await obtenerAlertas().catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({ status: 500, message: 'Error interno del servidor.' })
+  })
+
+  it('obtenerAlertas propaga la senal: abortar cancela la peticion', async () => {
+    let senal: AbortSignal | null = null
+    server.use(
+      http.get('*/api/v1/alertas', ({ request }) => {
+        senal = request.signal
+        return new Promise<Response>(() => {})
+      }),
+    )
+    const controller = new AbortController()
+
+    const promesa = obtenerAlertas(controller.signal).catch((e: unknown) => e)
+    await vi.waitFor(() => expect(senal).not.toBeNull())
+    controller.abort()
+
+    const error = await promesa
+    expect((error as Error).name).toBe('AbortError')
+    expect((senal as AbortSignal | null)?.aborted).toBe(true)
+  })
+
+  it.each([
+    [true, true],
+    [false, false],
+    [null, null],
+  ])('datos_mes_cargados %s → datosMesCargados %s', async (crudo, esperado) => {
+    server.use(
+      http.get('*/api/v1/sistema/estado', () =>
+        HttpResponse.json({
+          estado: crudo === null ? 'INICIALIZANDO' : 'LISTO',
+          migracion_historica: crudo === null ? 'EN_CURSO' : 'COMPLETADA',
+          modelo_vigente: null,
+          ultima_carga_en: null,
+          proxima_fecha_reentrenamiento: null,
+          datos_mes_cargados: crudo,
+        }),
+      ),
+    )
+
+    const estado = await getEstadoSistema()
+    expect(estado.datosMesCargados).toBe(esperado)
   })
 
   it('no usa fetch directo: pasa por core/http', () => {

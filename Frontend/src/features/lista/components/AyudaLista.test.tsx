@@ -137,6 +137,12 @@ describe('AyudaLista', () => {
     expect(texto).toMatch(/una de las campañas sugeridas para ese socio o «No asignar campaña»/)
     expect(texto).toMatch(/La fecha de seguimiento es el día en que volverás a revisar a ese socio/)
     expect(texto).toMatch(/«Registrar resultado»/)
+    // R-012: al guardar la ventana se cierra; el resultado se anota despues desde la fila.
+    expect(texto).toMatch(/Al pulsar «Crear gestión», la ventana se cierra y la lista se actualiza/)
+    expect(texto).toMatch(
+      /El resultado se anota después con «Registrar resultado» en la fila del socio/,
+    )
+    expect(texto).toMatch(/Al guardar el resultado, la ventana también se cierra/)
     for (const pregunta of [
       '¿Se contactó al socio?',
       '¿Se ofreció la campaña?',
@@ -177,8 +183,9 @@ describe('AyudaLista', () => {
     expect(texto).not.toMatch(/\bestado\b/i)
   })
 
-  it('arquitectura: reutiliza el Modal de shared/ui y no llama a api/ ni hooks del feature', () => {
-    expect(source).toMatch(/shared\/ui\/Modal/)
+  it('arquitectura: reutiliza la ayuda compartida de shared/ui y no llama a api/ ni hooks del feature', () => {
+    // Desde R-012 el boton y el Modal llegan a traves de shared/ui/Ayuda.
+    expect(source).toMatch(/shared\/ui\/Ayuda/)
     expect(source).not.toMatch(/from\s+['"][^'"]*\/(api|hooks)\//)
     expect(source).not.toMatch(/\.md['"]/)
   })

@@ -13,6 +13,7 @@ export const handlers = [
       },
       ultima_carga_en: '2026-09-27T16:05:00Z',
       proxima_fecha_reentrenamiento: '2026-10-28',
+      datos_mes_cargados: true,
     }),
   ),
   http.get('*/api/v1/alertas', () => HttpResponse.json({ vencidas: 2, hoy: 3, proximos_7_dias: 5 })),

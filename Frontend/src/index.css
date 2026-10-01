@@ -6,6 +6,8 @@
   --color-degraded: #d97706;
   --color-surface: #ffffff;
   --color-ink: #111827;
+  /* Color de marca para graficos (barras del embudo). */
+  --color-brand: #4f46e5;
 
   --color-risk-high: #dc2626;
   --color-risk-medium: #d97706;
@@ -16,4 +18,35 @@
 
   --radius-card: 0.75rem;
   --radius-pill: 9999px;
+}
+
+/* Impresion (R-012): "Imprimir / Guardar PDF" del dashboard usa la impresion del navegador. */
+@media print {
+  @page {
+    margin: 1.5cm;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Las ventanas (Modal: capa con role="dialog") nunca salen en papel. */
+  div:has(> [role='dialog']),
+  [role='dialog'],
+  dialog {
+    display: none !important;
+  }
+
+  /* Sin cortes dentro de graficos, tarjetas ni filas de tabla. */
+  section section,
+  [role='img'],
+  table,
+  tr {
+    break-inside: avoid;
+  }
+
+  .shadow-sm {
+    box-shadow: none;
+  }
 }

@@ -2,6 +2,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { act } from 'react'
+import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { server } from '../../../mocks/server'
 import InicioPage from './InicioPage'
@@ -9,6 +10,12 @@ import pageSource from './InicioPage.tsx?raw'
 import panelSource from '../components/EstadoSistemaPanel.tsx?raw'
 
 const ESTADO_PATH = '*/api/v1/sistema/estado'
+const ALERTAS_PATH = '*/api/v1/alertas'
+
+/** Inicio usa enlaces del router (contadores y aviso de datos del mes): se monta dentro de uno. */
+function renderInicio() {
+  return render(<InicioPage />, { wrapper: MemoryRouter })
+}
 
 function estado(body: Record<string, unknown>) {
   return {
@@ -45,7 +52,7 @@ describe('InicioPage', () => {
   })
 
   it('mantiene el titulo "Inicio" como region etiquetada', async () => {
-    render(<InicioPage />)
+    renderInicio()
 
     expect(screen.getByRole('heading', { level: 1, name: 'Inicio' })).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Inicio' })).toBeInTheDocument()
@@ -53,7 +60,7 @@ describe('InicioPage', () => {
   })
 
   it('mientras carga → LoadingIndicator (role="status")', async () => {
-    render(<InicioPage />)
+    renderInicio()
 
     expect(screen.getByRole('status')).toHaveTextContent('Consultando estado del sistema')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
@@ -75,7 +82,7 @@ describe('InicioPage', () => {
       }),
     )
     const user = userEvent.setup()
-    render(<InicioPage />)
+    renderInicio()
 
     await user.click(await screen.findByRole('button', { name: 'Reintentar' }))
 
@@ -87,7 +94,7 @@ describe('InicioPage', () => {
   it('INICIALIZANDO → "Inicializando datos historicos" en role="status"', async () => {
     responderEstado({ estado: 'INICIALIZANDO', migracion_historica: 'EN_CURSO', modelo_vigente: null })
 
-    render(<InicioPage />)
+    renderInicio()
 
     await waitFor(() =>
       expect(screen.getByRole('status')).toHaveTextContent('Inicializando datos históricos'),
@@ -102,7 +109,7 @@ describe('InicioPage', () => {
       ultima_carga_en: null,
     })
 
-    render(<InicioPage />)
+    renderInicio()
 
     const aviso = await screen.findByText(/Faltan los datos históricos/)
     const contenedor = aviso.closest('[role="alert"]')
@@ -112,7 +119,7 @@ describe('InicioPage', () => {
   })
 
   it('LISTO → "Sistema listo", "Modelo de predicción: activo desde <fecha>" y ultima carga en es-EC', async () => {
-    render(<InicioPage />)
+    renderInicio()
 
     expect(await screen.findByText('Sistema listo')).toBeInTheDocument()
     expect(screen.getByText('Modelo de predicción')).toBeInTheDocument()
@@ -129,7 +136,7 @@ describe('InicioPage', () => {
   it('LISTO sin modelo vigente → "El modelo de predicción aún no está disponible"', async () => {
     responderEstado({ modelo_vigente: null })
 
-    render(<InicioPage />)
+    renderInicio()
 
     expect(
       await screen.findByText('El modelo de predicción aún no está disponible'),
@@ -154,7 +161,7 @@ describe('InicioPage', () => {
     )
     const user = userEvent.setup()
 
-    render(<InicioPage />)
+    renderInicio()
 
     const alerta = await screen.findByRole('alert')
     expect(alerta).toHaveTextContent('Esta funcion aun no esta disponible.')
@@ -174,12 +181,56 @@ describe('InicioPage', () => {
       ),
     )
 
-    render(<InicioPage />)
+    renderInicio()
 
     const alerta = await screen.findByRole('alert')
     expect(alerta).toHaveTextContent('Error interno del servidor.')
     expect(alerta).not.toHaveTextContent('traza')
     expect(screen.getByRole('button', { name: 'Reintentar' })).toBeInTheDocument()
+  })
+
+  describe('ayuda "¿Cómo funciona el inicio?" (R-012)', () => {
+    const AYUDA = '¿Cómo funciona el inicio?'
+
+    it('LISTO → el boton esta junto al titulo y abre su ayuda; al cerrar vuelve el foco', async () => {
+      const user = userEvent.setup()
+      renderInicio()
+      await screen.findByText('Sistema listo')
+
+      const boton = screen.getByRole('button', { name: AYUDA })
+      await user.click(boton)
+      expect(screen.getByRole('dialog', { name: AYUDA })).toHaveTextContent(
+        'Seguimientos pendientes',
+      )
+      await user.keyboard('{Escape}')
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(boton).toHaveFocus()
+    })
+
+    it('con error del estado el boton sigue visible', async () => {
+      server.use(
+        http.get(ESTADO_PATH, () =>
+          HttpResponse.json(
+            { error: { code: 'internal_error', message: 'Error interno del servidor.' } },
+            { status: 500 },
+          ),
+        ),
+      )
+      renderInicio()
+
+      await screen.findByRole('alert')
+      expect(screen.getByRole('button', { name: AYUDA })).toBeInTheDocument()
+    })
+
+    it('mientras carga y con el sistema INICIALIZANDO el boton esta visible', async () => {
+      responderEstado({ estado: 'INICIALIZANDO', migracion_historica: 'EN_CURSO' })
+      renderInicio()
+
+      expect(screen.getByRole('button', { name: AYUDA })).toBeInTheDocument()
+      await screen.findByText(/Inicializando datos/i)
+      expect(screen.getByRole('button', { name: AYUDA })).toBeInTheDocument()
+    })
   })
 
   it('al desmontar antes de responder → aborta la peticion', async () => {
@@ -191,7 +242,7 @@ describe('InicioPage', () => {
       }),
     )
 
-    const { unmount } = render(<InicioPage />)
+    const { unmount } = renderInicio()
     await waitFor(() => expect(senal).not.toBeNull())
     unmount()
 
@@ -231,7 +282,7 @@ describe('InicioPage', () => {
       vi.useFakeTimers({ shouldAdvanceTime: true })
       const registro = secuencia(['INICIALIZANDO', 'INICIALIZANDO', 'LISTO'])
 
-      render(<InicioPage />)
+      renderInicio()
       await screen.findByText(/Inicializando datos históricos/)
       expect(registro.llamadas).toBe(1)
 
@@ -253,7 +304,7 @@ describe('InicioPage', () => {
       vi.useFakeTimers({ shouldAdvanceTime: true })
       const registro = secuencia(['INICIALIZANDO', 'FALTAN_DATOS_HISTORICOS'])
 
-      render(<InicioPage />)
+      renderInicio()
       await screen.findByText(/Inicializando datos históricos/)
 
       await avanzar(5000)
@@ -281,7 +332,7 @@ describe('InicioPage', () => {
         }),
       )
 
-      render(<InicioPage />)
+      renderInicio()
       await screen.findByText(/Inicializando datos históricos/)
 
       await avanzar(5000)
@@ -296,7 +347,7 @@ describe('InicioPage', () => {
       vi.useFakeTimers({ shouldAdvanceTime: true })
       const registro = secuencia(['LISTO'])
 
-      render(<InicioPage />)
+      renderInicio()
       await screen.findByText('Sistema listo')
 
       await avanzar(20000)
@@ -307,7 +358,7 @@ describe('InicioPage', () => {
       vi.useFakeTimers({ shouldAdvanceTime: true })
       const registro = secuencia(['INICIALIZANDO'])
 
-      const { unmount } = render(<InicioPage />)
+      const { unmount } = renderInicio()
       await screen.findByText(/Inicializando datos históricos/)
       expect(vi.getTimerCount()).toBeGreaterThan(0)
 
@@ -317,6 +368,116 @@ describe('InicioPage', () => {
       await avanzar(20000)
       expect(registro.llamadas).toBe(1)
       expect(registro.senales.every((s) => s.aborted)).toBe(true)
+    })
+  })
+
+  describe('seguimientos pendientes y datos del mes (CU-09)', () => {
+    function renderConRutas() {
+      const router = createMemoryRouter(
+        [
+          { path: '/', element: <InicioPage /> },
+          { path: '/seguimiento', element: <p>pagina seguimiento</p> },
+          { path: '/carga', element: <p>pagina carga</p> },
+        ],
+        { initialEntries: ['/'] },
+      )
+      render(<RouterProvider router={router} />)
+      return router
+    }
+
+    function responderAlertas(body: Record<string, number>) {
+      server.use(http.get(ALERTAS_PATH, () => HttpResponse.json(body)))
+    }
+
+    it('muestra los tres contadores con sus numeros y enlaces a cada grupo', async () => {
+      responderAlertas({ vencidas: 2, hoy: 1, proximos_7_dias: 3 })
+
+      renderInicio()
+
+      const vencidos = await screen.findByRole('link', { name: 'Vencidos 2' })
+      expect(vencidos).toHaveAttribute('href', '/seguimiento?filtro=vencidas')
+      expect(screen.getByRole('link', { name: 'Para hoy 1' })).toHaveAttribute(
+        'href',
+        '/seguimiento?filtro=hoy',
+      )
+      expect(screen.getByRole('link', { name: 'Próximos 7 días 3' })).toHaveAttribute(
+        'href',
+        '/seguimiento?filtro=proximas',
+      )
+    })
+
+    it('pulsar "Para hoy" navega a /seguimiento?filtro=hoy', async () => {
+      responderAlertas({ vencidas: 2, hoy: 1, proximos_7_dias: 3 })
+      const user = userEvent.setup()
+      const router = renderConRutas()
+
+      await user.click(await screen.findByRole('link', { name: /Para hoy/ }))
+
+      expect(router.state.location.pathname).toBe('/seguimiento')
+      expect(router.state.location.search).toBe('?filtro=hoy')
+      expect(await screen.findByText('pagina seguimiento')).toBeInTheDocument()
+    })
+
+    it('datosMesCargados false → aviso de datos del mes con enlace a Carga', async () => {
+      responderEstado({ datos_mes_cargados: false })
+      const user = userEvent.setup()
+      const router = renderConRutas()
+
+      expect(
+        await screen.findByText('Aún no se han cargado los datos de este mes.'),
+      ).toBeInTheDocument()
+      await user.click(screen.getByRole('link', { name: 'Ir a Carga' }))
+      expect(router.state.location.pathname).toBe('/carga')
+    })
+
+    it.each([true, null])('datosMesCargados %s → sin aviso de datos del mes', async (valor) => {
+      responderEstado({ datos_mes_cargados: valor })
+
+      renderInicio()
+
+      await screen.findByRole('link', { name: /Para hoy/ })
+      expect(screen.queryByText(/Aún no se han cargado los datos/)).not.toBeInTheDocument()
+    })
+
+    it('error de alertas → mensaje sin romper el resto de Inicio; Reintentar vuelve a pedir', async () => {
+      let llamadas = 0
+      server.use(
+        http.get(ALERTAS_PATH, () => {
+          llamadas += 1
+          return llamadas === 1
+            ? HttpResponse.json(
+                { error: { code: 'internal_error', message: 'Error interno del servidor.' } },
+                { status: 500 },
+              )
+            : HttpResponse.json({ vencidas: 0, hoy: 4, proximos_7_dias: 0 })
+        }),
+      )
+      const user = userEvent.setup()
+
+      renderInicio()
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Error interno del servidor.')
+      expect(screen.getByText('Sistema listo')).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Reintentar' }))
+      expect(await screen.findByRole('link', { name: 'Para hoy 4' })).toBeInTheDocument()
+      expect(llamadas).toBe(2)
+    })
+
+    it('mientras el sistema se inicializa no pide las alertas', async () => {
+      let llamadas = 0
+      server.use(
+        http.get(ALERTAS_PATH, () => {
+          llamadas += 1
+          return HttpResponse.json({ vencidas: 0, hoy: 0, proximos_7_dias: 0 })
+        }),
+      )
+      responderEstado({ estado: 'FALTAN_DATOS_HISTORICOS', migracion_historica: 'PENDIENTE' })
+
+      renderInicio()
+
+      await screen.findByText(/Faltan los datos históricos/)
+      expect(screen.queryByRole('link')).not.toBeInTheDocument()
+      expect(llamadas).toBe(0)
     })
   })
 

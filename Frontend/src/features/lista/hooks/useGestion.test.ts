@@ -131,9 +131,14 @@ describe('useGestion', () => {
     expect(result.current.error).toBeNull()
   })
 
-  it('crear exitoso → devuelve la gestion, queda en el estado y avisa a onGuardada', async () => {
+  it('crear con campaña → la ventana se cierra (nunca pasa a la parte 2) y avisa a onGuardada una vez', async () => {
     const onGuardada = vi.fn()
-    const { result } = renderHook(() => useGestion({ onGuardada }))
+    const gestiones: unknown[] = []
+    const { result } = renderHook(() => {
+      const ventana = useGestion({ onGuardada })
+      gestiones.push(ventana.gestion)
+      return ventana
+    })
     act(() => result.current.abrir(prediccion()))
     await waitFor(() => expect(result.current.estado).toBe('listo'))
 
@@ -147,10 +152,12 @@ describe('useGestion', () => {
     })
 
     expect(creada).toMatchObject({ prediccionId: 1503, campaniaId: 2, estado: 'PENDIENTE' })
-    expect(result.current.gestion).toBe(creada)
-    expect(result.current.estado).toBe('listo')
-    // Con campaña la ventana sigue abierta, en la parte 2.
-    expect(result.current.prediccion).not.toBeNull()
+    expect(result.current.prediccion).toBeNull()
+    expect(result.current.estado).toBe('inactivo')
+    expect(result.current.gestion).toBeNull()
+    expect(result.current.error).toBeNull()
+    expect(gestiones.every((g) => g === null)).toBe(true)
+    expect(onGuardada).toHaveBeenCalledTimes(1)
     expect(onGuardada).toHaveBeenCalledWith(creada)
   })
 
@@ -201,8 +208,9 @@ describe('useGestion', () => {
     })
 
     expect(posts.llamadas).toBe(2)
-    expect(result.current.prediccion?.prediccionId).toBe(1504)
-    expect(result.current.gestion).toMatchObject({ estado: 'PENDIENTE', campaniaId: 2 })
+    // Con exito la ventana se cierra tambien con campaña (decision (e) de R-012).
+    expect(result.current.prediccion).toBeNull()
+    expect(result.current.error).toBeNull()
   })
 
   it.each([
@@ -244,18 +252,88 @@ describe('useGestion', () => {
     expect(posts.llamadas).toBe(1)
   })
 
-  it('registrar sobre la pendiente → gestion actualizada y onGuardada', async () => {
+  it.each(['SI', 'NO', 'PENDIENTE'] as const)(
+    'registrar Renovó %s sobre la pendiente → la ventana se cierra y avisa a onGuardada una vez',
+    async (renovo) => {
+      const onGuardada = vi.fn()
+      const { result } = renderHook(() => useGestion({ onGuardada }))
+      act(() => result.current.abrir(prediccion({ gestionId: GESTION_PENDIENTE_ID })))
+      await waitFor(() => expect(result.current.estado).toBe('listo'))
+
+      let guardada: unknown
+      await act(async () => {
+        guardada = await result.current.registrar({ ...RESULTADO, renovoDeclarado: renovo })
+      })
+
+      expect(guardada).toMatchObject({
+        renovoDeclarado: renovo,
+        estado: renovo === 'PENDIENTE' ? 'PENDIENTE' : 'CERRADA',
+      })
+      expect(result.current.prediccion).toBeNull()
+      expect(result.current.estado).toBe('inactivo')
+      expect(result.current.gestion).toBeNull()
+      expect(onGuardada).toHaveBeenCalledTimes(1)
+      expect(onGuardada).toHaveBeenCalledWith(guardada)
+    },
+  )
+
+  it('registrar con 422 → la ventana sigue abierta con el mensaje, sin onGuardada', async () => {
+    server.use(
+      http.put('*/api/v1/gestiones/:id/resultado', () =>
+        HttpResponse.json(
+          { error: { code: 'domain_rule_violated', message: 'Fecha de contacto fuera de rango.' } },
+          { status: 422 },
+        ),
+      ),
+    )
     const onGuardada = vi.fn()
     const { result } = renderHook(() => useGestion({ onGuardada }))
     act(() => result.current.abrir(prediccion({ gestionId: GESTION_PENDIENTE_ID })))
     await waitFor(() => expect(result.current.estado).toBe('listo'))
 
+    let guardada: unknown = 'sin llamar'
     await act(async () => {
-      await result.current.registrar({ ...RESULTADO, renovoDeclarado: 'NO' })
+      guardada = await result.current.registrar(RESULTADO)
     })
 
-    expect(result.current.gestion).toMatchObject({ estado: 'CERRADA', renovoDeclarado: 'NO' })
-    expect(onGuardada).toHaveBeenCalledTimes(1)
+    expect(guardada).toBeNull()
+    expect(result.current.prediccion).not.toBeNull()
+    expect(result.current.estado).toBe('listo')
+    expect(result.current.error).toBe('Fecha de contacto fuera de rango.')
+    expect(result.current.gestion).toMatchObject({ id: GESTION_PENDIENTE_ID, estado: 'PENDIENTE' })
+    expect(onGuardada).not.toHaveBeenCalled()
+  })
+
+  it('cerrar durante el envio → no se llama a onGuardada', async () => {
+    let soltar: () => void = () => {}
+    server.use(
+      http.post('*/api/v1/gestiones', async () => {
+        await new Promise<void>((resolve) => {
+          soltar = resolve
+        })
+        return undefined
+      }),
+    )
+    const onGuardada = vi.fn()
+    const { result } = renderHook(() => useGestion({ onGuardada }))
+    act(() => result.current.abrir(prediccion()))
+    await waitFor(() => expect(result.current.estado).toBe('listo'))
+
+    let envio: Promise<unknown> = Promise.resolve()
+    act(() => {
+      envio = result.current.crear({ campaniaId: 2, fechaSeguimiento: '2026-10-30' })
+    })
+    expect(result.current.estado).toBe('enviando')
+    act(() => result.current.cerrar())
+    soltar()
+    let creada: unknown = 'sin llamar'
+    await act(async () => {
+      creada = await envio
+    })
+
+    expect(creada).toBeNull()
+    expect(result.current.prediccion).toBeNull()
+    expect(onGuardada).not.toHaveBeenCalled()
   })
 
   it('registrar sobre una cerrada (409) → error con el mensaje del servidor', async () => {

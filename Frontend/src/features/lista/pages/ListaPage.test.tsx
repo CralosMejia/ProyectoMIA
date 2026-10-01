@@ -590,8 +590,40 @@ describe('ListaPage', () => {
       ).toBeInTheDocument()
     })
 
-    it('Gestionar → sugeridas → Crear gestión → parte 2; al cerrar la fila muestra "Pendiente"', async () => {
+    /** Abre "Registrar resultado prioridad N", responde Contactado No y Renovó `renovo`, y guarda. */
+    async function registrarResultadoDeLaFila(
+      user: ReturnType<typeof userEvent.setup>,
+      prioridad: number,
+      renovo: 'Sí' | 'No' | 'Pendiente',
+    ) {
+      await user.click(
+        (await tablaCargada()).getByRole('button', {
+          name: `Registrar resultado prioridad ${prioridad}`,
+        }),
+      )
+      const dialogo = within(
+        await screen.findByRole('dialog', { name: `Gestión de la prioridad ${prioridad}` }),
+      )
+      expect(
+        await dialogo.findByRole('form', { name: 'Resultado del seguimiento' }),
+      ).toBeInTheDocument()
+      await user.click(
+        within(dialogo.getByRole('group', { name: '¿Se contactó al socio?' })).getByRole('radio', {
+          name: 'No',
+        }),
+      )
+      await user.click(
+        within(dialogo.getByRole('group', { name: '¿Renovó?' })).getByRole('radio', {
+          name: renovo,
+        }),
+      )
+      await user.click(dialogo.getByRole('button', { name: 'Guardar resultado' }))
+      return dialogo
+    }
+
+    it('Gestionar → campaña → Crear gestión: la ventana se cierra, la lista se recarga y la fila queda "Pendiente"; luego Registrar resultado Renovó Sí → "Cerrada"', async () => {
       server.use(...simularGestiones())
+      const recargas = { llamadas: 0 }
       const user = userEvent.setup()
       render(<ListaPage />)
       const boton = (await tablaCargada()).getByRole('button', { name: 'Gestionar prioridad 3' })
@@ -604,45 +636,92 @@ describe('ListaPage', () => {
       expect(dialogo.getByRole('radio', { name: 'No asignar campaña' })).not.toBeChecked()
       // Vencimiento simulado 2026-10-03: sugerida = vencimiento + 25.
       expect(dialogo.getByLabelText('Fecha de seguimiento')).toHaveValue('2026-10-28')
+      server.use(
+        http.get(`${LISTAS_PATH}/:id`, () => {
+          recargas.llamadas += 1
+          return undefined
+        }),
+      )
       await user.click(campania)
       await user.click(dialogo.getByRole('button', { name: 'Crear gestión' }))
 
+      // La ventana se cierra sola: nunca pasa a "Resultado del seguimiento".
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
       expect(
-        await dialogo.findByRole('group', { name: '¿Se contactó al socio?' }),
-      ).toBeInTheDocument()
-      expect(dialogo.getByText('Ejemplo: Renovación anticipada')).toBeInTheDocument()
-      await user.click(dialogo.getByRole('button', { name: 'Cerrar' }))
-
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+        screen.queryByRole('form', { name: 'Resultado del seguimiento' }),
+      ).not.toBeInTheDocument()
       await waitFor(async () =>
         expect(await gestionDeLaFila(3)).toEqual(['Pendiente', 'Ejemplo: Renovación anticipada']),
       )
+      expect(recargas.llamadas).toBe(1)
       expect(
         (await tablaCargada()).getByRole('button', { name: 'Registrar resultado prioridad 3' }),
-      ).toHaveFocus()
+      ).toBeInTheDocument()
+
+      await registrarResultadoDeLaFila(user, 3, 'Sí')
+
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      await waitFor(async () => expect((await gestionDeLaFila(3))[0]).toBe('Cerrada'))
+      expect(
+        (await tablaCargada()).getByRole('button', { name: 'Ver gestión prioridad 3' }),
+      ).toBeInTheDocument()
     })
 
-    it('Registrar resultado con Renovó = No → la fila pasa a "Cerrada"', async () => {
+    it('Registrar resultado con Renovó = No → la ventana se cierra y la fila pasa a "Cerrada"', async () => {
       server.use(...simularGestiones())
       const user = userEvent.setup()
       render(<ListaPage />)
-      await user.click(
-        (await tablaCargada()).getByRole('button', { name: 'Registrar resultado prioridad 1' }),
-      )
-      const dialogo = within(await screen.findByRole('dialog'))
-      const contactado = within(
-        await dialogo.findByRole('group', { name: '¿Se contactó al socio?' }),
-      )
 
-      await user.click(contactado.getByRole('radio', { name: 'No' }))
-      await user.click(
-        within(dialogo.getByRole('group', { name: '¿Renovó?' })).getByRole('radio', { name: 'No' }),
-      )
-      await user.click(dialogo.getByRole('button', { name: 'Guardar resultado' }))
+      await registrarResultadoDeLaFila(user, 1, 'No')
 
-      expect(await dialogo.findByText('Gestión cerrada: no se puede modificar.')).toBeInTheDocument()
-      expect(dialogo.queryByRole('button', { name: 'Guardar resultado' })).not.toBeInTheDocument()
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
       await waitFor(async () => expect((await gestionDeLaFila(1))[0]).toBe('Cerrada'))
+      expect(
+        (await tablaCargada()).getByRole('button', { name: 'Ver gestión prioridad 1' }),
+      ).toBeInTheDocument()
+    })
+
+    it('Registrar resultado con Renovó = Pendiente → la ventana se cierra, la lista se recarga y la fila sigue "Pendiente"', async () => {
+      server.use(...simularGestiones())
+      const recargas = { llamadas: 0 }
+      server.use(
+        http.get(`${LISTAS_PATH}/:id`, () => {
+          recargas.llamadas += 1
+          return undefined
+        }),
+      )
+      const user = userEvent.setup()
+      render(<ListaPage />)
+      await tablaCargada()
+      const antes = recargas.llamadas
+
+      await registrarResultadoDeLaFila(user, 1, 'Pendiente')
+
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      await waitFor(() => expect(recargas.llamadas).toBe(antes + 1))
+      expect((await gestionDeLaFila(1))[0]).toBe('Pendiente')
+      expect(
+        (await tablaCargada()).getByRole('button', { name: 'Registrar resultado prioridad 1' }),
+      ).toBeInTheDocument()
+    })
+
+    it('error del servidor al guardar el resultado → la ventana sigue abierta con el mensaje', async () => {
+      server.use(
+        http.put('*/api/v1/gestiones/:id/resultado', () =>
+          HttpResponse.json(
+            { error: { code: 'domain_rule_violated', message: 'Fallo simulado al guardar.' } },
+            { status: 422 },
+          ),
+        ),
+      )
+      const user = userEvent.setup()
+      render(<ListaPage />)
+
+      const dialogo = await registrarResultadoDeLaFila(user, 1, 'No')
+
+      expect(await dialogo.findByRole('alert')).toHaveTextContent('Fallo simulado al guardar.')
+      expect(screen.getByRole('dialog', { name: 'Gestión de la prioridad 1' })).toBeInTheDocument()
+      expect(dialogo.getByRole('button', { name: 'Guardar resultado' })).toBeEnabled()
     })
 
     it('409 del servidor al crear → ErrorAlert con su mensaje y el formulario sigue abierto', async () => {
@@ -665,22 +744,8 @@ describe('ListaPage', () => {
       server.use(...simularGestiones())
       const user = userEvent.setup()
       render(<ListaPage />)
-      await user.click(
-        (await tablaCargada()).getByRole('button', { name: 'Registrar resultado prioridad 1' }),
-      )
-      const registro = within(await screen.findByRole('dialog'))
-      await user.click(
-        within(await registro.findByRole('group', { name: '¿Se contactó al socio?' })).getByRole(
-          'radio',
-          { name: 'No' },
-        ),
-      )
-      await user.click(
-        within(registro.getByRole('group', { name: '¿Renovó?' })).getByRole('radio', { name: 'No' }),
-      )
-      await user.click(registro.getByRole('button', { name: 'Guardar resultado' }))
-      await registro.findByText('Gestión cerrada: no se puede modificar.')
-      await user.click(registro.getByRole('button', { name: 'Cerrar' }))
+      await registrarResultadoDeLaFila(user, 1, 'No')
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 
       await user.click(
         await (await tablaCargada()).findByRole('button', { name: 'Ver gestión prioridad 1' }),
@@ -695,6 +760,8 @@ describe('ListaPage', () => {
       const radios = dialogo.getAllByRole('radio')
       expect(radios.length).toBeGreaterThan(0)
       for (const radio of radios) expect(radio).toBeDisabled()
+      await user.click(dialogo.getByRole('button', { name: 'Cerrar' }))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
 
     it('Ver gestión de una cerrada sin campaña → solo "No se le asignó campaña"; al cerrar, el foco vuelve a la fila', async () => {

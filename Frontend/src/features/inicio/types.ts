@@ -14,6 +14,10 @@ export interface EstadoSistema {
   ultimaCargaEn: Date | null
   /** Fecha `YYYY-MM-DD` (sin hora). */
   proximaFechaReentrenamiento: string | null
+  /**
+   * Hay una carga de datos (plantilla) en el mes actual. `null` si el sistema aun no esta listo.
+   */
+  datosMesCargados: boolean | null
 }
 
 /** Contadores de gestiones pendientes por fecha de seguimiento (CU-09). */

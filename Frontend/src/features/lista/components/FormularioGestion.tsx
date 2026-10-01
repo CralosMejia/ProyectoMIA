@@ -181,6 +181,8 @@ export interface FormularioGestionProps {
   /** Debe ser estable: el `Modal` vuelve a enfocar el dialogo cuando cambia. */
   onCerrar: () => void
   onReintentar?: () => void
+  /** Titulo de la ventana; por defecto "Gestión de la prioridad N" (pantalla Lista). */
+  titulo?: string
 }
 
 /**
@@ -198,6 +200,7 @@ export function FormularioGestion({
   onRegistrar,
   onCerrar,
   onReintentar,
+  titulo,
 }: FormularioGestionProps) {
   const primerCampoRef = useRef<HTMLInputElement>(null)
   const cargando = estado === 'cargando' || estado === 'inactivo'
@@ -227,7 +230,11 @@ export function FormularioGestion({
   }, [vista])
 
   return (
-    <Modal open title={`Gestión de la prioridad ${prediccion.prioridad}`} onClose={onCerrar}>
+    <Modal
+      open
+      title={titulo ?? `Gestión de la prioridad ${prediccion.prioridad}`}
+      onClose={onCerrar}
+    >
       <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto pr-2">
         <p className="flex flex-wrap items-center gap-2 text-sm">
           <span>{`Plan: ${prediccion.plan}`}</span>

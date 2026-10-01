@@ -11,6 +11,7 @@ import {
   getCampaniasSugeridas,
   getGestion,
   getGestiones,
+  listarGestionesPorAlerta,
   listarListas,
   obtenerLista,
   obtenerUltima,
@@ -22,6 +23,7 @@ import {
   escenariosLista,
   GESTION_CERRADA_ID,
   GESTION_PENDIENTE_ID,
+  MENSAJE_FILTRO_INVALIDO,
   MENSAJE_GESTION_CERRADA,
 } from './lista-api.handlers'
 import source from './lista-api.ts?raw'
@@ -719,6 +721,71 @@ describe('lista-api (contra MSW)', () => {
     const error = await getGestiones('vencidas').catch((e: unknown) => e)
     expect(error).toBeInstanceOf(ApiError)
     expect(error).toMatchObject({ status: 400, message: 'Filtro ausente o no permitido.' })
+  })
+
+  it('listarGestionesPorAlerta("hoy") → GET /gestiones?filtro=hoy y mapea a camelCase', async () => {
+    let search: string | null = null
+    server.use(
+      http.get('*/api/v1/gestiones', ({ request }) => {
+        search = new URL(request.url).search
+        return HttpResponse.json([
+          {
+            id: 7,
+            prediccion_id: 1503,
+            socio_nombre: 'Carla Prueba',
+            celular: '0990000002',
+            plan: 'SEMESTRAL',
+            fecha_vencimiento: '2026-10-03',
+            fecha_seguimiento: '2026-09-30',
+            nivel_riesgo: 'ALTO',
+            campania_nombre: 'Ejemplo: Renovación anticipada',
+            responsable: null,
+            estado: 'PENDIENTE',
+          },
+        ])
+      }),
+    )
+
+    const gestiones = await listarGestionesPorAlerta('hoy')
+
+    expect(search).toBe('?filtro=hoy')
+    expect(gestiones).toEqual([
+      {
+        id: 7,
+        prediccionId: 1503,
+        socioNombre: 'Carla Prueba',
+        celular: '0990000002',
+        plan: 'SEMESTRAL',
+        fechaVencimiento: '2026-10-03',
+        fechaSeguimiento: '2026-09-30',
+        nivelRiesgo: 'ALTO',
+        campaniaNombre: 'Ejemplo: Renovación anticipada',
+        responsable: null,
+        estado: 'PENDIENTE',
+      },
+    ])
+  })
+
+  it.each(['vencidas', 'hoy', 'proximas'] as const)(
+    'mock de "%s": solo gestiones pendientes del grupo, con prediccionId y campaña',
+    async (filtro) => {
+      const gestiones = await listarGestionesPorAlerta(filtro)
+
+      expect(gestiones.length).toBeGreaterThan(0)
+      for (const g of gestiones) {
+        expect(g.estado).toBe('PENDIENTE')
+        expect(g.prediccionId).toEqual(expect.any(Number))
+        expect(g.campaniaNombre).not.toBeNull()
+      }
+      const fechas = gestiones.map((g) => g.fechaSeguimiento)
+      expect([...fechas].sort()).toEqual(fechas)
+    },
+  )
+
+  it('listarGestionesPorAlerta con un filtro fuera de la lista blanca → ApiError 400 (mock)', async () => {
+    const error = await listarGestionesPorAlerta('otro' as 'hoy').catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({ status: 400, message: MENSAJE_FILTRO_INVALIDO })
   })
 
   it('descargarExcel de una lista inexistente → ApiError 404', async () => {

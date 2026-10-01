@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { estaDenegado, reiniciarAccesoDenegado, suscribir } from './acceso-denegado'
 import { ApiError } from './api-error'
 import { httpGet, httpGetBlob, httpPost, httpPostForm, httpPut } from './http-client'
 
@@ -238,5 +239,77 @@ describe('httpPost / httpPut / httpPostForm / httpGetBlob', () => {
     const error = await httpPost('/api/x', {}).catch((e: unknown) => e)
     expect(error).toBeInstanceOf(ApiError)
     expect((error as ApiError).status).toBe(0)
+  })
+})
+
+describe('acceso denegado (CU-00)', () => {
+  const fetchMock = vi.fn<typeof fetch>()
+  const FORBIDDEN = {
+    error: { code: 'forbidden', message: 'El acceso no esta permitido desde este equipo.' },
+  }
+
+  beforeEach(() => {
+    fetchMock.mockReset()
+    vi.stubGlobal('fetch', fetchMock)
+    reiniciarAccesoDenegado()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    reiniciarAccesoDenegado()
+  })
+
+  it('403 forbidden → ApiError 403 y los suscriptores se notifican una sola vez', async () => {
+    const oyente = vi.fn()
+    const baja = suscribir(oyente)
+    fetchMock.mockImplementation(() => Promise.resolve(jsonResponse(403, FORBIDDEN)))
+
+    const error = await httpGet('/api/v1/sistema/estado').catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({ status: 403, message: FORBIDDEN.error.message })
+    expect(estaDenegado()).toBe(true)
+    expect(oyente).toHaveBeenCalledTimes(1)
+
+    await httpPost('/api/v1/listas', {}).catch(() => undefined)
+    expect(oyente).toHaveBeenCalledTimes(1)
+    baja()
+  })
+
+  it.each([
+    [404, { error: { code: 'not_found', message: 'No existe.' } }],
+    [409, { error: { code: 'conflict', message: 'Conflicto.' } }],
+    [403, { error: { code: 'otro', message: 'Otro motivo.' } }],
+  ])('%i sin code forbidden → no marca el acceso denegado', async (status, body) => {
+    const oyente = vi.fn()
+    const baja = suscribir(oyente)
+    fetchMock.mockResolvedValue(jsonResponse(status, body))
+
+    const error = await httpGet('/api/x').catch((e: unknown) => e)
+    expect(error).toMatchObject({ status })
+    expect(estaDenegado()).toBe(false)
+    expect(oyente).not.toHaveBeenCalled()
+    baja()
+  })
+
+  it('tras darse de baja, el oyente ya no se notifica', async () => {
+    const oyente = vi.fn()
+    suscribir(oyente)()
+    fetchMock.mockResolvedValue(jsonResponse(403, FORBIDDEN))
+
+    await httpGet('/api/x').catch(() => undefined)
+    expect(estaDenegado()).toBe(true)
+    expect(oyente).not.toHaveBeenCalled()
+  })
+
+  it('core/http no importa ningun feature', () => {
+    const fuentes = import.meta.glob(['./*.ts', '!./*.test.ts'], {
+      query: '?raw',
+      import: 'default',
+      eager: true,
+    }) as Record<string, string>
+    expect(Object.keys(fuentes).length).toBeGreaterThanOrEqual(3)
+    for (const codigo of Object.values(fuentes)) {
+      expect(codigo).not.toMatch(/features\//)
+    }
   })
 })

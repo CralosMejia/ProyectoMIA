@@ -7,6 +7,8 @@ import { crearPlantillaSintetica } from './plantilla-sintetica'
  * R-010 añade: inactivar y volver a activar la campaña (y que se siga sugiriendo), la ayuda de la
  * lista con las secciones de campañas y gestion, y la gestion con «No asignar campaña», que nace
  * cerrada (sin fecha de seguimiento ni responsable, y sin resultado que registrar).
+ * R-012: crear con campaña cierra la ventana; el resultado se anota luego con «Registrar resultado
+ * prioridad N» de la fila, y al guardarlo la ventana tambien se cierra.
  *
  * CREA una campaña, una carga, una lista y una gestion: se ejecuta SOLO contra el stack aislado
  * `mtabolic-e2e` (E2E_BASE_URL=http://localhost:8081), nunca contra el principal.
@@ -171,21 +173,44 @@ test('crea y reactiva una campaña, gestiona socios con y sin campaña y cierra 
     await expect(nueva.getByLabel(nombreCampania)).toBeVisible()
     await nueva.getByLabel(nombreCampania).check()
     await expect(nueva.getByLabel('Fecha de seguimiento')).not.toHaveValue('')
+    const creada = page.waitForResponse(
+      (r) => r.request().method() === 'POST' && /\/api\/v1\/gestiones$/.test(r.url()),
+    )
     await nueva.getByRole('button', { name: 'Crear gestión' }).click()
-    await expect(dialogo.getByRole('form', { name: 'Resultado del seguimiento' })).toBeVisible()
+    expect((await creada).status()).toBe(201)
+    // R-012 (e): con exito la ventana se cierra y la lista se recarga; ya no pasa a la parte 2.
+    await expect(dialogo).toHaveCount(0)
+    await expect(page.getByRole('form', { name: 'Resultado del seguimiento' })).toHaveCount(0)
   })
 
-  await test.step('registrar el resultado: contactado, ofrecida y aceptada Sí; renovó No', async () => {
+  await test.step('la fila queda «Pendiente», con la campaña y «Registrar resultado»', async () => {
+    await expect(fila.getByRole('cell', { name: 'Pendiente', exact: true })).toBeVisible({
+      timeout: 30_000,
+    })
+    await expect(fila.getByRole('cell', { name: nombreCampania, exact: true })).toBeVisible()
+    await expect(
+      fila.getByRole('button', { name: `Registrar resultado prioridad ${prioridad}`, exact: true }),
+    ).toBeVisible()
+  })
+
+  await test.step('registrar el resultado desde la fila: contactado, ofrecida y aceptada Sí; renovó No', async () => {
+    await fila
+      .getByRole('button', { name: `Registrar resultado prioridad ${prioridad}`, exact: true })
+      .click()
     const resultado = dialogo.getByRole('form', { name: 'Resultado del seguimiento' })
+    await expect(resultado).toBeVisible()
     await expect(resultado.getByText(nombreCampania)).toBeVisible()
     await grupo(resultado, '¿Se contactó al socio?').getByLabel('Sí', { exact: true }).check()
     await grupo(resultado, '¿Se ofreció la campaña?').getByLabel('Sí', { exact: true }).check()
     await grupo(resultado, '¿Aceptó la campaña?').getByLabel('Sí', { exact: true }).check()
     await resultado.getByLabel('Fecha del contacto').fill(hoyLocal())
     await grupo(resultado, '¿Renovó?').getByLabel('No', { exact: true }).check()
+    const registrado = page.waitForResponse(
+      (r) => r.request().method() === 'PUT' && /\/api\/v1\/gestiones\/\d+\/resultado$/.test(r.url()),
+    )
     await resultado.getByRole('button', { name: 'Guardar resultado' }).click()
-    await expect(dialogo.getByText('Gestión cerrada: no se puede modificar.')).toBeVisible()
-    await dialogo.getByRole('button', { name: 'Cerrar' }).click()
+    expect((await registrado).status()).toBe(200)
+    // R-012 (e): al guardar con exito la ventana se cierra sola.
     await expect(dialogo).toHaveCount(0)
   })
 

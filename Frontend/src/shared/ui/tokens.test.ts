@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import appLayoutSource from '../../core/layout/AppLayout.tsx?raw'
+import ayudaSource from './Ayuda.tsx?raw'
 import dataTableSource from './DataTable.tsx?raw'
 import errorAlertSource from './ErrorAlert.tsx?raw'
 import loadingIndicatorSource from './LoadingIndicator.tsx?raw'
@@ -43,6 +44,7 @@ describe('tokens de diseno (index.css)', () => {
 describe('componentes solo con tokens de index.css', () => {
   it.each([
     ['core/layout/AppLayout.tsx', appLayoutSource],
+    ['shared/ui/Ayuda.tsx', ayudaSource],
     ['shared/ui/DataTable.tsx', dataTableSource],
     ['shared/ui/ErrorAlert.tsx', errorAlertSource],
     ['shared/ui/LoadingIndicator.tsx', loadingIndicatorSource],
@@ -55,6 +57,7 @@ describe('componentes solo con tokens de index.css', () => {
   })
 
   it.each([
+    ['shared/ui/Ayuda.tsx', ayudaSource],
     ['shared/ui/DataTable.tsx', dataTableSource],
     ['shared/ui/ErrorAlert.tsx', errorAlertSource],
     ['shared/ui/LoadingIndicator.tsx', loadingIndicatorSource],

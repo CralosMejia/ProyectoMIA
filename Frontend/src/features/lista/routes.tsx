@@ -5,4 +5,5 @@ import type { RouteObject } from 'react-router-dom'
 // componente local en un archivo que solo exporta rutas (react-refresh/only-export-components).
 export const listaRoutes: RouteObject[] = [
   { path: 'lista', element: createElement(lazy(() => import('./pages/ListaPage'))) },
+  { path: 'seguimiento', element: createElement(lazy(() => import('./pages/SeguimientoPage'))) },
 ]

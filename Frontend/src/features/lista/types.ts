@@ -3,7 +3,10 @@ import type { NivelRiesgo } from '../../shared/ui/RiskBadge'
 export type { NivelRiesgo }
 export type Plan = 'MENSUAL' | 'TRIMESTRAL' | 'SEMESTRAL' | 'ANUAL' | 'DIARIO' | 'OTRO'
 export type EstadoGestion = 'PENDIENTE' | 'CERRADA'
-export type FiltroGestiones = 'vencidas' | 'hoy' | 'proximas'
+/** Grupo de alertas de seguimiento (CU-09): vencidos, para hoy o proximos 7 dias. */
+export type FiltroAlerta = 'vencidas' | 'hoy' | 'proximas'
+/** Nombre anterior de `FiltroAlerta`. */
+export type FiltroGestiones = FiltroAlerta
 
 export type RespuestaOfrecimiento = 'SI' | 'NO' | 'NO_APLICA'
 export type RespuestaAceptacion = 'SI' | 'NO' | 'PENDIENTE' | 'NO_APLICA'
@@ -145,6 +148,8 @@ export interface Gestion {
 /** Fila de la lista de gestiones pendientes de un grupo de alertas. */
 export interface GestionResumen {
   id: number
+  /** Prediccion de la lista a la que pertenece la gestion (para abrir su ventana). */
+  prediccionId: number
   socioNombre: string
   celular: string | null
   plan: Plan

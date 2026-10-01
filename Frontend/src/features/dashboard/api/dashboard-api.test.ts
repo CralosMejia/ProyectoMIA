@@ -1,8 +1,8 @@
 import { http, HttpResponse } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../../core/http/api-error'
 import { server } from '../../../mocks/server'
-import { getDashboard } from './dashboard-api'
+import { getDashboard, obtenerDashboard } from './dashboard-api'
 import source from './dashboard-api.ts?raw'
 
 function capturarQuery(): { search: string | null } {
@@ -133,6 +133,52 @@ describe('dashboard-api (contra MSW)', () => {
 
     const { porCampania } = await getDashboard('2026-09')
     expect(porCampania[0]?.tasaRenovacion).toBe('0.08333333333333333333')
+  })
+
+  it('obtenerDashboard("2026-09") → GET /dashboard?mes=2026-09; sin mes → sin query', async () => {
+    const captura = capturarQuery()
+
+    await obtenerDashboard('2026-09')
+    expect(captura.search).toBe('?mes=2026-09')
+
+    await obtenerDashboard()
+    expect(captura.search).toBe('')
+  })
+
+  it('obtenerDashboard: tasa_renovacion sigue como string y "Sin campaña" al final', async () => {
+    const { porCampania } = await obtenerDashboard('2026-09')
+
+    expect(porCampania[0]).toMatchObject({ tasaRenovacion: '0.40000000', gestionesCerradas: 10 })
+    expect(porCampania.at(-1)).toMatchObject({
+      campaniaId: null,
+      nombre: 'Sin campaña',
+      tasaRenovacion: null,
+      casosInsuficientes: true,
+    })
+  })
+
+  it('obtenerDashboard con mes invalido en el mock → ApiError 400', async () => {
+    const error = await obtenerDashboard('2026-13').catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(ApiError)
+    expect((error as ApiError).status).toBe(400)
+  })
+
+  it('obtenerDashboard propaga la senal: abortar cancela la peticion', async () => {
+    let senal: AbortSignal | null = null
+    server.use(
+      http.get('*/api/v1/dashboard', ({ request }) => {
+        senal = request.signal
+        return new Promise<Response>(() => {})
+      }),
+    )
+    const controller = new AbortController()
+
+    const promesa = obtenerDashboard('2026-09', controller.signal).catch((e: unknown) => e)
+    await vi.waitFor(() => expect(senal).not.toBeNull())
+    controller.abort()
+
+    expect(((await promesa) as Error).name).toBe('AbortError')
+    expect((senal as AbortSignal | null)?.aborted).toBe(true)
   })
 
   it('no usa fetch directo ni convierte decimales a number', () => {

@@ -4,7 +4,7 @@ import type {
   CampaniaSugerida,
   CrearGestionParams,
   EstadoGestion,
-  FiltroGestiones,
+  FiltroAlerta,
   GenerarListaParams,
   Gestion,
   GestionResumen,
@@ -135,6 +135,7 @@ interface GestionResponse {
 
 interface GestionResumenResponse {
   id: number
+  prediccion_id: number
   socio_nombre: string
   celular: string | null
   plan: Plan
@@ -225,6 +226,7 @@ function toGestion(raw: GestionResponse): Gestion {
 function toGestionResumen(raw: GestionResumenResponse): GestionResumen {
   return {
     id: raw.id,
+    prediccionId: raw.prediccion_id,
     socioNombre: raw.socio_nombre,
     celular: raw.celular ?? null,
     plan: raw.plan,
@@ -360,12 +362,18 @@ export async function getGestion(gestionId: number, signal?: AbortSignal): Promi
   return toGestion(await httpGet<GestionResponse>(`${GESTIONES_PATH}/${gestionId}`, { signal }))
 }
 
-/** CU-09: gestiones pendientes de un grupo de alertas. */
-export async function getGestiones(
-  filtro: FiltroGestiones,
+/**
+ * CU-09: gestiones pendientes de un grupo de alertas, ordenadas por fecha de seguimiento.
+ * Un filtro rechazado por el servidor → `ApiError` 400.
+ */
+export async function listarGestionesPorAlerta(
+  filtro: FiltroAlerta,
   signal?: AbortSignal,
 ): Promise<GestionResumen[]> {
   const query = new URLSearchParams({ filtro }).toString()
   const raw = await httpGet<GestionResumenResponse[]>(`${GESTIONES_PATH}?${query}`, { signal })
   return raw.map(toGestionResumen)
 }
+
+/** Nombre anterior de `listarGestionesPorAlerta` (se conserva por compatibilidad). */
+export const getGestiones = listarGestionesPorAlerta

@@ -4,7 +4,7 @@ SPA React + TypeScript + Vite + Tailwind, organizada por features (`pages → ho
 
 ## Requisitos
 
-Node 22 LTS. Para ver datos reales, el Backend en `http://localhost:8000` (el servidor de desarrollo hace proxy de `/api`).
+Node 22 LTS. Para ver datos reales, el Backend con `uvicorn` local en `http://localhost:8000` (el servidor de desarrollo hace proxy de `/api`). El backend del stack de Docker no sirve para esto: su puerto `8000` responde `403` salvo `/api/v1/health` (acceso por IP, CU-00); con Docker, use la app en `http://localhost:8080`.
 
 ## Comandos (desde `Frontend/`)
 
@@ -28,7 +28,7 @@ Confirma una carga de socios ficticios, así que **solo** se ejecuta contra el s
 # desde la raíz, en una shell sin el .env principal cargado
 cp .env.e2e.example .env.e2e     # la primera vez; poner una contraseña de prueba
 docker compose -p mtabolic-e2e --env-file .env.e2e up -d --build
-curl http://localhost:8001/api/v1/sistema/estado   # esperar LISTO
+curl http://localhost:8081/api/v1/sistema/estado   # esperar LISTO (por el frontend; el 8001 da 403)
 
 # desde Frontend/
 E2E_BASE_URL=http://localhost:8081 npx playwright test

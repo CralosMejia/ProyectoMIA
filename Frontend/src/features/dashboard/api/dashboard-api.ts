@@ -46,8 +46,11 @@ function toResultado(raw: ResultadoCampaniaResponse): ResultadoCampania {
   }
 }
 
-/** CU-11: dashboard del mes `YYYY-MM`; sin mes, el backend usa el mes actual. */
-export async function getDashboard(mes?: string, signal?: AbortSignal): Promise<Dashboard> {
+/**
+ * CU-11: dashboard del mes `YYYY-MM`; sin mes no se envia el parametro y el backend usa el mes
+ * actual. Un mes con formato invalido → `ApiError` 400 con el mensaje del servidor.
+ */
+export async function obtenerDashboard(mes?: string, signal?: AbortSignal): Promise<Dashboard> {
   const path = mes ? `${DASHBOARD_PATH}?${new URLSearchParams({ mes }).toString()}` : DASHBOARD_PATH
   const raw = await httpGet<DashboardResponse>(path, { signal })
   const modelo = raw.estado_modelo ?? null
@@ -70,3 +73,6 @@ export async function getDashboard(mes?: string, signal?: AbortSignal): Promise<
     },
   }
 }
+
+/** Nombre anterior de `obtenerDashboard` (se conserva por compatibilidad). */
+export const getDashboard = obtenerDashboard
