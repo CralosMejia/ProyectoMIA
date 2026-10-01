@@ -349,7 +349,7 @@ A petición del usuario. **Estado:** `DONE` (14 tareas + documentación).
 
 **Desviaciones**
 - La migración de las campañas de ejemplo es la `0007` (el cronograma decía `0003`, número ya usado) y se añadió la `0008` para congelar el nombre de la campaña en la gestión.
-- `GET /alertas` y `GET /gestiones?filtro=` siguen en `501`: son del día 6 (CU-09).
+- `GET /alertas` y `GET /gestiones?filtro=` siguen en `501`: son del día 6 (CU-09). Implementados en R-011.
 - Fecha de seguimiento sugerida = el mayor entre vencimiento + 25 y hoy (el cronograma decía solo vencimiento + 25, que puede quedar en el pasado). La gestión es por ciclo de membresía: se ve en todas las listas que contienen ese ciclo.
 - El Excel incluye las columnas "Gestión" y "Campaña", para seguir igual a la tabla; revierte el criterio de R-008 que las excluía. [03 §15 CU-12](03-casos-de-uso.md) se ajustó en R-010.
 - Nombres de campaña repetidos permitidos; prioridad 1..999. En R-009 una campaña inactiva no se podía volver a activar: **cambiado en R-010** (ver abajo).
@@ -387,31 +387,77 @@ A petición del usuario. **Estado:** `DONE` (15 tareas + documentación). Sin mi
 
 **Base de datos**
 
-| ID | Tarea | Resp. | Depende de | Hecho cuando |
-|---|---|---|---|---|
-| D6-BD-01 | Consultas de lectura (SQLAlchemy Core con parámetros): contadores de alertas, embudo del mes y tabla por campaña. | A | D5-BD-01 | Pruebas de integración con datos conocidos. |
-| D6-BD-02 | Repositorio de `intento_reentrenamiento`. | A | D1-BD-02 | Prueba de integración. |
+| ID | Tarea | Resp. | Depende de | Hecho cuando | Estado |
+|---|---|---|---|---|---|
+| D6-BD-01 | Consultas de lectura (SQLAlchemy Core con parámetros): contadores de alertas, embudo del mes y tabla por campaña. | A | D5-BD-01 | Pruebas de integración con datos conocidos. | Hecho (R-011 T2, T15) |
+| D6-BD-02 | Repositorio de `intento_reentrenamiento`. | A | D1-BD-02 | Prueba de integración. | Hecho (R-011 T9) |
 
 **Backend**
 
-| ID | Tarea | Resp. | Depende de | Hecho cuando |
-|---|---|---|---|---|
-| D6-BE-01 | CU-09 · Endpoint de alertas: vencidos, hoy, próximos 7 días y la lista de cada categoría. | A | D6-BD-01 | Criterios de aceptación con reloj fijado. |
-| D6-BE-02 | CU-11 · Endpoint del dashboard: embudo, tabla por campaña (tasa desde 10 casos) y estado del modelo. | A | D6-BD-01 | Criterios de aceptación de CU-11. |
-| D6-BE-03 | **TDD** · CU-02 · Servicio de reentrenamiento: criterios, conjunto de comparación de 3 meses, PR-AUC del candidato contra la del vigente, reentrenamiento completo, `OMITIDO` y cálculo de la próxima fecha. | A | D3-BE-02, D6-BD-02 | Pruebas de todos los flujos alternativos de CU-02 con reloj simulado. |
-| D6-BE-04 | Planificador dentro del backend (revisa al arrancar y una vez al día si hoy es la fecha programada; si ya pasó, registra `OMITIDO`) y comando `python -m app.cli reentrenar`. | A | D6-BE-03 | Arranque con fecha pasada → `OMITIDO`; el comando crea v2 con datos sintéticos suficientes. |
-| D6-BE-05 | CU-00 · Filtro de IP: lista en `.env` (por defecto `127.0.0.1`), IP tomada de la conexión, sin `X-Forwarded-For`, `/health` exento, `403` con el formato único de error. | A | — | Criterios de aceptación de CU-00. |
-| D6-BE-06 | Exponer a Inicio (el endpoint lo decide el planner del día 6) si no hay ninguna carga (CU-01) con `fecha_carga` dentro del mes actual (fecha de negocio, reloj inyectable) (añadida por R-005; pendiente). | A | D4-BE-04 | Pruebas con reloj fijo: con y sin carga en el mes. |
+| ID | Tarea | Resp. | Depende de | Hecho cuando | Estado |
+|---|---|---|---|---|---|
+| D6-BE-01 | CU-09 · Endpoint de alertas: vencidos, hoy, próximos 7 días y la lista de cada categoría. | A | D6-BD-01 | Criterios de aceptación con reloj fijado. | Hecho (R-011 T1, T3, T4) |
+| D6-BE-02 | CU-11 · Endpoint del dashboard: embudo, tabla por campaña (tasa desde 10 casos) y estado del modelo. | A | D6-BD-01 | Criterios de aceptación de CU-11. | Hecho (R-011 T16, T17) |
+| D6-BE-03 | **TDD** · CU-02 · Servicio de reentrenamiento: criterios, conjunto de comparación de 3 meses, PR-AUC del candidato contra la del vigente, reentrenamiento completo, `OMITIDO` y cálculo de la próxima fecha. | A | D3-BE-02, D6-BD-02 | Pruebas de todos los flujos alternativos de CU-02 con reloj simulado. | Hecho (R-011 T5–T8) |
+| D6-BE-04 | Planificador dentro del backend (revisa al arrancar y una vez al día si hoy es la fecha programada; si ya pasó, registra `OMITIDO`) y comando `python -m app.cli reentrenar`. | A | D6-BE-03 | Arranque con fecha pasada → `OMITIDO`; el comando crea v2 con datos sintéticos suficientes. | Hecho (R-011 T10, T11) |
+| D6-BE-05 | CU-00 · Filtro de IP: lista en `.env` (por defecto `127.0.0.1`), IP tomada de la conexión, sin `X-Forwarded-For`, `/health` exento, `403` con el formato único de error. | A | — | Criterios de aceptación de CU-00. | Hecho (R-011 T12–T14) |
+| D6-BE-06 | Exponer a Inicio (el endpoint lo decide el planner del día 6) si no hay ninguna carga (CU-01) con `fecha_carga` dentro del mes actual (fecha de negocio, reloj inyectable) (añadida por R-005). | A | D4-BE-04 | Pruebas con reloj fijo: con y sin carga en el mes. | Hecho (R-011 T18, T19) |
 
 **Frontend**
 
-| ID | Tarea | Resp. | Depende de | Hecho cuando |
-|---|---|---|---|---|
-| D6-FE-01 | Contadores de alertas en Inicio; al pulsar, lista de gestiones que abre el formulario. | B | D5-FE-02 | Prueba de los tres contadores y la navegación. |
-| D6-FE-02 | Página Dashboard: filtro por mes, embudo (barras), tabla por campaña ("casos insuficientes" bajo 10) y tarjeta del estado del modelo. | B | D1-FE-03 | Pruebas con datos simulados. |
-| D6-FE-03 | Página de acceso denegado para respuestas `403`. | B | D1-FE-02 | Prueba de render. |
-| D6-FE-04 | Alerta en Inicio "Aún no se han cargado los datos de este mes" cuando D6-BE-06 lo indique (añadida por R-005; pendiente). | B | D6-BE-06 | Prueba con respuesta simulada con y sin carga del mes. |
-| D6-OP-01 | `Backend/README.md`: instalación en el PC, dónde poner los libros, comando manual de reentrenamiento y cómo hacer y restaurar un respaldo. | B | D6-BE-04 | Documento revisado por A. |
+| ID | Tarea | Resp. | Depende de | Hecho cuando | Estado |
+|---|---|---|---|---|---|
+| D6-FE-01 | Contadores de alertas en Inicio; al pulsar, lista de gestiones que abre el formulario. | B | D5-FE-02 | Prueba de los tres contadores y la navegación. | Hecho (R-011 T22–T25) |
+| D6-FE-02 | Página Dashboard: filtro por mes, embudo (barras), tabla por campaña ("casos insuficientes" bajo 10) y tarjeta del estado del modelo. | B | D1-FE-03 | Pruebas con datos simulados. | Hecho (R-011 T26–T28) |
+| D6-FE-03 | Página de acceso denegado para respuestas `403`. | B | D1-FE-02 | Prueba de render. | Hecho (R-011 T20, T21) |
+| D6-FE-04 | Alerta en Inicio "Aún no se han cargado los datos de este mes" cuando D6-BE-06 lo indique (añadida por R-005). | B | D6-BE-06 | Prueba con respuesta simulada con y sin carga del mes. | Hecho (R-011 T22, T23) |
+| D6-OP-01 | `Backend/README.md`: instalación en el PC, dónde poner los libros, comando manual de reentrenamiento y cómo hacer y restaurar un respaldo. | B | D6-BE-04 | Documento revisado por A. | Hecho (R-011 T30); revisión de A pendiente |
+
+#### Avance y resumen del Día 6
+
+**Estado:** cerrado · 13 de 13 tareas hechas en un solo requerimiento (R-011, `DONE`, 31 tareas de desarrollo + documentación). Sin migración: el esquema sigue en `0008`. Hito verificado: en el stack aislado (http://localhost:8081) alertas → Seguimiento → resultado → Dashboard funciona en el E2E, una IP no autorizada recibe `403` (y `/health` `200`), un `OMITIDO` forzado se registra una sola vez y el comando manual responde `CRITERIOS_NO_CUMPLIDOS` con código 0. El stack principal (http://localhost:8080) se reconstruyó y solo se consultó: `LISTO`, aviso de datos del mes visible (`datos_mes_cargados: false`), alertas 0/0/0, dashboard `200`, puerto 8000 → `403` salvo `/health`; base intacta (mismos conteos que tras R-010, 1 modelo, 1 intento de reentrenamiento: el inicial).
+
+**Realizado**
+- Alertas (CU-09): `GET /alertas` y `GET /gestiones?filtro=` (solo gestiones pendientes; "hoy" en Ecuador). En Inicio, bloque "Seguimientos pendientes" con Vencidos / Para hoy / Próximos 7 días, que lleva a la página Seguimiento; allí "Abrir gestión" abre la ventana de gestión → [API_CONTRACT §Alertas y dashboard](docs/API_CONTRACT.md#alertas-y-dashboard-cu-09-cu-11-r-011), [06 §9](06-como-funciona-la-lista.md).
+- Datos del mes (D6-BE-06/D6-FE-04): `datos_mes_cargados` en `/sistema/estado` (solo cargas por plantilla); Inicio avisa "Aún no se han cargado los datos de este mes." con enlace "Ir a Carga".
+- Dashboard (CU-11): `GET /dashboard?mes=` y página con filtro por mes, embudo (solo gestiones con campaña), tabla por campaña (tasa desde 10 cerradas con resultado; "Sin campaña" al final), tarjeta del modelo y aviso de que las cifras son observadas, no causales.
+- Reentrenamiento (CU-02): servicio programado y manual, PR-AUC en el dominio, planificador en hilo (al arrancar y cada hora) y comando `docker compose exec backend python -m app.cli reentrenar` → [12 §Reentrenamiento](docs/backend/12-modelo-y-listas.md#reentrenamiento-cu-02-r-011), [ADR-011](adr/ADR-011-reglas-del-reentrenamiento.md).
+- Acceso por IP (CU-00): middleware en el backend, red interna con IP fija del frontend, página "Acceso no permitido" → [10-docker §Red interna](docs/backend/10-docker.md), [ADR-010](adr/ADR-010-acceso-por-ip-detras-de-nginx.md).
+- Operación: guía en `Backend/README.md` §Operación en el PC del gimnasio (instalación, libros, variables, reentrenamiento manual, respaldo y restauración).
+- Pruebas: Backend 1.904 pytest, `ruff`, `format`, `mypy app`, `lint-imports` limpios; Frontend 665 Vitest, `lint`, `build`; E2E 4/4 en el stack aislado 8081.
+
+**Desviaciones**
+- El planificador revisa cada hora (el cronograma decía una vez al día) y solo actúa cuando cambia el día de negocio.
+- Si se pierden varias fechas seguidas se registra un `OMITIDO` por cada una ([ADR-011](adr/ADR-011-reglas-del-reentrenamiento.md)); el manual solo mueve la próxima fecha si entrena.
+- El criterio de D6-BE-04 "el comando crea v2 con datos sintéticos suficientes" se probó en la suite de integración; en el stack aislado el comando respondió `CRITERIOS_NO_CUMPLIDOS` (sin datos nuevos suficientes), como se esperaba.
+- La tasa del dashboard exige 10 gestiones **cerradas con resultado** (Sí/No); las cerradas sin campaña no cuentan.
+- Por el filtro de IP, el backend publicado en 8000/8001 solo atiende `/health`; todo se usa por 8080/8081. Abrir la app a otro PC no está implementado (exigiría filtrar también en nginx).
+- No hubo revisión en el navegador del stack principal (extensión de Chrome no disponible); la verificación fue por API y E2E en el aislado.
+- Revisión de seguridad no ejecutada: diferida a la revisión única del día 7 (§1).
+
+**Qué puede probar el usuario**
+1. En http://localhost:8080 → Inicio: aviso "Aún no se han cargado los datos de este mes" y "Seguimientos pendientes" con los tres contadores (en 0 mientras no haya gestiones pendientes).
+2. Gestionar un socio con campaña y fecha de seguimiento hoy desde la Lista → el contador "Para hoy" sube → pulsarlo → "Abrir gestión" → registrar "¿Renovó?" → la fila desaparece. (Guarda de verdad en la base.)
+3. Dashboard: elegir el mes y ver embudo, tabla por campaña y estado del modelo.
+4. `curl http://localhost:8000/api/v1/sistema/estado` → `403`; por 8080 → `200`.
+5. Reentrenamiento manual: `docker compose exec backend python -m app.cli reentrenar` (en la base real cambiaría el modelo si se cumplen los criterios; probar primero en el stack aislado).
+
+**Aviso para el día 7**
+- D7-OP-02: la revisión de seguridad única cubre R-007 a R-012; en R-011 conviene mirar en especial el middleware de IP (`403` en todas las rutas salvo `/health`, IP solo de la conexión), la red fija de compose, el comando `app.cli` (salida sin datos personales) y el hilo del planificador (logs solo con el tipo de excepción). S23 sigue abierto.
+- D7-OP-04: el ensayo de CU-02 y CU-09 con reloj simulado se hace en el stack aislado; en el principal no se ejecuta `reentrenar` sin decisión del usuario.
+- D6-OP-01 queda pendiente de revisión por A; D7-BD-01 (script de respaldo) sigue pendiente: la guía actual usa `pg_dump`/`pg_restore` a mano.
+- D7-OP-03 puede partir del E2E `alertas-dashboard` ya existente.
+
+#### Arreglos posteriores al Día 6 (R-012)
+
+A petición del usuario. **Estado:** `DONE` (12 tareas + documentación). Solo frontend: sin cambios de backend, API ni esquema (sigue en `0008`).
+
+- **La ventana de gestión se cierra al guardar** (Lista y Seguimiento): al crear con éxito (con o sin campaña) y al registrar el resultado, la ventana se cierra y la lista se recarga; con error queda abierta con el mensaje. El resultado se anota después con "Registrar resultado" de la fila → [06 §7](06-como-funciona-la-lista.md), [03 §11, §13](03-casos-de-uso.md), [frontend/01](docs/frontend/01-arquitectura.md).
+- **Ayudas nuevas:** "¿Cómo funciona el inicio?" y "¿Cómo funciona el dashboard?", con el componente compartido `shared/ui/Ayuda.tsx` (también lo usa la ayuda de la lista) → [06 §9–§10](06-como-funciona-la-lista.md).
+- **Dashboard:** "Resultados de <mes en palabras>", embudo en barras con número y % sobre asignadas, dona "Resultado de las gestiones del mes" (Renovaron / No renovaron / Sin resultado), tablas equivalentes accesibles; SVG/CSS propios con tokens (`--color-brand`), sin librerías nuevas → [03 §14](03-casos-de-uso.md).
+- **Imprimir / Guardar PDF** del dashboard con la impresión del navegador; RN-11.2 precisada → [03 §14](03-casos-de-uso.md).
+- Pruebas: Frontend 742 Vitest, `lint` y `build` limpios; E2E 4/4 en el stack aislado 8081. Stack principal reconstruido y verificado solo leyendo; sin revisión en el navegador (extensión de Chrome sin conectar).
+- Revisión de seguridad no ejecutada: diferida a la revisión única del día 7 (§1).
 
 ---
 

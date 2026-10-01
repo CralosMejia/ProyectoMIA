@@ -121,6 +121,8 @@ flowchart TD
 - Una cabecera `X-Forwarded-For` con una IP autorizada no permite el acceso a una IP no autorizada.
 - Cambiar la lista de IP solo requiere cambiar la configuración y reiniciar.
 
+**Precisión de la implementación (R-011, [ADR-010](adr/ADR-010-acceso-por-ip-detras-de-nginx.md)).** El navegador llega al backend a través de nginx, así que el backend ve la IP del contenedor nginx. Esa IP es fija y está autorizada por defecto (además de `127.0.0.1` y `::1`); RN-00.3 se mantiene (no se lee `X-Forwarded-For`). La protección frente a otros equipos es que los puertos se publican solo en el propio PC. Abrir la aplicación a otro equipo de la red exigiría filtrar también en nginx y no está implementado. Variable: `IPS_PERMITIDAS`.
+
 ---
 
 ## 4. CU-01 · Cargar nuevos datos
@@ -229,7 +231,7 @@ docker compose exec backend python -m app.cli reentrenar
 
 - Evalúa los mismos criterios que la ejecución programada y muestra el resultado (entrenado, criterios no cumplidos o no supera al vigente) con su motivo.
 - Si entrena una versión nueva, la próxima fecha programada pasa a ser 6 meses después de ese entrenamiento.
-- El nombre definitivo del comando se fija al implementarlo y se documenta en `Backend/README.md`.
+- Nombre definitivo (R-011): el de arriba. Imprime el resultado y el motivo; si no entrena, la próxima fecha programada no cambia. Códigos de salida y pasos en `Backend/README.md` §Operación.
 
 ### Criterios para reentrenar
 
@@ -284,6 +286,8 @@ Además, para **reemplazar** al modelo vigente, el modelo nuevo **no puede tener
 - Un candidato con peor PR-AUC que el vigente no lo reemplaza.
 - Si el entrenamiento falla, el modelo anterior sigue vigente.
 - El comando manual documentado crea una nueva versión cuando se cumplen los criterios.
+
+**Precisiones de la implementación (R-011, [ADR-011](adr/ADR-011-reglas-del-reentrenamiento.md)).** "Ciclo nuevo evaluable" = evaluable hoy y con vencimiento + 30 días posterior a la fecha de corte del modelo vigente. "Membresías nuevas" (criterio 2) = las registradas después del último entrenamiento. Si el PC estuvo apagado en varias fechas programadas, se registra un `OMITIDO` por cada una y la próxima fecha es 6 meses después de la última perdida. El sistema revisa al arrancar y cada hora. Los umbrales de los criterios son configurables por variables de entorno (`REENTRENAR_*`).
 
 ---
 
@@ -542,6 +546,8 @@ En esta entrega, CU-08 y CU-10 son **el mismo formulario de gestión**, sobre la
 
 > **Ajuste R-010 (pedido del usuario):** antes, la gestión sin campaña quedaba `PENDIENTE` con fecha de seguimiento y resultado por registrar. Detalle: [ADR-009](adr/ADR-009-reactivar-campanias-y-gestion-sin-campania-cerrada.md).
 
+> **Ajuste R-012 (pedido del usuario):** al crear la gestión con éxito, con o sin campaña, la ventana se cierra y la lista se recarga; el formulario ya no pasa directamente a la segunda parte (CU-10), que se abre después con "Registrar resultado". Con error, la ventana sigue abierta con el mensaje.
+
 ### Reglas de negocio
 
 - **RN-08.1** Hay **una sola gestión por ciclo de membresía**. Un socio puede tener varias gestiones en el tiempo, una por cada ciclo.
@@ -586,6 +592,8 @@ En esta entrega, CU-08 y CU-10 son **el mismo formulario de gestión**, sobre la
 - Con el reloj fijado, cada gestión aparece en un solo contador según su fecha.
 - Al cerrar una gestión, desaparece de los contadores.
 
+**Precisión de la implementación (R-011).** "Hoy" es la fecha de negocio de Ecuador (UTC−5) según el reloj del sistema. Los contadores están en Inicio ("Seguimientos pendientes") y llevan a la página Seguimiento, donde "Abrir gestión" abre la misma ventana de la Lista. Las gestiones creadas sin campaña nacen cerradas y no aparecen (ADR-009). Desde R-012, Inicio tiene la ayuda "¿Cómo funciona el inicio?" que explica los contadores, qué hacer al pulsarlos y el aviso de datos del mes.
+
 ---
 
 ## 13. CU-10 · Registrar resultado del seguimiento
@@ -620,6 +628,7 @@ Segunda parte del formulario de gestión (ver CU-08).
    - si no hubo campaña asignada, "¿Se ofreció?" y "¿Aceptó?" deben ser *No aplica* (desde R-010 este caso ya no llega al formulario: la gestión sin campaña nace cerrada y no tiene resultado);
    - si se contactó, la fecha del contacto es obligatoria y debe estar entre el día en que se creó la gestión y hoy.
 4. Si "¿Renovó?" es **Sí** o **No**, la gestión pasa a `CERRADA`. Si es **Pendiente**, sigue `PENDIENTE` y se puede ajustar la fecha de seguimiento dentro del límite de CU-08.
+5. Al guardar con éxito, la ventana se cierra y la lista de origen (Lista o Seguimiento) se recarga; con error, sigue abierta con el mensaje (R-012).
 
 ### Reglas de negocio
 
@@ -661,13 +670,17 @@ El dashboard muestra **resultados observados, no causalidad**. Se puede decir: *
 ### Reglas de negocio
 
 - **RN-11.1** Una tasa nunca se muestra sin su número de casos.
-- **RN-11.2** El dashboard no tiene exportación ni generador de reportes.
+- **RN-11.2** El dashboard no tiene exportación ni generador de reportes propios. Se permite imprimirlo o guardarlo en PDF con la impresión del navegador (botón "Imprimir / Guardar PDF", R-012): la aplicación no genera archivos ni añade operaciones para ello.
 
 ### Criterios de aceptación
 
 - Con datos de gestión conocidos, el embudo muestra los conteos correctos para el mes filtrado.
 - Una campaña con 9 gestiones cerradas muestra "casos insuficientes" en lugar de la tasa.
 - El bloque del modelo muestra la versión vigente y la fecha de la próxima revisión.
+
+**Precisiones de la implementación (R-011).** El mes de asignación es el de creación de la gestión, en fecha de negocio de Ecuador. El embudo cuenta solo gestiones **con campaña**. "Gestiones cerradas" para la tasa = cerradas **con resultado** ("¿Renovó?" Sí o No); una gestión sin resultado nunca cuenta como renovación ni como no renovación. Las gestiones sin campaña aparecen en una fila "Sin campaña", al final y siempre con "casos insuficientes".
+
+**Precisiones de la implementación (R-012, pedido del usuario).** El embudo muestra en cada barra el número y el % sobre asignadas. Se añade un gráfico de dona **"Resultado de las gestiones del mes"** calculado con los mismos datos de la tabla por campaña (incluida "Sin campaña"): Renovaron, No renovaron (cerradas con "¿Renovó?" No) y Sin resultado (abiertas o sin campaña), con número y %; no introduce tasas nuevas (RN-11.1 se mantiene en la tabla). Cada gráfico tiene una tabla equivalente. El título indica el mes en palabras ("Resultados de septiembre de 2026"), hay ayuda "¿Cómo funciona el dashboard?" y botón de impresión (RN-11.2).
 
 ---
 

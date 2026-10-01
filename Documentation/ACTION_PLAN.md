@@ -5,9 +5,377 @@
 
 ## ACTIVO
 
-_Ninguno._
+Ninguno.
 
 ## TERMINADOS RECIENTEMENTE
+
+### R-012 — Arreglos tras el Día 6: gráficos del dashboard, ventana de gestión que se cierra al guardar, ayudas de Dashboard e Inicio e impresión del dashboard · **DONE** 2026-09-30
+
+**Cierre:** Solo frontend (sin cambios de backend, API ni migración; esquema en `0008`). Frontend 742 Vitest, `lint` y `build` limpios; E2E 4/4 en el stack aislado 8081. Stack principal reconstruido y verificado solo leyendo (textos nuevos servidos); sin revisión en navegador (extensión de Chrome sin conectar). Seguridad diferida al día 7 (05 §1). RN-11.2 precisada en [03 §14](03-casos-de-uso.md) (impresión del navegador permitida). Sin ADR: no cambia librerías, contrato, modelo de datos ni acceso.
+
+**Objetivo:** dashboard con embudo en barras legibles y gráfico de dona de resultados, ayuda e impresión; Inicio con ayuda; la ventana de gestión (Lista y Seguimiento) se cierra y la lista se recarga tras crear o registrar con éxito.
+
+**Fuente:** pedido del usuario tras R-011 · [03 §14 CU-11](03-casos-de-uso.md) (RN-11.1, RN-11.2) · [06 §7, §9](06-como-funciona-la-lista.md) · `docs/frontend/01-arquitectura.md` §R-009, §R-011, §shared/ui, §Estilos · decisiones (b), (c) de R-011 y (g) de R-010.
+
+**Notas de alcance del planner**
+- No existe `products/P##-*.md`. **Solo frontend**: sin cambios de backend, API ni esquema (sigue en `0008`). Si una tarea parece necesitar backend, el developer se detiene y lo escala.
+- **Impresión vs RN-11.2 ("el dashboard no tiene exportación ni generador de reportes"):** `window.print()` con estilos de impresión no genera archivos desde la app ni añade endpoint; no es "Generador de reportes o BI" (§Fuera del proyecto). Se planifica como pedido explícito del usuario, **aislado en T9** (puede retirarse sin tocar lo demás) y DOC-1 precisa RN-11.2: "salvo la impresión del navegador (R-012)". **Se avisa al usuario.**
+- **Proceso (05 §1):** pruebas de los criterios de aceptación (sin TDD obligatorio). Seguridad diferida a la revisión única del día 7. Sin login: sin pruebas de aislamiento entre usuarios. Textos sin datos personales.
+- **Stacks:** E2E solo en `mtabolic-e2e` (8081). En el principal (8080) **no se crean campañas, gestiones ni listas**: solo se reconstruye y se mira.
+- **Decisiones del planner (reversibles; se avisan al usuario):**
+  - (a) **Gráficos con SVG/CSS propio, sin librería nueva** (como R-011 T27): los datos son 5 barras y una dona de 3 sectores; una librería añadiría peso y dependencias sin necesidad. Colores solo por tokens de `src/index.css` (clases `fill-*`/`stroke-*`/`bg-*`; ningún color literal ni `style` salvo el ancho/longitud que depende del dato, como hoy). Se añade **un** token `--color-brand` para las barras del embudo; "Renovaron" usa `ok`, "No renovaron" `risk-high`, "Sin resultado" `ink` atenuado.
+  - (b) **Dona "Resultado de las gestiones del mes"**, calculada en el frontend con los datos que ya trae `GET /dashboard` (sin backend): sobre todas las filas de `porCampania` (incluida "Sin campaña"): **Renovaron** = Σ`renovaciones`; **No renovaron** = Σ(`gestionesCerradas` − `renovaciones`); **Sin resultado** = Σ(`gestiones` − `gestionesCerradas`) (pendientes o sin campaña). Total = Σ`gestiones`. Cada sector con número y porcentaje (1 decimal, coma); total 0 → no se dibuja la dona y se muestra "Sin gestiones en este mes".
+  - (c) **Modo oscuro:** la app no tiene tema oscuro (ni `dark:` ni `prefers-color-scheme`). No se crea uno en R-012; los gráficos usan solo tokens y `currentColor`, de modo que siguen el tema si algún día existe, y conservan contraste sobre `surface` en el tema actual. **Se avisa al usuario.**
+  - (d) **Accesibilidad de los gráficos:** cada gráfico es `role="img"` con `aria-label` que resume las cifras, y debajo una tabla equivalente visible (caption, etapa/resultado, número, %), legible también impresa.
+  - (e) **Ventana de gestión:** `crear` y `registrar` con éxito **siempre** cierran la ventana y llaman a `onGuardada` (recarga). Desaparece la opción `cerrarAlCerrarse` (Seguimiento ya no la necesita). Con error, la ventana sigue abierta con el mensaje. El resultado se anota luego con "Registrar resultado prioridad N" de la fila (Lista) o "Abrir gestión <socio>" (Seguimiento). "Ver gestión" de una cerrada sigue en solo lectura con botón "Cerrar".
+  - (f) **Ayudas:** componente compartido nuevo `shared/ui/Ayuda.tsx` (`BotonAyuda` con `titulo` + `children`, y `SeccionAyuda`), con el mismo botón, `Modal` y devolución de foco que `AyudaLista`; `AyudaLista` pasa a usarlo sin cambiar su texto visible (salvo T3). Textos en lenguaje del personal: sin `API`, `endpoint`, `null`, `PENDIENTE`, `CERRADA`, `SI`, `NO_APLICA`, ni códigos.
+  - (g) **Impresión:** botón "Imprimir / Guardar PDF" → `window.print()`. Con `@media print` (en `index.css`, variante `print:` de Tailwind): se ocultan menú/cabecera, botones, filtro de mes y ventanas; se ven título, "Resultados de <mes en palabras>", ambos gráficos con sus tablas, la tabla por campaña, la tarjeta del modelo y el aviso de cifras observadas; colores impresos (`print-color-adjust: exact`).
+  - (h) El `h1` del dashboard sigue siendo "Dashboard" (lo usa el E2E); debajo, siempre visible, "Resultados de septiembre de 2026" (mes del filtro, en palabras, sin depender de la zona del navegador).
+- **Excepción al límite de 4 archivos (ajustes mecánicos):** T2 puede ajustar `FormularioGestion.test.tsx` si alguna prueba espera la parte 2 tras crear. T8 puede ajustar `components/componentes.test.tsx` solo en importaciones.
+
+**Tareas**
+
+- [x] **T1** · `frontend` · Ayuda compartida en `shared/ui`
+  - Archivos: `Frontend/src/shared/ui/Ayuda.tsx` (principal, nuevo: `BotonAyuda({ titulo, children })`, `SeccionAyuda({ titulo, children })`), `Frontend/src/shared/ui/Ayuda.test.tsx` (nuevo), `Frontend/src/features/lista/components/AyudaLista.tsx` (usa `BotonAyuda`/`SeccionAyuda`; sin cambio de texto), `Frontend/src/shared/ui/tokens.test.ts` (añade `Ayuda.tsx` a las listas de "solo tokens" y "no importa features").
+  - Docs: `Documentation/docs/frontend/01-arquitectura.md` §shared/ui, §Estilos; decisión (f).
+  - Aceptación: `BotonAyuda titulo="¿Cómo funciona X?"` → botón con ese nombre; pulsarlo → `dialog` con ese nombre y el contenido; "Cerrar" o `Escape` → el diálogo desaparece y el foco vuelve al botón. Contenido con desplazamiento (`max-h-[60vh]`). `AyudaLista.test.tsx` **sin cambios** y en verde. Sin colores literales ni import de `features/`.
+  - Pruebas: frontend.
+
+- [x] **T2** · `frontend` · `useGestion`: cerrar la ventana tras guardar con éxito
+  - Archivos: `Frontend/src/features/lista/hooks/useGestion.ts` (principal: `crear` y `registrar` cierran siempre al tener éxito; se elimina `cerrarAlCerrarse`), `Frontend/src/features/lista/hooks/useGestion.test.ts`, `Frontend/src/features/lista/hooks/useSeguimiento.ts` (quita la opción, línea 83).
+  - Docs: `docs/frontend/01-arquitectura.md` §Campañas y gestión desde la Lista; decisión (e).
+  - Aceptación (hook con MSW):
+    - Crear **con** campaña → `prediccion` vuelve a `null`, `estado 'inactivo'`, `onGuardada` llamado **una** vez con la gestión `PENDIENTE`; nunca queda en la parte 2.
+    - Crear sin campaña → igual que hoy (cierra, `onGuardada` una vez).
+    - Registrar Renovó Sí, No **y Pendiente** → ventana cerrada y `onGuardada` una vez.
+    - Error del servidor (`409`/`422`) al crear o registrar → ventana abierta, `estado 'listo'`, `error` con el mensaje del servidor, `onGuardada` no llamado.
+    - Doble clic en crear → una sola petición. Cerrar durante el envío → no se llama `onGuardada`.
+    - `useGestion` ya no acepta `cerrarAlCerrarse` (tipo); `npm run build` en verde.
+  - Pruebas: frontend.
+
+- [x] **T3** · `frontend` · Lista y Seguimiento: flujo con la ventana que se cierra
+  - Archivos: `Frontend/src/features/lista/pages/ListaPage.test.tsx` (principal), `Frontend/src/features/lista/pages/SeguimientoPage.test.tsx`, `Frontend/src/features/lista/components/AyudaLista.tsx` (frase en "Gestionar a un socio"), `Frontend/src/features/lista/components/AyudaLista.test.tsx`.
+  - Docs: `docs/frontend/01-arquitectura.md` §R-009 y §R-011; `Documentation/06-como-funciona-la-lista.md` §7; decisión (e).
+  - Aceptación:
+    - Lista: "Gestionar prioridad N" → elegir campaña → "Crear gestión" → el diálogo desaparece, la lista se recarga y la fila muestra "Pendiente", la campaña y "Registrar resultado prioridad N"; pulsarlo → diálogo con "Resultado del seguimiento"; guardar Renovó Sí → el diálogo desaparece y la fila muestra "Cerrada" y "Ver gestión prioridad N". Renovó Pendiente → diálogo cerrado y la fila sigue "Pendiente".
+    - Seguimiento: "Abrir gestión <socio>" → Renovó Pendiente con nueva fecha → diálogo cerrado y la lista se recarga; Renovó Sí → la fila desaparece (como hoy).
+    - Error simulado al guardar → el diálogo sigue abierto con el mensaje.
+    - Ayuda de la lista, sección "Gestionar a un socio": contiene "la ventana se cierra" y que el resultado se anota después con «Registrar resultado» de la fila; la prueba de palabras prohibidas sigue en verde.
+  - Pruebas: frontend.
+
+- [x] **T4** · `frontend` · Datos de presentación del dashboard y token de gráfico
+  - Archivos: `Frontend/src/features/dashboard/hooks/presentacion.ts` (principal, nuevo, funciones puras: `resumenResultados(porCampania) -> {renovaron, noRenovaron, sinResultado, total}`, `porcentaje(parte, total) -> "40,0 %"`, `nombreDelMes("2026-09") -> "septiembre de 2026"`), `Frontend/src/features/dashboard/hooks/presentacion.test.ts` (nuevo), `Frontend/src/index.css` (token `--color-brand` en `@theme`), `Frontend/src/shared/ui/tokens.test.ts` (afirma `--color-brand`).
+  - Docs: `docs/frontend/01-arquitectura.md` §Estilos; [03 §14](03-casos-de-uso.md) precisiones R-011; decisiones (a), (b), (h).
+  - Aceptación: filas A `{gestiones 12, gestionesCerradas 10, renovaciones 4}`, B `{9, 9, 3}`, "Sin campaña" `{3, 0, 0}` → `{renovaron 7, noRenovaron 12, sinResultado 5, total 24}`; lista vacía → todo 0. `porcentaje(7, 24)` → `"29,2 %"`; `porcentaje(0, 0)` → `"0,0 %"`. `nombreDelMes("2026-01")` → `"enero de 2026"`, `"2026-12"` → `"diciembre de 2026"`; formato inválido → devuelve la entrada tal cual. Sin `Date` dependiente de zona horaria. `--color-brand` declarado y distinto de `--color-ink`.
+  - Pruebas: frontend (unitarias).
+
+- [x] **T5** · `frontend` · Embudo en barras más legible
+  - Archivos: `Frontend/src/features/dashboard/components/EmbudoGestion.tsx` (principal), `Frontend/src/features/dashboard/components/componentes.test.tsx`.
+  - Docs: `docs/frontend/01-arquitectura.md` §R-011 (dashboard), §Estilos; decisiones (a), (c), (d).
+  - Aceptación: 5 barras en orden (Gestiones asignadas → Socios contactados → Campaña ofrecida → Campaña aceptada → Renovaron), barras `bg-brand` y "Renovaron" `bg-ok`, pista de fondo atenuada; cada fila muestra el número y el % sobre asignadas ("4 · 40,0 %"); el bloque `role="img"` tiene `aria-label` "Embudo del mes: asignadas 10, contactadas 8, …"; tabla equivalente con caption "Datos del embudo" (etapa, número, % de asignadas). Asignadas 0 → barras vacías, "0 · 0,0 %", sin división por cero. Fuente sin colores literales ni paleta por defecto de Tailwind (prueba sobre `?raw`). Las pruebas existentes de tabla y tarjeta siguen en verde.
+  - Pruebas: frontend.
+
+- [x] **T6** · `frontend` · Gráfico de dona de resultados
+  - Archivos: `Frontend/src/features/dashboard/components/GraficoResultados.tsx` (principal, nuevo: SVG con `circle` y `stroke-dasharray`; recibe el resumen de T4 por props), `Frontend/src/features/dashboard/components/GraficoResultados.test.tsx` (nuevo).
+  - Docs: `docs/frontend/01-arquitectura.md` §Estilos; decisiones (a)–(d).
+  - Aceptación: título "Resultado de las gestiones del mes"; con `{7, 12, 5, 24}` → leyenda "Renovaron 7 (29,2 %)", "No renovaron 12 (50,0 %)", "Sin resultado 5 (20,8 %)" con muestra de color (`ok`, `risk-high`, `ink` atenuado) y el total "24 gestiones" en el centro; `role="img"` con `aria-label` que contiene las tres cifras; tabla equivalente con caption "Datos del gráfico de resultados"; nota "Sin resultado: gestiones abiertas o sin campaña." Total 0 → sin SVG y texto "Sin gestiones en este mes". Un solo sector al 100 % se dibuja como círculo completo. Sin colores literales (prueba sobre `?raw`).
+  - Pruebas: frontend.
+
+- [x] **T7** · `frontend` · Ayuda "¿Cómo funciona el dashboard?"
+  - Archivos: `Frontend/src/features/dashboard/components/AyudaDashboard.tsx` (principal, nuevo, usa `BotonAyuda`/`SeccionAyuda`), `Frontend/src/features/dashboard/components/AyudaDashboard.test.tsx` (nuevo).
+  - Docs: [03 §14](03-casos-de-uso.md) (contenido y precisiones R-011); `06-como-funciona-la-lista.md` §9; decisión (f).
+  - Aceptación: secciones "El filtro por mes" (se cuentan las gestiones creadas en ese mes), "El embudo" (qué cuenta cada una de las 5 etapas; solo gestiones con campaña), "Resultado de las gestiones" (la dona: renovaron, no renovaron, sin resultado), "La tabla por campaña" (gestiones, contactados, renovaciones), "Tasa de renovación y de no renovación" (se calcula solo sobre gestiones cerradas con respuesta «Sí» o «No» en «¿Renovó?»; ejemplo: 4 «Sí» de 10 → 40 %, no renovación 60 %), "Casos insuficientes" (menos de 10 gestiones cerradas con respuesta), "La fila «Sin campaña»" (socios gestionados sin campaña; nunca tienen tasa), "La tarjeta del modelo" (versión, fecha, ciclos, próxima revisión, ciclos nuevos), "Qué significan las cifras" (resultados observados, no demuestran que la campaña causó la renovación). La prueba comprueba títulos y frases clave, que no aparecen las palabras prohibidas de (f) y que el foco vuelve al botón al cerrar.
+  - Pruebas: frontend.
+
+- [x] **T8** · `frontend` · Página Dashboard: gráficos, mes en palabras y ayuda
+  - Archivos: `Frontend/src/features/dashboard/pages/DashboardPage.tsx` (principal: cabecera con `h1` "Dashboard" y `AyudaDashboard`; "Resultados de <mes>"; `EmbudoGestion` y `GraficoResultados` lado a lado en pantallas anchas), `Frontend/src/features/dashboard/hooks/useDashboard.ts` (expone `resumen` y `nombreMes` calculados con T4; la página no transforma datos), `Frontend/src/features/dashboard/pages/DashboardPage.test.tsx`.
+  - Docs: `docs/frontend/01-arquitectura.md` §R-011; decisiones (b), (h).
+  - Aceptación: con el mock de septiembre → "Resultados de septiembre de 2026", el embudo, la dona con las cifras de (b) calculadas del mock, la tabla por campaña y la tarjeta; botón "¿Cómo funciona el dashboard?" abre su ayuda. Cambiar a 2026-08 → "Resultados de agosto de 2026" y nueva petición (como hoy). Mes sin gestiones → "No hay gestiones asignadas en este mes", sin gráficos, tarjeta visible. Cargando y error como hoy.
+  - Pruebas: frontend.
+
+- [x] **T9** · `frontend` · Imprimir / Guardar PDF del dashboard
+  - Archivos: `Frontend/src/features/dashboard/pages/DashboardPage.tsx` (principal: botón "Imprimir / Guardar PDF" → `window.print()`, deshabilitado sin datos; `print:hidden` en botones y filtro), `Frontend/src/core/layout/AppLayout.tsx` (`print:hidden` en la cabecera/menú; `main` sin relleno al imprimir), `Frontend/src/index.css` (`@media print`: `print-color-adjust: exact`, sin `dialog` impreso, evitar cortes dentro de gráficos y tablas), `Frontend/src/features/dashboard/pages/DashboardPage.test.tsx`.
+  - Docs: `docs/frontend/01-arquitectura.md` §Estilos; decisión (g); nota de RN-11.2.
+  - Aceptación: pulsar "Imprimir / Guardar PDF" → `window.print` llamado una vez (espía); sin datos o cargando → deshabilitado. En el DOM: la cabecera de `AppLayout`, el botón de imprimir, el de ayuda, el filtro de mes y "Reintentar" llevan `print:hidden`; título, "Resultados de <mes>", gráficos, tablas, tarjeta y aviso de cifras observadas **no** lo llevan. `index.css` contiene `@media print` con `print-color-adjust`. Prueba de tokens de `AppLayout` sigue en verde. Ningún archivo nuevo generado ni petición nueva a la API al imprimir.
+  - Pruebas: frontend.
+
+- [x] **T10** · `frontend` · Ayuda de Inicio
+  - Archivos: `Frontend/src/features/inicio/components/AyudaInicio.tsx` (principal, nuevo, usa `BotonAyuda`), `Frontend/src/features/inicio/components/AyudaInicio.test.tsx` (nuevo), `Frontend/src/features/inicio/pages/InicioPage.tsx` (botón "¿Cómo funciona el inicio?" junto al `h1`), `Frontend/src/features/inicio/pages/InicioPage.test.tsx`.
+  - Docs: `06-como-funciona-la-lista.md` §9; decisión (f).
+  - Aceptación: secciones "Seguimientos pendientes" (Vencidos = la fecha de seguimiento ya pasó; Para hoy; Próximos 7 días = de mañana a 7 días; solo cuentan gestiones abiertas con campaña según su fecha de seguimiento; las cerradas y las creadas sin campaña no cuentan), "Qué hacer al pulsar un número" (abre Seguimiento con esos socios; «Abrir gestión» para anotar el resultado; al guardar, la ventana se cierra y la lista se actualiza), "Aviso de datos del mes" (sale si este mes aún no se subió la plantilla en Carga; desaparece al confirmar la primera carga del mes; el histórico del arranque no cuenta). Sin palabras prohibidas de (f); foco vuelve al botón. En la página el botón está siempre visible (también si el estado falla o no está listo).
+  - Pruebas: frontend.
+
+- [x] **T11** · `frontend` · E2E en el stack aislado
+  - Archivos: `Frontend/e2e/alertas-dashboard.spec.ts` (principal), `Frontend/e2e/campanias-gestion.spec.ts`.
+  - Docs: `Documentation/docs/backend/10-docker.md` §Stack E2E aislado; decisiones (e), (g).
+  - Aceptación (solo 8081; contra 8080 se salta): crear gestión con campaña → el diálogo desaparece (ya no se espera "Resultado del seguimiento"); "Registrar resultado prioridad N" → guardar Renovó Sí → el diálogo desaparece y la fila muestra "Cerrada"; Seguimiento sigue funcionando. Dashboard: se ven "Resultados de <mes>", el gráfico de resultados con la gestión contada, el botón "¿Cómo funciona el dashboard?" (abre y cierra) y "Imprimir / Guardar PDF" habilitado (sin pulsarlo); Inicio: el botón de ayuda abre su ventana. Los 4 E2E en verde.
+  - Pruebas: e2e.
+
+- [x] **T12** · `infra-deploy` · Verificación y reconstrucción del stack principal
+  - Archivos: ninguno de código (`.harness/tests.md` para el registro).
+  - Docs: `Documentation/docs/backend/10-docker.md`.
+  - Aceptación: Frontend `npm test`, `npm run build`, `npm run lint` en verde; Backend sin cambios (`git diff --stat Backend/` vacío respecto del inicio de R-012); E2E 4/4 en 8081. Stack principal (8080) reconstruido, `LISTO`, `alembic current` = `0008 (head)`, conteos iguales al cierre de R-011; **solo mirando**: Inicio con su ayuda, Dashboard con gráficos en 0, ayuda y botón de imprimir. Sin crear nada en 8080.
+  - Pruebas: suites + verificación manual.
+
+- [x] **DOC-1** · `docs` (doc-agent) · Documentación de R-012
+  - Archivos: `Documentation/06-como-funciona-la-lista.md` (§7: la ventana se cierra al crear y al registrar; §9: ayuda de Inicio; sección nueva "Cómo leer el dashboard" con el contenido de T7 e impresión), `Documentation/docs/frontend/01-arquitectura.md` (§shared/ui: `BotonAyuda`/`SeccionAyuda`; dashboard: gráficos SVG propios, dona, impresión; `useGestion` sin `cerrarAlCerrarse`; §Estilos: `--color-brand` y `@media print`), `Documentation/03-casos-de-uso.md` (RN-11.2 precisada: impresión del navegador permitida; CU-11 contenido: dona), `Documentation/05-cronograma-semana.md` ("Arreglos posteriores al Día 6 (R-012)"), `ACTION_PLAN.md` (cierre, DECISIONES IMPORTANTES con (a)–(h), PRÓXIMO).
+  - Aceptación: ningún documento dice que tras crear con campaña la ventana pasa a "Registrar resultado"; RN-11.2 ya no contradice el botón de imprimir; decisiones (a)–(h) enlazadas.
+
+**Lotes de desarrollo** (archivos disjuntos dentro de cada lote)
+
+| Lote | Tareas |
+|---|---|
+| 1 | T1, T2, T4 (T1 y T4 comparten `tokens.test.ts`: **en serie** T1 → T4 dentro del lote, o T4 en el lote 2) |
+| 2 | T3, T5, T6, T7, T10 |
+| 3 | T8 |
+| 4 | T9 |
+| 5 | T11 (stack e2e) |
+| 6 | T12 (orquestador) → DOC-1 (doc-agent) |
+
+**Dependencias:** T1 → T3 (`AyudaLista.tsx`), T1 → T7, T1 → T10; T1 → T4 (`tokens.test.ts`). T2 → T3. T4 → T5, T6, T8. T5 + T6 + T7 → T8 → T9 (mismo `DashboardPage.tsx`; T9 también tras T4 por `index.css`). T11 necesita T3, T8, T9 y T10 desplegados en `mtabolic-e2e`. T12 al final; DOC-1 después de T12. Externas: ninguna (sin librerías nuevas, sin backend, sin migración).
+
+**Riesgos:**
+1. **Cierre de la ventana y recarga se pisan:** al cerrar siempre tras guardar, la recarga cambia el botón de la fila ("Gestionar" → "Registrar resultado" → "Ver gestión"); un doble clic o una recarga lenta podría reabrir sobre datos viejos o perder el foco en `body`. T2 y T3 fijan una sola petición y el estado tras recargar.
+2. **Cifras de la dona engañosas:** mezclar "Sin resultado" (pendientes + sin campaña) con "No renovaron", o calcular % sobre una base distinta de la tabla, contradiría RN-11.1 y la regla de R-010 (h). T4 fija la fórmula y T7 la explica.
+3. **Impresión frente a RN-11.2:** el botón contradice la letra de RN-11.2 hasta que DOC-1 la precise; si el usuario no lo acepta, se retira solo T9 (y su paso en T11) sin afectar al resto.
+
+### R-011 — Día 6 del cronograma: alertas (CU-09), dashboard (CU-11), reentrenamiento (CU-02), acceso por IP (CU-00), alerta de datos del mes y README de operación · **DONE** 2026-09-30
+
+**Cierre:** Backend 1.904 pytest, `ruff`, `format`, `mypy app`, `lint-imports` limpios; Frontend 665 Vitest, `lint`, `build`; E2E 4/4 en el stack aislado 8081. Sin migración (esquema en `0008`). T31: en el aislado, `403`/`200` por IP, `OMITIDO` forzado (uno solo) y comando manual → `CRITERIOS_NO_CUMPLIDOS` código 0; el principal reconstruido y solo consultado (`LISTO`, `datos_mes_cargados: false`, alertas 0/0/0, dashboard `200`, 8000 → `403` salvo `/health`, base intacta, 1 intento: el inicial). Sin revisión en navegador (extensión de Chrome no disponible). Seguridad diferida al día 7 (05 §1). Decisiones → [ADR-010](adr/ADR-010-acceso-por-ip-detras-de-nginx.md), [ADR-011](adr/ADR-011-reglas-del-reentrenamiento.md). Desviación respecto del plan: el dashboard agrupa por `created_at` de la gestión (equivale a `fecha_asignacion`, ADR-008) y el stack e2e usa la subred derivada `172.30.120.0/24` (no `172.31.0.0/24`).
+
+**Objetivo:** cerrar las tareas D6-* de [05 Día 6](05-cronograma-semana.md): contadores y lista de seguimiento, dashboard del mes, reentrenamiento programado y manual con `OMITIDO`, filtro de IP con página de acceso denegado, aviso de "datos del mes" en Inicio y `Backend/README.md` de operación.
+
+**Fuente:** [03 §3 CU-00, §5 CU-02, §12 CU-09, §14 CU-11](03-casos-de-uso.md) · [05 Día 6 y aviso de R-010](05-cronograma-semana.md) · `docs/API_CONTRACT.md` (tabla de operaciones: `GET /alertas`, `GET /gestiones?filtro=`, `GET /dashboard`, `403 forbidden`) · [ADR-003](adr/ADR-003-reentrenamiento-y-versionado.md) · [ADR-009](adr/ADR-009-reactivar-campanias-y-gestion-sin-campania-cerrada.md) (decisión (h)).
+
+**Notas de alcance del planner**
+- No existe `products/P##-*.md`. Nada cae en §Fuera de alcance: no se confía en `X-Forwarded-For` (diferido en 03 §20), el plazo de 7 días es fijo, el dashboard no tiene filtros por nivel ni exportación, no se recuperan fechas de reentrenamiento perdidas.
+- **Sin migración de esquema:** todas las tablas y columnas necesarias existen (`intentos_reentrenamiento`, `estado_sistema.proxima_fecha_reentrenamiento`, `gestiones_retencion`). Si el developer cree necesitar una, se detiene y lo escala.
+- **Proceso (05 §1):** TDD solo en T5, T6 y T8 (D6-BE-03). En el resto, pruebas de los criterios de aceptación. Revisión de seguridad diferida al día 7. Sin login: no hay pruebas de aislamiento entre usuarios. Logs y mensajes sin nombres, cédulas ni celulares.
+- **Stacks:** en el principal (8080) **no se crean gestiones ni campañas, no se ejecuta `reentrenar` ni se toca `estado_sistema`**: solo se reconstruye y se mira. Datos de prueba, `OMITIDO` forzado, comando manual y E2E solo en `mtabolic-e2e` (8081/8001/5433).
+- **Reloj:** toda fecha sale de `Clock`; "hoy" = `hoy_en_negocio(clock.now())` (Ecuador, UTC−5). No se añade reloj simulado en ejecución: las pruebas lo inyectan, y el `OMITIDO` se demuestra en el stack e2e poniendo una fecha programada pasada.
+- **Decisiones del planner (reversibles; se avisan al usuario):**
+  - (a) **Alertas (CU-09):** solo gestiones `estado = 'PENDIENTE'` y `deleted_at IS NULL` (la gestión sin campaña nace `CERRADA` y queda fuera). Vencidas: `fecha_seguimiento < hoy`; hoy: `= hoy`; próximas: `hoy+1 .. hoy+7`, ambos incluidos. `GET /alertas` → `200 {vencidas, hoy, proximos_7_dias}`. `GET /gestiones?filtro=vencidas|hoy|proximas` → `200 [GestionResumenDTO]` ordenado por `fecha_seguimiento, id`; filtro ausente o fuera de la lista blanca → `400`. `GestionResumenDTO` **añade `prediccion_id`** (cambio aditivo) para abrir la ventana de gestión; `celular` se mantiene en el contrato pero la pantalla no lo muestra (R-006).
+  - (b) **Seguimiento en el frontend:** los contadores de Inicio son enlaces a una página nueva `/seguimiento?filtro=…` del feature `lista` (reutiliza `FormularioGestion` y `useGestion` sin importar entre features). Cada fila tiene "Abrir gestión"; al guardar un resultado que cierra la gestión, la fila desaparece y los contadores bajan.
+  - (c) **Dashboard (CU-11):** mes = mes de `fecha_asignacion` en fecha de negocio (rango `[día 1 05:00Z, día 1 del mes siguiente 05:00Z)`); `mes` ausente → mes actual del reloj; formato inválido → `400`. Embudo: `asignadas` = gestiones **con campaña** del mes; `contactadas` = `contactado IS TRUE`; `ofrecidas` = `campania_ofrecida='SI'`; `aceptadas` = `campania_aceptada='SI'`; `renovaron` = `renovo_declarado='SI'`. Nulo nunca cuenta (R-010 (h)). Tabla por campaña (agrupada por `campania_id`, nombre actual de la campaña; fila "Sin campaña" al final si hay gestiones sin campaña): `gestiones`, `contactados`, `renovaciones` (`SI`), `gestiones_cerradas` = **cerradas con resultado** (`renovo_declarado IN ('SI','NO')`), `tasa_renovacion` = `renovaciones / gestiones_cerradas` con 8 decimales (string) solo si `gestiones_cerradas ≥ 10`; si no, `null` y `casos_insuficientes: true`. Orden: `gestiones DESC, lower(nombre), campania_id`. Estado del modelo: versión vigente, fecha, ciclos, `proxima_fecha_reentrenamiento` y `ciclos_nuevos_evaluables` (misma función que CU-02); sin modelo → `estado_modelo: null`.
+  - (d) **Reentrenamiento (CU-02):** "ciclo nuevo evaluable" = evaluable al corte de hoy **y** con `fecha_vencimiento + 30 > fecha_corte` del modelo vigente (`metadata_tecnica["fecha_corte"]`). Criterio 2: membresías con `created_at > fecha_entrenamiento` del vigente; si no hay ninguna, el criterio no se cumple. Criterio 4: toda fila de variables tiene `VARIABLES_NUMERICAS` + `VARIABLES_CATEGORICAS`. Umbrales configurables por `.env` (150 / 0,60 / 20 / 3 meses). Conjunto de comparación = evaluables de los 3 meses de vencimiento más recientes con resultado (`meses_recientes_con_resultado`); candidato entrenado sin ellos; PR-AUC = *average precision* (igual que `sklearn.metrics.average_precision_score`), calculada en el dominio con `Decimal`. Candidato peor (`PR-AUC candidato < vigente`) → `NO_SUPERA_VIGENTE`; si no, modelo final con **todos** los evaluables, versión = vigente + 1, `fecha_corte` en `metadata_tecnica`, y en **una** transacción: modelo vigente nuevo, intento `ENTRENADO` con ambas PR-AUC, próxima fecha = hoy + 6 meses.
+  - (e) **Próxima fecha:** programado → siempre se recalcula (`ENTRENADO`/`CRITERIOS_NO_CUMPLIDOS`/`NO_SUPERA_VIGENTE`/`FALLIDO`: hoy + 6 meses; `OMITIDO`: fecha perdida + 6 meses, y si aún queda en el pasado se sigue sumando 6 meses hasta que sea ≥ hoy, con **un** intento `OMITIDO` por fecha perdida). Manual → solo cambia la fecha si `ENTRENADO` (03 §5 "Comando manual").
+  - (f) **Planificador:** hilo daemon del backend (`REENTRENAMIENTO_AUTOMATICO=true` por defecto; `false` en pruebas) que revisa al arrancar y luego cada hora si cambió el día; solo con migración `COMPLETADA`. Programada = hoy → ejecuta; programada < hoy → `OMITIDO`; programada > hoy o nula → nada. Un bloqueo consultivo propio (clave distinta de la de CU-03) impide dos reentrenamientos a la vez: el segundo termina sin hacer nada (planificador) o con mensaje "Ya hay un reentrenamiento en curso." y código 2 (comando).
+  - (g) **Comando:** `docker compose exec backend python -m app.cli reentrenar`. Imprime una línea con el resultado y el motivo (sin datos personales). Códigos de salida: `0` = intento registrado (`ENTRENADO`, `CRITERIOS_NO_CUMPLIDOS`, `NO_SUPERA_VIGENTE`); `1` = `FALLIDO` o sistema no `LISTO`; `2` = bloqueo ocupado.
+  - (h) **Acceso por IP (CU-00):** middleware ASGI en `app/api` con `IPS_PERMITIDAS` (IPs o rangos CIDR separados por coma; por defecto `127.0.0.1,::1`; entrada inválida → falla al arrancar sin mostrar el valor). IP = `scope["client"][0]`; sin cliente → `403`. `X-Forwarded-For` y `Forwarded` se ignoran. Exento solo `GET /api/v1/health`. `403` con `{"error":{"code":"forbidden","message":"El acceso no esta permitido desde este equipo."}}`. **En Docker el backend ve la IP del contenedor nginx**, no la del navegador: compose fija la subred de la red interna y la IP del frontend (configurables, distintas en el stack e2e) y `.env` autoriza esa IP. La protección real sigue siendo publicar solo en `127.0.0.1`; abrir a otro PC exigiría filtrar también en nginx (queda anotado, no se implementa). Acceso directo al puerto 8000/8001 desde el host → `403` salvo `/health`.
+  - (i) **Datos del mes (D6-BE-06):** `EstadoSistemaDTO` añade `datos_mes_cargados: bool | null` (`null` si no está `LISTO`): `true` si existe una carga `PLANTILLA` no borrada con `fecha_carga` dentro del mes de negocio actual. La migración histórica **no** cuenta. Inicio muestra "Aún no se han cargado los datos de este mes" cuando es `false`.
+  - (j) **Acceso denegado (frontend):** cualquier respuesta `403 forbidden` de la API sustituye el contenido de la aplicación por la página "Acceso no permitido" (sin menú de acciones, sin detalles técnicos).
+- **Excepción al límite de 4 archivos (ajustes mecánicos):** T7 puede cambiar solo la línea de import de `medianas_de` en `Backend/app/application/listas/generar_lista.py`. T13 puede ajustar la creación de `TestClient` en los `conftest.py` y pruebas de API que no usen el de `tests/integration/api/conftest.py` (cliente `("127.0.0.1", 50000)`). T4 puede ajustar en `test_contract_gestiones.py` las aserciones que esperan `501`. T17, lo mismo en las pruebas de contrato del dashboard. T25 puede tocar `Frontend/src/features/lista/hooks/useGestion.ts` si hace falta abrir la ventana a partir de `gestionId`/`prediccionId`.
+
+**Tareas**
+
+- [x] **T1** · `domain` · Grupos de alerta por fecha de seguimiento
+  - Archivos: `Backend/app/domain/gestiones/alertas.py` (principal, nuevo: `GrupoAlerta` VENCIDAS/HOY/PROXIMAS, `rango_de(grupo, hoy) -> (desde|None, hasta)`, `DIAS_PROXIMAS = 7`), `Backend/tests/unit/domain/gestiones/test_alertas.py`.
+  - Docs: `Documentation/docs/backend/01-arquitectura.md` §Capas; decisión (a).
+  - Aceptación (hoy 2026-09-30): VENCIDAS → `(None, 2026-09-29)`; HOY → `(2026-09-30, 2026-09-30)`; PROXIMAS → `(2026-10-01, 2026-10-07)`. Los tres rangos no se solapan y cubren todo día ≤ hoy+7. Solo librería estándar.
+  - Pruebas: unitarias.
+
+- [x] **T2** · `infra` · Consultas de alertas (D6-BD-01, parte 1) — **BD de pruebas**
+  - Archivos: `Backend/app/infrastructure/persistence/repositories/seguimiento.py` (principal, nuevo; SQLAlchemy Core con parámetros: `contar(hoy)`, `listar(desde, hasta)`), `Backend/app/application/gestiones/ports.py` (`LectorSeguimiento` Protocol, `GestionPendienteResumen`), `Backend/tests/integration/persistence/test_seguimiento_repository.py`.
+  - Docs: `.claude/rules/database.md` §Reglas innegociables; `docs/backend/09-esquema-base-de-datos.md` §Retención; decisión (a).
+  - Aceptación (`app_db_test`, datos conocidos, hoy 2026-09-30): pendientes con seguimiento 09-20, 09-29, 09-30, 10-01, 10-07, 10-08 + una cerrada con campaña (09-30) + una sin campaña (cerrada, 09-30) + una pendiente con `deleted_at` → `contar` = vencidas 2, hoy 1, próximas 2. `listar` devuelve solo `PENDIENTE` no borradas, orden `fecha_seguimiento, id`, con `prediccion_id`, nombre del socio, plan, vencimiento, nivel, `campania_nombre` congelado y responsable. Sin `commit`; SQL sin f-strings.
+  - Pruebas: integración.
+
+- [x] **T3** · `application` · CU-09: consultas de alertas y lista por grupo
+  - Archivos: `Backend/app/application/gestiones/consultar_alertas.py` (principal, nuevo: `ConsultarAlertas`, `ListarGestionesPorAlerta`), `Backend/app/application/gestiones/dtos.py` (`GestionResumenDTO.prediccion_id`), `Backend/tests/unit/application/gestiones/test_consultar_alertas.py`.
+  - Docs: `.claude/rules/backend.md` §Application; `docs/API_CONTRACT.md` tabla de operaciones; decisión (a).
+  - Aceptación (dobles, reloj 2026-09-30 15:00Z y 2026-10-01 03:00Z = aún 30-09 en Ecuador): "hoy" se calcula con `hoy_en_negocio`; `ConsultarAlertas` devuelve `AlertasDTO` con los conteos del lector; `ListarGestionesPorAlerta(HOY)` pide el rango `(09-30, 09-30)` y mapea a `GestionResumenDTO` con `estado: PENDIENTE`.
+  - Pruebas: unitarias.
+
+- [x] **T4** · `api` · `GET /alertas` y `GET /gestiones?filtro=` reales — **BD de pruebas**
+  - Archivos: `Backend/app/api/routers/gestiones.py` (principal: quita `raise_not_implemented` de ambas; `501` fuera de `responses`; ejemplos con `prediccion_id`), `Backend/app/api/dependencies.py` (`get_consultar_alertas`, `get_listar_gestiones_por_alerta`), `Backend/tests/integration/api/test_alertas_api.py` (nuevo), `Backend/tests/integration/api/test_contract_gestiones.py`.
+  - Docs: `docs/API_CONTRACT.md`; `.claude/rules/backend.md` §API; decisión (a).
+  - Aceptación (reloj fijo 2026-09-30): con los datos de T2 → `GET /alertas` `200 {"vencidas":2,"hoy":1,"proximos_7_dias":2}`; `GET /gestiones?filtro=hoy` → `200` con 1 fila y su `prediccion_id`; `filtro=otro` o sin filtro → `400 validation_error`. Registrar `Renovó = SI` a la de hoy → `hoy: 0` y ya no aparece en la lista. Reloj movido a 2026-10-01 → la de hoy pasa a vencidas (cada gestión en un solo contador). `/openapi.json`: ambas sin `501`, con ejemplos de `200` y `400`.
+  - Pruebas: integración (API) + contrato.
+
+- [x] **T5** · `domain` · **TDD** · CU-02: ciclos del modelo etiquetados, ciclos nuevos, criterios y decisión programada
+  - Archivos: `Backend/app/domain/modelo/reentrenamiento.py` (principal, nuevo: `etiquetar_ciclos(ciclos: Sequence[CicloModelo], corte) -> list[CicloModelo]` con la misma regla de `historico.ciclos.etiquetar`; `es_ciclo_nuevo(ciclo, corte_vigente)`; `CriteriosReentrenamiento` (frozen, defaults 150 / `Decimal("0.60")` / 20 / 3); `evaluar_criterios(...) -> list[str]` motivos; `AccionProgramada` EJECUTAR/OMITIR/ESPERAR + `accion_programada(hoy, programada)`; `proxima_tras_omitido(programada, hoy)`), `Backend/tests/unit/domain/modelo/test_reentrenamiento.py`.
+  - Docs: `03-casos-de-uso.md` §5; `docs/backend/12-modelo-y-listas.md`; decisiones (d), (e).
+  - Aceptación: un ciclo con renovación (otra membresía no `DIARIO` del mismo socio con actividad en `[T, T+30]`) → `no_renovo=False`; sin ella → `True`; ventana incompleta → `no_renovo=None`, no excluido; `DIARIO` → excluido. Mismo resultado que `etiquetar` para un conjunto equivalente. `es_ciclo_nuevo`: vencimiento 2026-08-01 con corte vigente 2026-08-31 → `True`; 2026-07-01 → `False`. Criterios: 149 nuevos → motivo de ciclos; 19 de una clase → motivo de clase; cobertura 59 % → motivo de cobertura; 0 membresías nuevas → motivo de cobertura; todo cumplido → `[]`. `accion_programada`: igual → EJECUTAR; ayer → OMITIR; mañana o `None` → ESPERAR. `proxima_tras_omitido(2026-09-27, 2026-09-30)` → 2027-03-27; con programada 2025-01-10 y hoy 2026-09-30 → 2027-01-10. Solo librería estándar.
+  - Pruebas: unitarias (TDD: prueba roja primero).
+
+- [x] **T6** · `domain` · **TDD** · PR-AUC (average precision) exacta
+  - Archivos: `Backend/app/domain/modelo/metricas.py` (principal, nuevo: `pr_auc(scores: Sequence[Decimal], etiquetas: Sequence[int]) -> Decimal`), `Backend/tests/unit/domain/modelo/test_metricas.py`.
+  - Docs: `docs/backend/12-modelo-y-listas.md`; decisión (d).
+  - Aceptación: scores `[0.1, 0.4, 0.35, 0.8]` con etiquetas `[0,0,1,1]` → `0.83333333` (redondeo a 8 decimales, igual que `average_precision_score`); ranking perfecto → `1`; empates tratados como sklearn (umbral por valor distinto); sin positivos o listas de distinta longitud → `ValueError`. Sin `float` en el cálculo.
+  - Pruebas: unitarias (TDD).
+
+- [x] **T7** · `application` · Puertos del reentrenamiento y entrenamiento sobre `CicloModelo`
+  - Archivos: `Backend/app/application/modelo/ports.py` (principal: `MembresiaParaEntrenamiento` = datos de `MembresiaParaPrediccion` + `registrada_en`; `UnidadDeTrabajoReentrenamiento` con `membresias`, `modelos`, `intentos`, `estado`, `commit`; `BloqueoReentrenamiento`), `Backend/app/application/modelo/entrenar_modelo.py` (`ejecutar_ciclos(ciclos: Sequence[CicloModelo], fecha_corte)`; `ejecutar` delega en él sin cambiar resultados), `Backend/app/application/modelo/mapeo.py` (recibe `medianas_de`; excepción: import en `generar_lista.py`), `Backend/tests/unit/application/modelo/test_entrenar_modelo.py`.
+  - Docs: `.claude/rules/backend.md` §Application; `docs/backend/12-modelo-y-listas.md`.
+  - Aceptación: `ejecutar` produce exactamente el mismo `ModeloEntrenado` (ciclos, periodo, prevalencia, umbrales, metadata) que antes para los mismos ciclos; las pruebas de la lista y `verificar_lista.py` siguen en verde; `metadata_tecnica["fecha_corte"]` presente en ambos caminos. `lint-imports` en verde (listas no importa de modelo por dentro salvo `mapeo`, ya permitido).
+  - Pruebas: unitarias (+ suite de listas sin cambios).
+
+- [x] **T8** · `application` · **TDD** · CU-02: servicio `ReentrenarModelo` (D6-BE-03)
+  - Archivos: `Backend/app/application/modelo/reentrenar_modelo.py` (principal, nuevo: `ReentrenarModelo.revisar_programado()` y `.ejecutar_manual()` → `ResultadoReentrenamientoDTO(resultado, motivo, version|None)`), `Backend/tests/unit/application/modelo/test_reentrenar_modelo.py` (dobles en memoria de la unidad de trabajo, el bloqueo y el predictor).
+  - Docs: `03-casos-de-uso.md` §5 (flujo principal y alternativos); [ADR-003](adr/ADR-003-reentrenamiento-y-versionado.md); decisiones (d)–(g).
+  - Aceptación (reloj simulado): (1) programada = hoy y criterios cumplidos, candidato ≥ vigente → modelo v2 vigente, intento `PROGRAMADO/ENTRENADO` con ambas PR-AUC y `modelo_id`, próxima = hoy+6 meses, **un** `commit`. (2) Programada = hoy−3 días → sin entrenar, intento `OMITIDO` con `fecha_programada`, próxima = programada+6 meses. (3) 149 ciclos nuevos o 19 de una clase → `CRITERIOS_NO_CUMPLIDOS` con motivo, sin modelo nuevo. (4) Candidato con PR-AUC menor → `NO_SUPERA_VIGENTE` con ambas cifras; el vigente sigue. (5) El predictor lanza → `FALLIDO`, el vigente sigue, ningún modelo guardado (intento en transacción aparte). (6) Manual con criterios no cumplidos → intento `MANUAL`, próxima **sin cambios**; manual `ENTRENADO` → próxima = hoy+6 meses. (7) Bloqueo ocupado → no toca nada y devuelve "Ya hay un reentrenamiento en curso.". (8) Migración no `COMPLETADA` o sin vigente → no hace nada (programado) / error "El sistema aun no esta listo." (manual). (9) Una carga de datos no llama a este servicio (sin cambios en `procesar_carga.py`).
+  - Pruebas: unitarias (TDD, todos los flujos alternativos de CU-02).
+
+- [x] **T9** · `infra` · Persistencia del reentrenamiento (D6-BD-02) — **BD de pruebas**
+  - Archivos: `Backend/app/infrastructure/persistence/unit_of_work_reentrenamiento.py` (principal, nuevo), `Backend/app/infrastructure/persistence/repositories/historial.py` (`listar_para_entrenamiento()` con `created_at`, sin borradas), `Backend/app/infrastructure/persistence/repositories/modelo.py` (`PgBloqueoReentrenamiento`, clave distinta de la migración), `Backend/tests/integration/persistence/test_reentrenamiento_persistencia.py`.
+  - Docs: `.claude/rules/database.md`; `docs/backend/09-esquema-base-de-datos.md` §Modelo; decisión (f).
+  - Aceptación (`app_db_test`): intentos `OMITIDO` (con `fecha_programada`), `CRITERIOS_NO_CUMPLIDOS` (motivo), `NO_SUPERA_VIGENTE` (dos PR-AUC) y `ENTRENADO` (`modelo_id`) se guardan y cumplen los `CHECK`; guardar v2 desmarca v1 (índice único de vigente) y v1 se conserva; sin `commit` → nada persiste. Dos sesiones: el segundo `intentar_adquirir` del bloqueo de reentrenamiento → `False`; el de migración sigue libre. `listar_para_entrenamiento` excluye membresías con `deleted_at`.
+  - Pruebas: integración.
+
+- [x] **T10** · `infra` · Planificador dentro del backend (D6-BE-04, parte 1) — **BD de pruebas**
+  - Archivos: `Backend/app/infrastructure/planificador/reentrenamiento.py` (principal, nuevo: hilo daemon con `threading.Event`, revisa al arrancar y cada hora si cambió el día de negocio; captura y registra solo el tipo de excepción), `Backend/app/main.py` (arranca y detiene el hilo en el `lifespan` si `REENTRENAMIENTO_AUTOMATICO`), `Backend/app/api/dependencies.py` (`crear_reentrenamiento(engine, settings, predictor)`), `Backend/tests/integration/test_planificador_reentrenamiento.py`.
+  - Docs: [ADR-003](adr/ADR-003-reentrenamiento-y-versionado.md); `docs/backend/01-arquitectura.md`; decisión (f).
+  - Aceptación: arranque con reloj simulado 3 días después de la fecha programada → un intento `OMITIDO`, próxima = perdida + 6 meses, sin modelo nuevo; un segundo arranque no añade otro `OMITIDO`. Con la fecha programada = hoy y datos suficientes → `ENTRENADO` sin intervención. `REENTRENAMIENTO_AUTOMATICO=false` → no hay hilo. Al apagar la app el hilo termina. Ningún `ALTER`/`create_all` al arrancar.
+  - Pruebas: integración.
+
+- [x] **T11** · `infra` · Comando `python -m app.cli reentrenar` (D6-BE-04, parte 2) — **BD de pruebas**
+  - Archivos: `Backend/app/cli.py` (principal, nuevo; `argparse`, subcomando `reentrenar`, composition root propio: engine, reloj, predictor, `ReentrenarModelo.ejecutar_manual`), `Backend/tests/integration/test_cli_reentrenar.py`, `Backend/tests/integration/reentrenamiento_datos.py` (nuevo: datos sintéticos ficticios con ≥ 150 ciclos nuevos y ≥ 20 por clase).
+  - Docs: `03-casos-de-uso.md` §5 "Comando manual"; decisión (g).
+  - Aceptación (`app_db_test`): con datos sintéticos suficientes → salida contiene "ENTRENADO" y "v2", código 0, v2 vigente, v1 conservada; sin datos nuevos → "CRITERIOS_NO_CUMPLIDOS" + motivo, código 0, sin versión nueva; bloqueo tomado por otra sesión → código 2; sin `DATABASE_URL` → código 1 sin mostrar el valor. La salida no incluye nombres ni cédulas. `python -m app.cli` sin subcomando → ayuda y código 2.
+  - Pruebas: integración.
+
+- [x] **T12** · `infra` · Configuración del día 6
+  - Archivos: `Backend/app/core/config.py` (principal: `IPS_PERMITIDAS` validada con `ipaddress` —IP o CIDR— por defecto `127.0.0.1,::1`; `REENTRENAMIENTO_AUTOMATICO: bool = True`; `REENTRENAR_MIN_CICLOS_NUEVOS=150`, `REENTRENAR_MIN_COBERTURA_VENCIMIENTO=Decimal("0.60")`, `REENTRENAR_MIN_CASOS_POR_CLASE=20`, `REENTRENAR_MESES_COMPARACION=3`), `Backend/tests/unit/core/test_config.py`.
+  - Docs: `.claude/rules/deploy.md` §Configuración; decisiones (d), (h).
+  - Aceptación: `IPS_PERMITIDAS="127.0.0.1, 172.30.0.0/24"` → dos redes; `"999.1.1.1"` o `"*"` → `ValidationError` cuyo texto no contiene el valor; vacío → error (nunca "abrir a todos"); cobertura fuera de 0..1 → error; valores por defecto como arriba.
+  - Pruebas: unitarias.
+
+- [x] **T13** · `api` · CU-00: filtro de IP (D6-BE-05) — **BD de pruebas**
+  - Archivos: `Backend/app/api/acceso_ip.py` (principal, nuevo: middleware ASGI puro), `Backend/app/main.py` (lo registra con `settings.IPS_PERMITIDAS`), `Backend/tests/integration/api/test_acceso_ip.py` (nuevo), `Backend/tests/integration/api/conftest.py` (cliente `("127.0.0.1", 50000)`; excepción mecánica en otros `TestClient`).
+  - Docs: `03-casos-de-uso.md` §3; `docs/API_CONTRACT.md` §Formato único de error; decisión (h).
+  - Aceptación: cliente `127.0.0.1` → `GET /api/v1/sistema/estado` `200`; cliente `10.0.0.5` → `403` con `{"error":{"code":"forbidden","message":"El acceso no esta permitido desde este equipo."}}` y sin cabeceras ni cuerpo que revelen el sistema; cliente `10.0.0.5` con `X-Forwarded-For: 127.0.0.1` → `403`; `GET /api/v1/health` desde `10.0.0.5` → `200`/`503` normal; `/api/v1/health/x` o `/docs` desde IP no autorizada → `403`; rango `172.30.0.0/24` autoriza `172.30.0.9`; cambiar `IPS_PERMITIDAS` y crear otra app → cambia el resultado (solo configuración + reinicio). El `403` también cubre `OPTIONS`. Suite completa del backend en verde.
+  - Pruebas: integración.
+
+- [x] **T14** · `infra-deploy` · Red interna fija e IPs permitidas en compose
+  - Archivos: `compose.yaml` (principal: red `interna` con subred `${RED_INTERNA_SUBNET:-172.30.0.0/24}`, `frontend` con `ipv4_address: ${FRONTEND_IP:-172.30.0.10}`, `backend` recibe `IPS_PERMITIDAS: ${IPS_PERMITIDAS:?…}`), `.env.example`, `.env.e2e.example` (subred `172.31.0.0/24`, frontend `172.31.0.10`).
+  - Docs: `Documentation/docs/backend/10-docker.md`; decisión (h).
+  - Aceptación: `docker compose config` válido para el principal y con `-p mtabolic-e2e --env-file .env.e2e`; los dos stacks pueden estar arriba a la vez (subredes distintas); sin `IPS_PERMITIDAS` compose falla con mensaje claro; ningún secreto en `compose.yaml`. El orquestador añade `IPS_PERMITIDAS`, `RED_INTERNA_SUBNET` y `FRONTEND_IP` a los `.env` locales (no versionados).
+  - Pruebas: verificación de configuración (en T31).
+
+- [x] **T15** · `infra` · Consultas del dashboard (D6-BD-01, parte 2) — **BD de pruebas**
+  - Archivos: `Backend/app/infrastructure/persistence/repositories/dashboard.py` (principal, nuevo; Core con parámetros: `embudo(desde, hasta)`, `por_campania(desde, hasta)`), `Backend/app/application/dashboard/ports.py` (nuevo: `LectorDashboard`, `FilaEmbudo`, `FilaCampania`), `Backend/tests/integration/persistence/test_dashboard_repository.py`.
+  - Docs: `.claude/rules/database.md`; `docs/backend/09-esquema-base-de-datos.md` §Retención; decisión (c).
+  - Aceptación (`app_db_test`, septiembre 2026): campaña A con 12 gestiones (10 cerradas con resultado: 4 `SI`, 6 `NO`; 2 pendientes), campaña B con 9 cerradas con resultado, 3 gestiones sin campaña (cerradas, resultado nulo), 1 gestión de A de octubre y 1 borrada → embudo: asignadas 21, contactadas/ofrecidas/aceptadas/renovaron según los datos, sin contar nulos; por campaña: A `gestiones 12, gestiones_cerradas 10`, B `gestiones_cerradas 9`, "Sin campaña" `gestiones 3, contactados 0, renovaciones 0, gestiones_cerradas 0`, en el orden de (c). Una gestión creada el 2026-10-01 03:00Z cuenta en septiembre (fecha de negocio).
+  - Pruebas: integración.
+
+- [x] **T16** · `application` · CU-11: `ConsultarDashboard`
+  - Archivos: `Backend/app/application/dashboard/consultar_dashboard.py` (principal, nuevo), `Backend/app/application/dashboard/dtos.py` (docstrings: `gestiones_cerradas` = cerradas con resultado; `asignadas` = con campaña), `Backend/tests/unit/application/dashboard/test_consultar_dashboard.py`.
+  - Docs: `03-casos-de-uso.md` §14; decisión (c), (d).
+  - Aceptación (dobles, reloj 2026-09-30): `mes=None` → `"2026-09"` y rango `[2026-09-01T05:00Z, 2026-10-01T05:00Z)`; campaña con 10 cerradas y 4 `SI` → `tasa_renovacion "0.40000000"`, `casos_insuficientes false`; con 9 → `null` y `true`; "Sin campaña" → `casos_insuficientes true`. Estado del modelo: `version "v1"`, `proxima_fecha_reentrenamiento` del estado, `ciclos_nuevos_evaluables` = conteo con `es_ciclo_nuevo` (T5); sin vigente → `estado_modelo null`. Tasa en `Decimal`, nunca `float`.
+  - Pruebas: unitarias.
+
+- [x] **T17** · `api` · `GET /dashboard` real — **BD de pruebas**
+  - Archivos: `Backend/app/api/routers/dashboard.py` (principal: sin `501`; ejemplo con "Sin campaña" `casos_insuficientes: true` y `tasa_renovacion: null`), `Backend/app/api/dependencies.py` (`get_consultar_dashboard`), `Backend/tests/integration/api/test_dashboard_api.py` (nuevo).
+  - Docs: `docs/API_CONTRACT.md`; decisión (c).
+  - Aceptación: con los datos de T15 → `GET /dashboard?mes=2026-09` `200` con los conteos esperados y `estado_modelo.version "v1"`; `?mes=2026-13` o `?mes=sep` → `400 validation_error`; sin `mes` con reloj 2026-09-30 → `"mes":"2026-09"`; mes sin gestiones → embudo en ceros y `por_campania: []`. `/openapi.json` sin `501`.
+  - Pruebas: integración (API) + contrato.
+
+- [x] **T18** · `application` · Datos del mes en el estado del sistema (D6-BE-06)
+  - Archivos: `Backend/app/application/sistema/consultar_estado.py` (principal: recibe `Clock`), `Backend/app/application/sistema/dtos.py` (`datos_mes_cargados: bool | None`), `Backend/app/application/sistema/ports.py` (`LectorEstadoSistema.hay_carga_plantilla_entre(desde, hasta)`), `Backend/tests/unit/application/sistema/test_consultar_estado.py`.
+  - Docs: `03-casos-de-uso.md` §4; decisión (i).
+  - Aceptación (reloj 2026-09-30 15:00Z): `LISTO` y el lector dice que hay carga de plantilla en `[2026-09-01T05:00Z, 2026-10-01T05:00Z)` → `true`; no hay → `false`; `INICIALIZANDO`/`FALTAN_DATOS_HISTORICOS` → `null` sin consultar. Reloj 2026-10-01 03:00Z sigue siendo septiembre.
+  - Pruebas: unitarias.
+
+- [x] **T19** · `infra` + `api` · Datos del mes: lector y endpoint — **BD de pruebas**
+  - Archivos: `Backend/app/infrastructure/persistence/repositories/sistema.py` (principal: `hay_carga_plantilla_entre`, solo `tipo='PLANTILLA'` y `deleted_at IS NULL`), `Backend/app/api/dependencies.py` (reloj a `ConsultarEstadoSistema`), `Backend/app/api/routers/sistema.py` (ejemplos con `datos_mes_cargados`), `Backend/tests/integration/api/test_sistema_api.py`.
+  - Docs: `docs/API_CONTRACT.md`; decisión (i).
+  - Aceptación (reloj fijo): solo la carga de migración → `datos_mes_cargados: false`; con una carga `PLANTILLA` del 2026-09-15 → `true`; con una de agosto → `false`; borrada lógicamente → `false`.
+  - Pruebas: integración (API).
+
+- [x] **T20** · `frontend` · Cliente HTTP: aviso de acceso denegado
+  - Archivos: `Frontend/src/core/http/acceso-denegado.ts` (principal, nuevo: estado mínimo `marcarAccesoDenegado`/`suscribir`/`estaDenegado`), `Frontend/src/core/http/http-client.ts` (en `403` con `code: forbidden` marca antes de lanzar `ApiError`), `Frontend/src/core/http/http-client.test.ts`.
+  - Docs: `Documentation/docs/frontend/01-arquitectura.md` §core; decisión (j).
+  - Aceptación: respuesta `403 forbidden` → `ApiError` con status 403 y los suscriptores notificados una vez; `404`/`409` no marcan; `core/http` no importa ningún feature.
+  - Pruebas: frontend (Vitest + MSW).
+
+- [x] **T21** · `frontend` · Página de acceso denegado (D6-FE-03)
+  - Archivos: `Frontend/src/core/layout/AccesoDenegadoPage.tsx` (principal, nuevo), `Frontend/src/core/layout/AppLayout.tsx` (si está denegado, muestra la página en lugar del contenido y el menú), `Frontend/src/core/layout/AppLayout.test.tsx`.
+  - Docs: `docs/frontend/01-arquitectura.md`; decisión (j).
+  - Aceptación: con MSW respondiendo `403` en `/sistema/estado` → se ve el título "Acceso no permitido" y el texto "Este equipo no está autorizado para usar la aplicación. Pida al responsable técnico que lo añada a la lista de equipos permitidos."; no aparecen enlaces de navegación ni códigos (`403`, `forbidden`). Sin `403` → layout normal.
+  - Pruebas: frontend.
+
+- [x] **T22** · `frontend` · Servicio de Inicio: alertas y datos del mes
+  - Archivos: `Frontend/src/features/inicio/api/inicio-api.ts` (principal: `obtenerAlertas(signal)`; `datosMesCargados` en el estado), `Frontend/src/features/inicio/types.ts`, `Frontend/src/features/inicio/api/inicio-api.handlers.ts`, `Frontend/src/features/inicio/api/inicio-api.test.ts`.
+  - Docs: `docs/frontend/01-arquitectura.md` §Capas; `docs/API_CONTRACT.md`; decisiones (a), (i).
+  - Aceptación: `GET /alertas` `{vencidas:2,hoy:1,proximos_7_dias:3}` → `{vencidas:2, hoy:1, proximos7Dias:3}`; `datos_mes_cargados` `false`/`true`/`null` → `datosMesCargados` igual; error → `ApiError`; señal propagada.
+  - Pruebas: frontend.
+
+- [x] **T23** · `frontend` · Inicio: contadores de alertas y aviso de datos del mes (D6-FE-01, D6-FE-04)
+  - Archivos: `Frontend/src/features/inicio/components/AlertasSeguimiento.tsx` (principal, nuevo: tres enlaces "Vencidos N", "Para hoy N", "Próximos 7 días N" a `/seguimiento?filtro=vencidas|hoy|proximas`), `Frontend/src/features/inicio/hooks/useAlertas.ts` (nuevo), `Frontend/src/features/inicio/pages/InicioPage.tsx`, `Frontend/src/features/inicio/pages/InicioPage.test.tsx`.
+  - Docs: `docs/frontend/01-arquitectura.md`; decisiones (a), (b), (i).
+  - Aceptación: con la respuesta simulada se leen los tres contadores con sus números; pulsar "Para hoy" navega a `/seguimiento?filtro=hoy`; con `datosMesCargados: false` se ve "Aún no se han cargado los datos de este mes" con enlace a Carga; con `true` o `null` no aparece; error de alertas → mensaje sin romper el resto de Inicio.
+  - Pruebas: frontend.
+
+- [x] **T24** · `frontend` · Servicio de gestiones por alerta
+  - Archivos: `Frontend/src/features/lista/api/lista-api.ts` (principal: `listarGestionesPorAlerta(filtro, signal)`), `Frontend/src/features/lista/types.ts` (`GestionResumen`, `FiltroAlerta`), `Frontend/src/features/lista/api/lista-api.handlers.ts`, `Frontend/src/features/lista/api/lista-api.test.ts`.
+  - Docs: `docs/API_CONTRACT.md`; decisión (a).
+  - Aceptación: `listarGestionesPorAlerta('hoy')` → `GET /gestiones?filtro=hoy` y mapea `prediccion_id`, `fecha_seguimiento`, `campania_nombre`… a camelCase; `400` → `ApiError`. El mock devuelve solo gestiones pendientes del grupo.
+  - Pruebas: frontend.
+
+- [x] **T25** · `frontend` · Página Seguimiento (D6-FE-01, parte 2)
+  - Archivos: `Frontend/src/features/lista/pages/SeguimientoPage.tsx` (principal, nuevo: título según el grupo, tabla con socio, plan, vencimiento, fecha de seguimiento, campaña, responsable y botón "Abrir gestión <socio>"; abre `FormularioGestion`), `Frontend/src/features/lista/hooks/useSeguimiento.ts` (nuevo), `Frontend/src/features/lista/routes.tsx` (ruta `/seguimiento`, lazy), `Frontend/src/features/lista/pages/SeguimientoPage.test.tsx`.
+  - Docs: `docs/frontend/01-arquitectura.md`; decisión (b).
+  - Aceptación: `/seguimiento?filtro=vencidas` → título "Seguimientos vencidos" y las filas del mock; filtro ausente o inválido → no llama a la API y muestra "Grupo de seguimiento no válido" y enlace a Inicio; "Abrir gestión" abre la ventana en "Registrar resultado"; al guardar "¿Renovó? Sí" la ventana se cierra, la lista se recarga y la fila desaparece; lista vacía → "No hay gestiones en este grupo".
+  - Pruebas: frontend.
+
+- [x] **T26** · `frontend` · Servicio del dashboard
+  - Archivos: `Frontend/src/features/dashboard/api/dashboard-api.ts` (principal), `Frontend/src/features/dashboard/types.ts`, `Frontend/src/features/dashboard/api/dashboard-api.handlers.ts`, `Frontend/src/features/dashboard/api/dashboard-api.test.ts`.
+  - Docs: `docs/API_CONTRACT.md`; decisión (c).
+  - Aceptación: `obtenerDashboard('2026-09')` → `GET /dashboard?mes=2026-09`; sin mes → sin query; `tasa_renovacion` sigue como string (no se convierte a número); `estado_modelo: null` → `estadoModelo: null`; `400` → `ApiError`.
+  - Pruebas: frontend.
+
+- [x] **T27** · `frontend` · Componentes del dashboard
+  - Archivos: `Frontend/src/features/dashboard/components/EmbudoGestion.tsx` (principal, nuevo: barras horizontales con CSS y tokens de `shared/ui`, sin librería de gráficos, cada barra con su número), `Frontend/src/features/dashboard/components/TablaResultadosCampania.tsx` (nuevo; `DataTable` de `shared/ui`), `Frontend/src/features/dashboard/components/EstadoModeloCard.tsx` (nuevo), `Frontend/src/features/dashboard/components/componentes.test.tsx`.
+  - Docs: `docs/frontend/01-arquitectura.md`; decisión (c).
+  - Aceptación: embudo muestra las 5 etapas en orden con sus conteos y un texto accesible por barra; tabla: tasa "40,0 %" junto a "(10 casos)" (RN-11.1) y "Casos insuficientes" cuando corresponde; tarjeta: "Versión v1", fecha de entrenamiento, ciclos, "Próxima revisión" y "Ciclos nuevos evaluables"; `estadoModelo null` → "Aún no hay un modelo vigente". Aviso fijo: "Las cifras son resultados observados; no demuestran que la campaña causó la renovación."
+  - Pruebas: frontend.
+
+- [x] **T28** · `frontend` · Página Dashboard (D6-FE-02)
+  - Archivos: `Frontend/src/features/dashboard/pages/DashboardPage.tsx` (principal), `Frontend/src/features/dashboard/hooks/useDashboard.ts` (nuevo), `Frontend/src/features/dashboard/pages/DashboardPage.test.tsx` (nuevo).
+  - Docs: `docs/frontend/01-arquitectura.md`; decisión (c).
+  - Aceptación: al abrir, filtro "Mes" (`input type="month"`) con el mes actual local y datos de ese mes; cambiar a 2026-08 → nueva petición con `mes=2026-08` y cancelación de la anterior; cargando → indicador; error → `ErrorAlert`; mes sin gestiones → "No hay gestiones asignadas en este mes" y la tarjeta del modelo igual visible.
+  - Pruebas: frontend.
+
+- [x] **T29** · `frontend` · E2E en el stack aislado: alertas y dashboard
+  - Archivos: `Frontend/e2e/alertas-dashboard.spec.ts` (principal, nuevo; `test.skip` fuera de `E2E_BASE_URL=http://localhost:8081`).
+  - Docs: `Documentation/docs/backend/10-docker.md` §Stack E2E aislado.
+  - Aceptación (solo 8081, datos sintéticos): generar lista → gestionar un socio con campaña y seguimiento hoy → Inicio "Para hoy" aumenta en 1 → pulsarlo → la fila está en Seguimiento → "Abrir gestión" → registrar Renovó Sí → la fila desaparece y el contador vuelve; Dashboard del mes muestra la campaña con 1 gestión y "Casos insuficientes", y la tarjeta "Versión v1". Los 3 E2E existentes siguen en verde. Contra 8080 se salta.
+  - Pruebas: e2e.
+
+- [x] **T30** · `infra-deploy` · `Backend/README.md` de operación (D6-OP-01)
+  - Archivos: `Backend/README.md` (principal).
+  - Docs: `docs/backend/10-docker.md`; `03-casos-de-uso.md` §5; decisiones (g), (h).
+  - Aceptación: secciones en lenguaje de operador: instalación en el PC (Docker Desktop, `.env` desde `.env.example`, `docker compose up -d --build`), dónde poner los libros (`HISTORICO_DIR`, solo `*Control*Gym*.xlsx`), `IPS_PERMITIDAS` y por qué el navegador llega por nginx, comando manual `docker compose exec backend python -m app.cli reentrenar` con sus resultados y códigos de salida, y respaldo/restauración con `docker compose exec db pg_dump -Fc` y `pg_restore` a una base nueva, con verificación de conteos (sin secretos; el script de respaldo es D7-BD-01). Ningún comando borra datos sin avisarlo.
+  - Pruebas: revisión (T31 ejecuta los comandos de reentrenamiento en e2e).
+
+- [x] **T31** · `infra-deploy` · Verificación en los stacks
+  - Archivos: ninguno de código (`.harness/tests.md` para el registro).
+  - Docs: `Documentation/docs/backend/10-docker.md`.
+  - Aceptación: suites completas en verde (Backend: `pytest`, `ruff check`, `ruff format --check`, `mypy app`, `lint-imports`; Frontend: `npm test`, `npm run build`, `npm run lint`; E2E 4/4 en 8081). **Stack e2e:** `docker run --rm --network mtabolic-e2e_interna curlimages/curl` (IP no autorizada) → `/api/v1/sistema/estado` `403` y `/api/v1/health` `200`; en 8081 la app responde normal; `UPDATE estado_sistema SET proxima_fecha_reentrenamiento = hoy − 3` en la base e2e + reinicio del backend → un intento `OMITIDO` y próxima = perdida + 6 meses; `docker compose -p mtabolic-e2e … exec backend python -m app.cli reentrenar` → resultado impreso y registrado. **Stack principal (8080):** reconstruido, `alembic current` = `0008 (head)`, `LISTO`, conteos iguales al cierre de R-010, 0 intentos nuevos, Inicio con contadores en 0 y el aviso de datos del mes, Dashboard con embudo en 0 y "Versión v1"; **sin** ejecutar `reentrenar` ni crear nada.
+  - Pruebas: verificación manual + suites.
+
+- [x] **DOC-1** · `docs` (doc-agent) · Documentación de R-011 y resumen del Día 6
+  - Archivos: `Documentation/docs/API_CONTRACT.md` (alertas, `GET /gestiones?filtro=`, `prediccion_id`, dashboard real, `datos_mes_cargados`, `403` activo), `Documentation/05-cronograma-semana.md` (estado de las tareas D6-* y "Avance y resumen del Día 6"), `Documentation/docs/backend/12-modelo-y-listas.md` (reentrenamiento), ADR nuevo (reentrenamiento: ciclos nuevos, PR-AUC, próxima fecha y bloqueo; IP detrás de nginx).
+  - También: `docs/backend/10-docker.md` (red interna, `IPS_PERMITIDAS`, verificación de `403`), `docs/backend/01-arquitectura.md` (planificador y `app/cli.py`), `docs/frontend/01-arquitectura.md` (Seguimiento, Dashboard, acceso denegado), `03-casos-de-uso.md` (precisiones de (c), (d), (i) si hace falta), `ACTION_PLAN.md` (cierre, DECISIONES IMPORTANTES, PRÓXIMO: día 7).
+  - Aceptación: cada decisión (a)–(j) enlazada desde DECISIONES IMPORTANTES; ningún documento dice que `GET /alertas`, `GET /gestiones?filtro=` o `GET /dashboard` responden `501`.
+
+**Lotes de desarrollo** (archivos disjuntos dentro de cada lote; backend y frontend en paralelo; las tareas marcadas **BD de pruebas** usan `app_db_test` y **no** deben ejecutar `pytest` de integración a la vez que otra tarea que también la use: se serializan sus corridas).
+
+| Lote | Backend | Frontend |
+|---|---|---|
+| 1 | T1, T5, T6, T12 (solo unitarias) | T20, T22, T24, T26 |
+| 2 | T2 (BD), T7, T15 (BD), T18 | T21, T23, T27 |
+| 3 | T3, T8, T9 (BD), T16 | T25, T28 |
+| 4 | **en serie** (comparten `dependencies.py`/`main.py`): T19 → T4 → T17 → T10 → T11 → T13 (todas BD); en paralelo T14 | — |
+| 5 | T30 | T29 (stack e2e) |
+| 6 | T31 (orquestador, stacks) → DOC-1 (doc-agent) | |
+
+**Dependencias:** T1 → T3; T2 → T3 → T4. T5, T6, T7, T12 → T8; T7 → T9; T8 + T9 → T10 → T11. T12 → T13 → T14 (valor de `IPS_PERMITIDAS`). T15 + T5 → T16 → T17. T18 → T19. Frontend: T20 → T21; T22 → T23; T24 → T25; T26 → T27 → T28. T29 necesita T4, T17, T23, T25, T28 y T14 desplegados en `mtabolic-e2e`. T30 después de T11 y T14. T31 al final; DOC-1 después de T31. Externas: ninguna librería nueva (PR-AUC en el dominio, barras con CSS); sin migración.
+
+**Riesgos:**
+1. **Filtro de IP detrás de nginx:** el backend ve la IP del contenedor frontend, no la del navegador; si la subred o la IP fija del frontend no coinciden con `IPS_PERMITIDAS`, **toda** la app (8080 y 8081) responde `403`, y las ~1.700 pruebas de API con `TestClient` (cliente `"testclient"`) también fallarán hasta ajustar su IP de cliente.
+2. **Reentrenamiento concurrente o a medias:** planificador y comando a la vez, o un fallo entre guardar el modelo y el intento, podría dejar dos vigentes o un modelo sin intento; se evita con el bloqueo consultivo propio y una sola transacción (el índice único de vigente es la última barrera). En el stack principal un `reentrenar` accidental cambiaría el modelo de las listas reales: no se ejecuta allí.
+3. **Cifras infladas o fechas corridas:** contar gestiones sin campaña (resultado nulo) como no renovación, o agrupar por mes/día en UTC en lugar de la fecha de negocio de Ecuador, daría conteos erróneos en alertas y dashboard; las pruebas de T2, T15 y T16 fijan esos bordes.
 
 ### R-010 — Arreglos tras el Día 5: reactivar campañas, gestión sin campaña cerrada desde su creación y ayuda ampliada (campañas y gestión) · **DONE** 2026-09-30
 
@@ -2176,12 +2544,25 @@ _Ninguno._
 - 2026-09-30 · R-010 · (i) La ayuda de la lista añade "Campañas" y "Gestionar a un socio"; la regla de la fecha de contacto no cambia, solo se explica → [06 §7–§8](06-como-funciona-la-lista.md).
 - 2026-09-30 · R-010 · La revisión de seguridad de R-010 se difiere a la revisión única del día 7 ([05 §1](05-cronograma-semana.md)).
 
+- 2026-09-30 · R-011 · (a) Alertas: solo `PENDIENTE` no borradas; vencidas `< hoy`, hoy, próximas hoy+1..hoy+7; `GET /gestiones?filtro=` con `400` si falta o es inválido; `GestionResumenDTO.prediccion_id` (aditivo) → [API_CONTRACT §Alertas y dashboard](docs/API_CONTRACT.md#alertas-y-dashboard-cu-09-cu-11-r-011), [03 §12](03-casos-de-uso.md).
+- 2026-09-30 · R-011 · (b) Contadores de Inicio → página `/seguimiento` del feature `lista`, "Abrir gestión" abre la ventana de gestión → [frontend/01](docs/frontend/01-arquitectura.md), [06 §9](06-como-funciona-la-lista.md).
+- 2026-09-30 · R-011 · (c) Dashboard: mes por `created_at` de la gestión en fecha de negocio; embudo solo con campaña; tasa con ≥ 10 cerradas con resultado; "Sin campaña" al final con casos insuficientes; nulo nunca cuenta → [API_CONTRACT](docs/API_CONTRACT.md#alertas-y-dashboard-cu-09-cu-11-r-011), [03 §14](03-casos-de-uso.md).
+- 2026-09-30 · R-011 · (d)(e) Reentrenamiento: ciclo nuevo = vencimiento + 30 > `fecha_corte` del vigente; criterios configurables; PR-AUC *average precision* en `Decimal`; un `OMITIDO` por fecha perdida; manual solo mueve la fecha si entrena; `FALLIDO` en transacción aparte → [ADR-011](adr/ADR-011-reglas-del-reentrenamiento.md), [12 §Reentrenamiento](docs/backend/12-modelo-y-listas.md#reentrenamiento-cu-02-r-011), [03 §5](03-casos-de-uso.md).
+- 2026-09-30 · R-011 · (f)(g) Planificador en hilo (al arrancar y cada hora; `REENTRENAMIENTO_AUTOMATICO`), bloqueo consultivo propio, comando `python -m app.cli reentrenar` con salidas 0/1/2 → [ADR-011](adr/ADR-011-reglas-del-reentrenamiento.md), [backend/01](docs/backend/01-arquitectura.md).
+- 2026-09-30 · R-011 · (h) Acceso por IP en el backend, IP solo de la conexión, `/health` exento; red `interna` con subred e IP del frontend fijas y autorizadas; el backend por 8000/8001 da `403`; abrir a otro PC (filtro en nginx) no implementado → [ADR-010](adr/ADR-010-acceso-por-ip-detras-de-nginx.md), [10-docker](docs/backend/10-docker.md), [03 §3](03-casos-de-uso.md).
+- 2026-09-30 · R-011 · (i) `datos_mes_cargados` en `/sistema/estado` (solo cargas por plantilla; `null` si no `LISTO`) y aviso en Inicio → [API_CONTRACT](docs/API_CONTRACT.md).
+- 2026-09-30 · R-011 · (j) Cualquier `403 forbidden` muestra la página "Acceso no permitido" → [frontend/01](docs/frontend/01-arquitectura.md).
+- 2026-09-30 · R-011 · La revisión de seguridad de R-011 se difiere a la revisión única del día 7 ([05 §1](05-cronograma-semana.md)).
+
+- 2026-09-30 · R-012 · (a)(c)(d) Gráficos del dashboard con SVG/CSS propio, sin librería; solo tokens (nuevo `--color-brand`); sin modo oscuro (la app no lo tiene); cada gráfico `role="img"` con tabla equivalente → [frontend/01 §R-012, §Estilos](docs/frontend/01-arquitectura.md).
+- 2026-09-30 · R-012 · (b)(h) Dona "Resultado de las gestiones del mes" calculada en el frontend con `porCampania` (Renovaron / No renovaron / Sin resultado = abiertas o sin campaña); "Resultados de <mes en palabras>" bajo el `h1` "Dashboard"; sin cambios de API → [03 §14](03-casos-de-uso.md), [06 §10](06-como-funciona-la-lista.md).
+- 2026-09-30 · R-012 · (e) La ventana de gestión se cierra y la lista se recarga tras crear o registrar con éxito; se elimina `cerrarAlCerrarse`; con error queda abierta. Ya no se pasa a la parte 2 al crear con campaña → [03 §11, §13](03-casos-de-uso.md), [06 §7](06-como-funciona-la-lista.md), [frontend/01](docs/frontend/01-arquitectura.md).
+- 2026-09-30 · R-012 · (f) Ayudas con `shared/ui/Ayuda.tsx` (`BotonAyuda`, `SeccionAyuda`) en Lista, Inicio y Dashboard → [06 §9–§10](06-como-funciona-la-lista.md).
+- 2026-09-30 · R-012 · (g) Botón "Imprimir / Guardar PDF" (`window.print()` + `@media print`); **RN-11.2 precisada**: sin exportación propia, impresión del navegador permitida. Aislado en T9: retirable sin tocar lo demás → [03 §14](03-casos-de-uso.md).
+- 2026-09-30 · R-012 · La revisión de seguridad de R-012 se difiere a la revisión única del día 7 ([05 §1](05-cronograma-semana.md)).
+
 ## PRÓXIMO
 
-Día 6 del [cronograma](05-cronograma-semana.md): alertas (CU-09, incluye `GET /alertas` y `GET /gestiones?filtro=`, hoy en `501`), dashboard (CU-11), reentrenamiento (CU-02) y acceso por IP (CU-00).
-
-Registrado por R-010 para el día 6: una gestión `CERRADA` puede no tener resultado (gestión sin campaña). Alertas (CU-09) y dashboard (CU-11) deben **filtrar por `estado`** y tratar `renovo_declarado` nulo como "sin resultado"; `fecha_seguimiento` de esas gestiones no significa nada → [ADR-009](adr/ADR-009-reactivar-campanias-y-gestion-sin-campania-cerrada.md).
-
-Registrado por R-005, sin implementar: **D6-BE-06 / D6-FE-04** (alerta en Inicio si no hay carga en el mes actual). D4-FE-03 quedó hecho en R-007.
+Día 7 del [cronograma](05-cronograma-semana.md): revisión de seguridad única de R-007 a R-012 y S23 (D7-OP-02), respaldo (D7-BD-01), instalación limpia (D7-OP-01), E2E del escenario principal (D7-OP-03), ensayo de la demostración con reloj simulado en el stack aislado (D7-OP-04) y documentación de cierre (D7-OP-05). Ver "Aviso para el día 7" en [05 Día 6](05-cronograma-semana.md).
 
 Registrado por R-006, sin implementar: **D7-FE-01** (mejora del diseño visual de la aplicación con los tokens de `shared/ui`, sin cambiar comportamiento; a pedido del usuario) → [05 Día 7](05-cronograma-semana.md).

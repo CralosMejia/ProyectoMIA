@@ -37,6 +37,28 @@ R-004 (día 3). CU-03 completo, CU-04, CU-05 y CU-12. Réplica del notebook `Not
 
 Con los libros reales: `LISTO` en ~5 s; 2.748 membresías, 1.410 socios, 1 modelo vigente, 1 intento `INICIAL`.
 
+## Reentrenamiento (CU-02, R-011)
+
+Decisiones y motivos: [ADR-011](../../adr/ADR-011-reglas-del-reentrenamiento.md) (detalla [ADR-003](../../adr/ADR-003-reentrenamiento-y-versionado.md)). Guía para el operador: [Backend/README §4](../../../Backend/README.md#4-reentrenamiento-automático-cu-02).
+
+| Capa | Módulo | Responsabilidad |
+|---|---|---|
+| domain | `modelo/reentrenamiento.py` | Etiquetado de ciclos al corte (misma regla que `historico.ciclos`), `es_ciclo_nuevo`, `CriteriosReentrenamiento`, `evaluar_criterios` (motivos), `accion_programada` (EJECUTAR/OMITIR/ESPERAR), `proxima_tras_omitido`. |
+| domain | `modelo/metricas.py` | `pr_auc`: *average precision* igual a `sklearn.metrics.average_precision_score`, en `Decimal`, 8 decimales. |
+| application | `modelo/reentrenar_modelo.py` | `ReentrenarModelo.revisar_programado()` / `.ejecutar_manual()` → `ResultadoReentrenamientoDTO(resultado, motivo, version)`. |
+| application | `modelo/mapeo.py` | Única conversión membresía → ciclo; la usan el modelo y las listas. `EntrenarModeloInicial.ejecutar_ciclos` entrena sobre ciclos ya etiquetados (mismos resultados que antes). |
+| infrastructure | `persistence/unit_of_work_reentrenamiento.py`, `repositories/{historial,modelo}.py` | Membresías para entrenamiento (con `created_at`, sin borradas), modelo e intento, próxima fecha; bloqueo consultivo propio (clave distinta de la migración). |
+| infrastructure | `planificador/reentrenamiento.py` | Hilo daemon: revisa al arrancar y cada hora; llama al servicio solo cuando cambia el día de negocio; si falla o el bloqueo está ocupado, reintenta en la vuelta siguiente. |
+| — | `app/cli.py` | `python -m app.cli reentrenar`: una línea con resultado y motivo; salida `0` intento registrado (`ENTRENADO`, `CRITERIOS_NO_CUMPLIDOS`, `NO_SUPERA_VIGENTE`), `1` `FALLIDO`/sistema no listo/configuración inválida, `2` reentrenamiento en curso o sin subcomando. |
+
+- **Ciclo nuevo evaluable:** evaluable al corte de hoy y con `fecha_vencimiento + 30 > fecha_corte` del vigente (`metadata_tecnica["fecha_corte"]`; `>` estricto para no contar dos veces el borde). El dashboard usa la misma función (`ciclos_nuevos_evaluables`).
+- **Criterios** (configurables, `REENTRENAR_*`): ≥ 150 ciclos nuevos; ≥ 60 % de las membresías con `created_at` posterior al entrenamiento vigente con vencimiento (ninguna → no se cumple); ≥ 20 por clase entre los nuevos; todas las variables del pipeline presentes.
+- **Comparación:** evaluables de los 3 meses de vencimiento más recientes con resultado; el candidato se entrena sin ellos; `PR-AUC candidato < vigente` → `NO_SUPERA_VIGENTE` con ambas cifras. Si no es peor, el modelo final se entrena con **todos** los evaluables, versión = vigente + 1, con `fecha_corte` en `metadata_tecnica`.
+- **Transacciones:** modelo nuevo (desmarca el anterior, que se conserva), intento y próxima fecha en **una**; si algo falla, nada de eso se guarda y el intento `FALLIDO` va en una transacción aparte.
+- **Fechas:** programado → próxima = hoy + 6 meses tras `ENTRENADO`, `CRITERIOS_NO_CUMPLIDOS`, `NO_SUPERA_VIGENTE` o `FALLIDO`. Fecha pasada → un intento `OMITIDO` **por cada** fecha perdida, y la próxima = última fecha perdida + 6 meses (si cae hoy, reentrena a continuación). Manual → la fecha solo cambia si `ENTRENADO`.
+- Una carga por plantilla no dispara el reentrenamiento. Logs y motivos sin datos de socios (de una excepción, solo su tipo).
+- Verificado en el stack E2E (T31): `OMITIDO` forzado con fecha pasada → un solo intento; comando manual → `CRITERIOS_NO_CUMPLIDOS`, código 0. En el stack principal no se ejecutó.
+
 ## Lista priorizada (CU-04, CU-05)
 
 - `POST /listas` exige estado `LISTO` con modelo vigente (si no, `409`, que tiene precedencia). La clasificación de los ciclos del historial usa corte = fecha de generación. Cartera → excluye los que ya renovaron → **excluye a los socios sin cédula** (R-005) → predice con el modelo vigente → ordena → marca top K → guarda lista e ítems en una transacción.

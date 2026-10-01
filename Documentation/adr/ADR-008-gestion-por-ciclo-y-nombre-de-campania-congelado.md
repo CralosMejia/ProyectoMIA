@@ -12,7 +12,7 @@ RN-08.2 exige que la campaña de una gestión quede como estaba al asignarla, pe
 
 1. **Nombre congelado.** Migración `0008`: `gestiones_retencion.campania_nombre` (instantánea del nombre al crear la gestión) con `CHECK ((campania_id IS NULL) = (campania_nombre IS NULL))`. `GestionDTO.campania_nombre` y `PrediccionDTO.campania_asignada` salen de esa columna.
 2. **Gestión por ciclo.** La gestión pertenece a la membresía, no a la predicción: se ve en todas las listas que contienen ese ciclo. La segunda creación → `409`, también por carrera (el índice único parcial se traduce a `GestionDuplicadaError`); el cierre usa `SELECT … FOR UPDATE` (dos cierres → `200` y `409`).
-3. **Contrato.** `PrediccionDTO` añade `gestion_id`; `prioridad` de campaña 1..999; `GestionDTO.fecha_asignacion` = instante de creación. `GET /alertas` y `GET /gestiones?filtro=` siguen en `501` hasta el día 6.
+3. **Contrato.** `PrediccionDTO` añade `gestion_id`; `prioridad` de campaña 1..999; `GestionDTO.fecha_asignacion` = instante de creación. `GET /alertas` y `GET /gestiones?filtro=` siguen en `501` hasta el día 6 (implementados en R-011).
 4. **Campañas.** 3 de ejemplo por migración de datos `0007` ("Ejemplo: …", sin duplicar); nombres repetidos permitidos; inactivar es idempotente; no se borran (R-009 tampoco permitía volver a activarlas: **revertido por ADR-009**); editar no cambia `es_ejemplo`.
 5. **Fechas.** Rango de seguimiento `[hoy, vencimiento + 30]`; sugerida = `max(vencimiento + 25, hoy)`, calculada en el frontend con la misma regla que el dominio; "hoy" = fecha de negocio de Ecuador.
 6. **Resultado.** Reglas de coherencia en el dominio (`422` por regla); Renovó Sí/No cierra la gestión y ya no se edita (`409`).

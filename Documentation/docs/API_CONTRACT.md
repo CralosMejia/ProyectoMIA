@@ -14,7 +14,7 @@ Toda respuesta de error tiene la forma:
 |---|---|---|
 | 400 | `validation_error` | Entrada inválida (sustituye al 422 por defecto de FastAPI). No expone los campos al cliente. |
 | 401 | `unauthorized` | Reservado. No habrá login (RT-12). |
-| 403 | `forbidden` | Petición desde una IP no autorizada (CU-00, día 6). Mensaje: "El acceso no esta permitido desde este equipo." (R-002 quitó la referencia a sesión). |
+| 403 | `forbidden` | Petición desde una IP no autorizada (CU-00, **activo desde R-011**). Mensaje: "El acceso no esta permitido desde este equipo." Cubre toda ruta y método (también `OPTIONS`, `/docs` y `/openapi.json`) salvo `GET /api/v1/health`. La IP sale solo de la conexión; `X-Forwarded-For` se ignora ([ADR-010](../adr/ADR-010-acceso-por-ip-detras-de-nginx.md)). |
 | 404 | `not_found` | Ruta o recurso inexistente. |
 | 405 | `method_not_allowed` | Método no permitido. |
 | 409 | `conflict` | Conflicto con el estado del sistema (migración no completada, sin modelo vigente, gestión ya existente o cerrada). |
@@ -49,11 +49,11 @@ Público. Informa si el servicio y la base de datos responden (`SELECT 1`, timeo
 
 ### Operaciones de negocio (contrato del día 1, R-002)
 
-Las operaciones están publicadas en `/openapi.json` con DTOs Pydantic (`app/application/{modulo}/dtos.py`) y un ejemplo en la respuesta de éxito y en cada error. Las marcadas **(real)** tienen su caso de uso implementado (R-004, día 3; cargas en R-007, día 4; campañas y gestiones en R-009, día 5); **el resto (`GET /gestiones?filtro=`, `GET /alertas` y `GET /dashboard`, día 6) responde `501 not_implemented`** hasta que se implemente; la validación de entrada ya está activa (`400 validation_error`). Sin login (RT-12): no hay filtro por propietario; todas documentan `403` (CU-00).
+Las operaciones están publicadas en `/openapi.json` con DTOs Pydantic (`app/application/{modulo}/dtos.py`) y un ejemplo en la respuesta de éxito y en cada error. Las marcadas **(real)** tienen su caso de uso implementado (R-004, día 3; cargas en R-007, día 4; campañas y gestiones en R-009, día 5; alertas y dashboard en R-011, día 6). **Desde R-011 todas son reales: ninguna responde `501`** (el código sigue reservado en la tabla de errores). Sin login (RT-12): no hay filtro por propietario; todas pueden responder `403` (CU-00).
 
-| Operación | Éxito | Errores además de `403`/`501` | CU |
+| Operación | Éxito | Errores además de `403` | CU |
 |---|---|---|---|
-| `GET /sistema/estado` **(real)** | 200 `EstadoSistemaDTO` | — | CU-03 |
+| `GET /sistema/estado` **(real)** | 200 `EstadoSistemaDTO` (desde R-011 con `datos_mes_cargados`) | — | CU-03 |
 | `POST /cargas/vista-previa` **(real; R-007)** (multipart `archivo`; no guarda nada) | 200 `VistaPreviaCargaDTO` | 400, 409, 413 (detalle en [Cargas](#cargas-cu-01-r-007)) | CU-01 |
 | `POST /cargas` **(real; R-007)** (multipart `archivo`; revalida, sin estado entre vista previa y confirmación; todo o nada) | 201 `CargaDTO` | 400, 409, 413, 422 | CU-01 |
 | `POST /listas` **(real)** | 201 `ListaPriorizadaDTO` | 400 (horizonte fuera de 1..31, K menor que 1, fecha inválida o `nombre` inválido —R-008—), 409 (sistema no `LISTO`: migración en curso o sin modelo; tiene precedencia sobre el 422), 422 `domain_rule_violated` "La fecha de la lista debe ser hoy o posterior." (R-005) | CU-04 |
@@ -68,11 +68,11 @@ Las operaciones están publicadas en `/openapi.json` con DTOs Pydantic (`app/app
 | `POST /campanias/{campania_id}/activar` **(real; nuevo en R-010)** (idempotente; sin cuerpo) | 200 `CampaniaDTO` | 400, 404 | CU-06 |
 | `GET /predicciones/{prediccion_id}/campanias-sugeridas` **(real; R-009)** | 200 `[CampaniaDTO]` por prioridad | 400, 404 | CU-07 |
 | `POST /gestiones` **(real; R-009)** | 201 `GestionDTO` | 400, 404, 409 (el ciclo ya tiene gestión), 422 (detalle en [Campañas y gestiones](#campañas-y-gestiones-cu-06-cu-07-cu-08-cu-10-r-009)) | CU-08 |
-| `GET /gestiones?filtro=vencidas\|hoy\|proximas` (**`501`** hasta el día 6) | 200 `[GestionResumenDTO]` | 400 (filtro fuera de la lista blanca) | CU-09 |
+| `GET /gestiones?filtro=vencidas\|hoy\|proximas` **(real; R-011)** | 200 `[GestionResumenDTO]` | 400 (filtro ausente o fuera de la lista blanca) | CU-09 |
 | `GET /gestiones/{gestion_id}` **(real; R-009)** | 200 `GestionDTO` | 400, 404 | CU-10 |
 | `PUT /gestiones/{gestion_id}/resultado` **(real; R-009)** | 200 `GestionDTO` | 400, 404, 409 (cerrada; incluye toda gestión sin campaña creada desde R-010), 422 | CU-10 |
-| `GET /alertas` (**`501`** hasta el día 6) | 200 `AlertasDTO` {`vencidas`, `hoy`, `proximos_7_dias`} | — | CU-09 |
-| `GET /dashboard?mes=YYYY-MM` (opcional; por defecto mes actual del reloj) | 200 `DashboardDTO` | 400 | CU-11 |
+| `GET /alertas` **(real; R-011)** | 200 `AlertasDTO` {`vencidas`, `hoy`, `proximos_7_dias`} | — | CU-09 |
+| `GET /dashboard?mes=YYYY-MM` **(real; R-011)** (opcional; por defecto mes actual en fecha de negocio) | 200 `DashboardDTO` | 400 (formato o mes inválido) | CU-11 |
 
 Convenciones de los DTOs:
 
@@ -88,7 +88,7 @@ Convenciones de los DTOs:
   - **R-008 (cambio de contrato):** `GenerarListaDTO` (cuerpo de `POST /listas`) acepta `nombre` opcional (`maxLength` 80): se recorta y debe quedar en 1..80 caracteres sin caracteres de control; vacío tras recortar, > 80, con caracteres de control o no string → `400 validation_error` sin guardar nada. Ausente o `null` → `"Lista del <d> <mmm> <aaaa>"` con la fecha de la lista (p. ej. `"Lista del 29 sep 2026"`). Se permiten nombres repetidos. `nombre` (string, requerido) se añade a `ListaPriorizadaDTO` y `ListaResumenDTO`; las listas anteriores a la migración `0006` reciben el nombre por defecto de su fecha.
   - **R-008 (Excel):** `GET /listas/{id}/excel` mantiene ruta, tipo y nombre de archivo; cambia el contenido: hojas `Socios prioritarios a contactar`, `Otros socios por vencer` y `Resumen`, con las columnas de la tabla de la pantalla (sin celular, score ni monto; desde R-009 incluye "Gestión" y "Campaña") → [12 §Excel](backend/12-modelo-y-listas.md#excel-cu-12). `PrediccionDTO` **conserva** `celular`, `score` y `monto_cobrado` (ya no los usa el Excel).
   - **R-005 (cambio de contrato):** `PrediccionDTO` ya no tiene `correo`; tiene `cedula` (string con el cero inicial, o `null` en listas antiguas con socios sin cédula). Ninguna respuesta de la API devuelve el correo (sigue en la base). Los socios sin cédula no entran en las listas nuevas. Los DTO de **respuesta** aceptan `horizonte_dias` 1..365 para leer listas antiguas; la entrada solo 1..31.
-- `GET /sistema/estado`: `INICIALIZANDO` mientras migra CU-03; `LISTO` con `modelo_vigente`; `FALTAN_DATOS_HISTORICOS` si faltan los libros o la migración falló (el motivo solo va al log; se reintenta al reiniciar el backend, ADR-004).
+- `GET /sistema/estado`: `INICIALIZANDO` mientras migra CU-03; `LISTO` con `modelo_vigente`; `FALTAN_DATOS_HISTORICOS` si faltan los libros o la migración falló (el motivo solo va al log; se reintenta al reiniciar el backend, ADR-004). **R-011 (cambio aditivo):** `datos_mes_cargados` (`bool` o `null`): `true` si hay una carga por plantilla no borrada con `fecha_carga` en el mes de negocio actual (Ecuador); `false` si no (la migración histórica no cuenta); `null` si el estado no es `LISTO`.
 - Límites propios (cargas): plantilla ≤ 5 MB y ≤ 500 filas con datos (R-007). Resto: `nombre` de campaña 1..120, `descripcion` ≤ 500 (decisión propia, 03 no la fija), `observaciones` ≤ 500, `responsable` ≤ 120; `horizonte_dias` 1..31 en `POST /listas` (defecto 30; antes 1..365, R-005), `top_k` ≥ 1 (defecto 25), `fecha_referencia` null = hoy de negocio (Ecuador, UTC−5: `hoy_en_negocio(clock.now())`); una fecha anterior a ese día → `422`.
 
 ### Campañas y gestiones (CU-06, CU-07, CU-08, CU-10, R-009)
@@ -114,7 +114,7 @@ Decisiones y motivos en [ADR-008](../adr/ADR-008-gestion-por-ciclo-y-nombre-de-c
 
 La fecha sugerida (`max(vencimiento + 25, hoy)`) la calcula el frontend; el servidor solo valida el rango.
 
-Una gestión sin campaña no tiene resultado que registrar: en `GestionDTO` su `fecha_seguimiento` es el día de creación (valor sin significado, la interfaz no lo muestra) y `renovo_declarado: null` significa "sin resultado", no "pendiente". En la lista (`GET /listas/{id}`) y en el Excel esa fila muestra "Cerrada" y "Sin campaña". Las alertas y el dashboard del día 6 deben filtrar por `estado` y tratar `renovo_declarado` nulo como "sin resultado" ([ADR-009](../adr/ADR-009-reactivar-campanias-y-gestion-sin-campania-cerrada.md)).
+Una gestión sin campaña no tiene resultado que registrar: en `GestionDTO` su `fecha_seguimiento` es el día de creación (valor sin significado, la interfaz no lo muestra) y `renovo_declarado: null` significa "sin resultado", no "pendiente". En la lista (`GET /listas/{id}`) y en el Excel esa fila muestra "Cerrada" y "Sin campaña". Las alertas y el dashboard filtran por `estado` y tratan `renovo_declarado` nulo como "sin resultado" ([ADR-009](../adr/ADR-009-reactivar-campanias-y-gestion-sin-campania-cerrada.md); aplicado en R-011, ver [Alertas y dashboard](#alertas-y-dashboard-cu-09-cu-11-r-011)).
 
 **Resultado (CU-10).** `PUT /gestiones/{id}/resultado` reemplaza `contactado`, `campania_ofrecida`, `campania_aceptada`, `renovo_declarado`, `fecha_contacto`, `observaciones` y `responsable`; `fecha_seguimiento: null` conserva la actual. Incoherencias → `422 domain_rule_violated` con un mensaje por regla:
 
@@ -124,6 +124,19 @@ Una gestión sin campaña no tiene resultado que registrar: en `GestionDTO` su `
 - `renovo_declarado` `SI`/`NO` → `estado: "CERRADA"` con `fecha_cierre` (la `fecha_seguimiento` recibida se ignora); `PENDIENTE` → sigue `PENDIENTE` y la `fecha_seguimiento`, si llega, se valida con el rango de CU-08.
 
 Gestión cerrada → `409` "La gestion esta cerrada y no se puede modificar." (dos cierres simultáneos: `200` y `409`; también toda gestión creada sin campaña desde R-010). Inexistente → `404`. El resultado no modifica membresías ni etiquetas (RN-10.2).
+
+### Alertas y dashboard (CU-09, CU-11, R-011)
+
+"Hoy" y el mes son fecha de negocio de Ecuador (`hoy_en_negocio(clock.now())`).
+
+**Alertas (CU-09).** Solo gestiones `estado = PENDIENTE` y no borradas (las cerradas, incluida toda gestión sin campaña, quedan fuera). `vencidas`: `fecha_seguimiento < hoy`; `hoy`: `= hoy`; `proximos_7_dias`: de hoy+1 a hoy+7, ambos incluidos. Cada gestión cuenta en un solo grupo. `GET /gestiones?filtro=` devuelve esas mismas gestiones ordenadas por `fecha_seguimiento, id`; filtro ausente o distinto de `vencidas|hoy|proximas` → `400`. **Cambio aditivo:** `GestionResumenDTO` añade `prediccion_id` (para abrir la ventana de gestión); `celular` sigue en el DTO pero la pantalla no lo muestra.
+
+**Dashboard (CU-11).** `mes` = `YYYY-MM` (01–12; otro formato → `400`); ausente → mes actual. Una gestión pertenece al mes de su creación (`created_at`, igual a `fecha_asignacion`) dentro del rango `[día 1 05:00Z, día 1 del mes siguiente 05:00Z)`; las borradas no cuentan.
+
+- `embudo` {`asignadas`, `contactadas`, `ofrecidas`, `aceptadas`, `renovaron`}: solo gestiones **con campaña**; `contactado` verdadero y respuestas `SI`. Un nulo nunca cuenta.
+- `por_campania` [`campania_id`, `nombre`, `gestiones`, `contactados`, `renovaciones`, `gestiones_cerradas`, `tasa_renovacion`, `casos_insuficientes`]: `gestiones_cerradas` = cerradas **con resultado** (`renovo_declarado` `SI`/`NO`); `tasa_renovacion` = `renovaciones / gestiones_cerradas` como string de 8 decimales solo con ≥ 10 cerradas con resultado; si no, `null` y `casos_insuficientes: true`. Orden: `gestiones` descendente, nombre, id; la fila "Sin campaña" (`campania_id: null`) va **siempre al final** y siempre con `casos_insuficientes: true`. Mes sin gestiones → embudo en ceros y `por_campania: []`.
+- `estado_modelo` {`version`, `fecha_entrenamiento`, `ciclos_entrenamiento`, `proxima_fecha_reentrenamiento`, `ciclos_nuevos_evaluables`} (misma regla de ciclo nuevo que CU-02, [12 §Reentrenamiento](backend/12-modelo-y-listas.md#reentrenamiento-cu-02-r-011)); sin modelo vigente → `null`.
+- Cifras observadas, no causales (03 §14).
 
 ### Cargas (CU-01, R-007)
 

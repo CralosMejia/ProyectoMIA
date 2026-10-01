@@ -31,6 +31,7 @@ Flujo en una sola dirección: `pages → hooks → api → core/http`. `componen
 - `httpGet<T>(path, { signal })` antepone la base URL y parsea JSON.
 - `httpPost<T>` y `httpPut<T>` envían JSON (`Content-Type: application/json`); `httpPostForm<T>(path, FormData)` envía multipart sin fijar `Content-Type`; `httpGetBlob(path)` devuelve un `Blob` (descarga del Excel).
 - Respuesta no 2xx → `ApiError { status, message, body }`; `message` sale de `error.message` del formato único del backend.
+- `403` con `code: forbidden` → además marca el acceso denegado (`acceso-denegado.ts`, R-011; ver abajo).
 - Error de red → `ApiError` con `status: 0` y mensaje genérico.
 - Petición abortada → se propaga el `AbortError` original (no se envuelve).
 - 2xx con JSON malformado → `ApiError`.
@@ -55,7 +56,8 @@ Flujo en una sola dirección: `pages → hooks → api → core/http`. `componen
 | `/carga` | `carga` | "Carga de datos" |
 | `/lista` | `lista` | "Lista priorizada" |
 | `/campanias` | `campanias` | "Campañas" |
-| `/dashboard` | `dashboard` | "Dashboard" |
+| `/dashboard` | `dashboard` | "Dashboard" (real desde R-011) |
+| `/seguimiento?filtro=` | `lista` | "Seguimiento" (fuera del menú; se llega desde Inicio; R-011) |
 | `/salud` | `health` | `HealthPage` (fuera del menú) |
 | `*` | — | "Página no encontrada" |
 
@@ -102,9 +104,29 @@ Etiquetas renombradas en R-005 (usuario no técnico): "Fecha de referencia" → 
 
 `gestionId`, `gestionEstado` y `campaniaAsignada` son reales desde R-009 (antes `null`); `null` = el ciclo no tiene gestión.
 
-**Gestión sin campaña (R-010, [ADR-009](../../adr/ADR-009-reactivar-campanias-y-gestion-sin-campania-cerrada.md)).** Con "No asignar campaña" marcada, `FormularioGestion` oculta "Fecha de seguimiento" y "Responsable (opcional)" y muestra el aviso "Sin campaña, la gestión queda cerrada y no tendrá seguimiento."; "Crear gestión" queda habilitado aunque el plazo de seguimiento haya terminado (solo para esta opción). `crearGestion` envía `fecha_seguimiento: null` y `responsable: null` (`DatosNuevaGestion.fechaSeguimiento: string | null`). Si la gestión devuelta está cerrada, `useGestion` llama a `onGuardada` y **cierra la ventana** (no pasa a la parte 2); la lista se recarga y la fila muestra "Cerrada", "Sin campaña" y solo "Ver gestión". Abrir una gestión cerrada sin campaña muestra únicamente "No se le asignó campaña" (sin preguntas, campos ni botón de guardar). Con campaña, todo sigue como en R-009.
+**Gestión sin campaña (R-010, [ADR-009](../../adr/ADR-009-reactivar-campanias-y-gestion-sin-campania-cerrada.md)).** Con "No asignar campaña" marcada, `FormularioGestion` oculta "Fecha de seguimiento" y "Responsable (opcional)" y muestra el aviso "Sin campaña, la gestión queda cerrada y no tendrá seguimiento."; "Crear gestión" queda habilitado aunque el plazo de seguimiento haya terminado (solo para esta opción). `crearGestion` envía `fecha_seguimiento: null` y `responsable: null` (`DatosNuevaGestion.fechaSeguimiento: string | null`). Si la gestión devuelta está cerrada, `useGestion` llama a `onGuardada` y **cierra la ventana** (desde R-012 lo hace con toda creación o registro con éxito, ver abajo); la lista se recarga y la fila muestra "Cerrada", "Sin campaña" y solo "Ver gestión". Abrir una gestión cerrada sin campaña muestra únicamente "No se le asignó campaña" (sin preguntas, campos ni botón de guardar). Con campaña, todo sigue como en R-009.
 
 **Ayuda de la lista (R-010).** `AyudaLista.tsx` añade las secciones "Campañas" y "Gestionar a un socio" a las cuatro existentes; mismo contenido que [06 §7–§8](../../06-como-funciona-la-lista.md), sin términos técnicos (la prueba comprueba que no aparecen `API`, `endpoint`, `null`, nombres de estados ni códigos).
+
+### Alertas, Seguimiento, Dashboard y acceso denegado (R-011, día 6)
+
+| Feature | Archivos | Comportamiento |
+|---|---|---|
+| `core` · acceso denegado | `core/http/acceso-denegado.ts`, `core/http/http-client.ts`, `core/layout/{AccesoDenegadoPage,AppLayout}.tsx` | Una respuesta `403` con `code: forbidden` marca el estado "denegado" (suscripción mínima, sin importar features) antes de lanzar `ApiError`; `404`/`409` no lo marcan. `AppLayout` sustituye contenido y menú por "Acceso no permitido" y el texto "Este equipo no está autorizado para usar la aplicación. Pida al responsable técnico que lo añada a la lista de equipos permitidos.", sin códigos ni detalles técnicos. |
+| `inicio` | `api/inicio-api.ts` (`obtenerAlertas`, `datosMesCargados`), `hooks/useAlertas.ts`, `components/AlertasSeguimiento.tsx`, `pages/InicioPage.tsx` | Bloque "Seguimientos pendientes" con tres enlaces "Vencidos N", "Para hoy N" y "Próximos 7 días N" a `/seguimiento?filtro=vencidas\|hoy\|proximas`. Con `datosMesCargados: false`, aviso "Aún no se han cargado los datos de este mes." con enlace "Ir a Carga"; con `true` o `null` no aparece. Un error de alertas muestra un mensaje sin romper el resto de Inicio. |
+| `lista` · seguimiento | `api/lista-api.ts` (`listarGestionesPorAlerta`), `hooks/useSeguimiento.ts`, `pages/SeguimientoPage.tsx`, `routes.tsx` (`/seguimiento`, lazy, fuera del menú) | Título según el grupo; tabla con socio, plan, vencimiento, fecha de seguimiento, campaña y responsable (sin celular); "Abrir gestión <socio>" abre `FormularioGestion` (mismo feature, a partir de `gestionId`/`prediccionId`). Al cerrar la gestión, la lista se recarga y la fila desaparece. Filtro ausente o inválido → "Grupo de seguimiento no válido" y enlace a Inicio, sin llamar a la API; vacío → "No hay gestiones en este grupo". |
+| `dashboard` | `api/dashboard-api.ts`, `hooks/useDashboard.ts`, `components/{EmbudoGestion,TablaResultadosCampania,EstadoModeloCard}.tsx`, `pages/DashboardPage.tsx` | Filtro "Mes" (`input type="month"`, por defecto el mes actual); cambiar de mes cancela la petición anterior. Embudo de 5 barras con CSS y tokens de `shared/ui` (sin librería de gráficos), cada una con su número. Tabla por campaña con la tasa junto a su número de casos o "Casos insuficientes" (`tasaRenovacion` sigue como `string`). Tarjeta del modelo (versión, fecha, ciclos, próxima revisión, ciclos nuevos evaluables; sin modelo → "Aún no hay un modelo vigente"). Aviso fijo: las cifras son resultados observados, no causales. Mes sin gestiones → "No hay gestiones asignadas en este mes" y la tarjeta sigue visible. |
+
+E2E `e2e/alertas-dashboard.spec.ts`: solo contra el stack aislado (8081); contra 8080 se salta.
+
+### Arreglos tras el Día 6 (R-012, solo frontend)
+
+Sin cambios de backend, API ni esquema. Decisiones (a)–(h) en [ACTION_PLAN §DECISIONES IMPORTANTES](../../ACTION_PLAN.md).
+
+- **Ventana de gestión (Lista y Seguimiento).** `useGestion.crear` y `useGestion.registrar` con éxito **siempre** cierran la ventana y llaman una vez a `onGuardada` (la página recarga la lista), con o sin campaña y con cualquier "¿Renovó?" (incluido Pendiente). Se eliminó la opción `cerrarAlCerrarse` (Seguimiento ya no la pasa). Con error del servidor (`409`/`422`) la ventana queda abierta con el mensaje y `onGuardada` no se llama. Crear con campaña ya **no** pasa a la parte 2: el resultado se anota después con "Registrar resultado prioridad N" (Lista) o "Abrir gestión <socio>" (Seguimiento). Esto sustituye lo descrito arriba para R-009.
+- **Ayudas.** `shared/ui/Ayuda.tsx` (`BotonAyuda`, `SeccionAyuda`) unifica botón, `Modal` y devolución del foco; lo usan `AyudaLista` (texto igual salvo "Gestionar a un socio": la ventana se cierra al guardar), `inicio/components/AyudaInicio.tsx` ("¿Cómo funciona el inicio?", junto al `h1`, visible aunque el estado falle) y `dashboard/components/AyudaDashboard.tsx` ("¿Cómo funciona el dashboard?", 9 secciones). Textos sin `API`, `endpoint`, `null`, nombres de estado ni códigos (lo comprueban las pruebas).
+- **Dashboard.** `h1` "Dashboard" y debajo "Resultados de <mes en palabras>" (`hooks/presentacion.ts`: `nombreDelMes`, `porcentaje` con 1 decimal y coma, `resumenResultados`; funciones puras sin `Date` dependiente de zona). `useDashboard` expone `resumen` y `nombreMes`; la página no transforma datos. `EmbudoGestion`: barras redondeadas `bg-brand` ("Renovaron" `bg-ok`) con "número · % sobre asignadas" (asignadas 0 → "0 · 0,0 %"). `GraficoResultados` (nuevo): dona SVG propia (`circle` + `stroke-dasharray`) "Resultado de las gestiones del mes" calculada en el frontend con `porCampania` de `GET /dashboard`: Renovaron = Σ`renovaciones`, No renovaron = Σ(`gestionesCerradas` − `renovaciones`), Sin resultado = Σ(`gestiones` − `gestionesCerradas`) (abiertas o sin campaña); leyenda con número y %, total al centro; total 0 → "Sin gestiones en este mes". Ambos gráficos son `role="img"` con `aria-label` de las cifras y tienen debajo una tabla equivalente ("Datos del embudo", "Datos del gráfico de resultados"). Sin librería de gráficos.
+- **Impresión.** Botón "Imprimir / Guardar PDF" → `window.print()`, deshabilitado mientras no hay datos; no genera archivos desde la app ni llama a la API (RN-11.2 precisada en [03 §14](../../03-casos-de-uso.md)). Cabecera de `AppLayout`, botones, filtro de mes, ayuda y "Reintentar" llevan `print:hidden`.
 
 ## `shared/ui`
 
@@ -115,10 +137,13 @@ Etiquetas renombradas en R-005 (usuario no técnico): "Fecha de referencia" → 
 | `LoadingIndicator` | `role="status"`, texto accesible configurable |
 | `ErrorAlert` | `role="alert"`, `message`, `onRetry?` → botón "Reintentar" |
 | `Modal` | `open`, `title`, `onClose`; `role="dialog"`, `aria-modal`, `aria-labelledby`; cierra con `Escape` y "Cerrar"; foco al abrir |
+| `BotonAyuda` · `SeccionAyuda` (`Ayuda.tsx`, R-012) | `BotonAyuda({ titulo, children })` → botón con ese nombre que abre un `Modal` con el mismo título y contenido desplazable (`max-h-[60vh]`); al cerrar, el foco vuelve al botón. `SeccionAyuda({ titulo, children })` → bloque con subtítulo. Solo tokens; no importa `features/` |
 
 ## Estilos
 
 Tokens (colores `ok`/`degraded`, `risk-high`/`risk-medium`/`risk-low`, tipografía, radios) declarados una sola vez en `src/index.css` dentro de `@theme` y consumidos por nombre en clases Tailwind. No hay CSS fuera de `index.css`. Aún no existe `06-estilos-y-design-system.md`.
+
+R-012: token `--color-brand` (barras del embudo). Los gráficos usan solo tokens (`ok`, `risk-high`, `ink` atenuado, `brand`) por clases `fill-*`/`stroke-*`/`bg-*`; el único `style` permitido es el ancho o la longitud que depende del dato. La app no tiene modo oscuro; no se creó uno. `index.css` incluye `@media print` con `print-color-adjust: exact`, sin `dialog` impreso y sin cortes dentro de gráficos y tablas; la variante `print:` de Tailwind oculta lo que no se imprime.
 
 ## MSW (datos simulados)
 

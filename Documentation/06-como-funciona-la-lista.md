@@ -79,7 +79,7 @@ Si eliges **una campaña**, completas además:
 - **La fecha de seguimiento**: el día en que volverás a revisar a ese socio. El sistema propone una; puedes cambiarla, siempre entre hoy y 30 días después del vencimiento.
 - **El responsable** (opcional): quién se encarga.
 
-Pulsa **"Crear gestión"**. La fila pasa a "Pendiente".
+Pulsa **"Crear gestión"**. La ventana se cierra, la lista se actualiza y la fila pasa a "Pendiente", con la campaña y el botón **"Registrar resultado"**. El resultado no se anota en ese momento: se anota después, con ese botón (paso 2).
 
 Si eliges **"No asignar campaña"**, la ventana ya no pide fecha de seguimiento ni responsable y avisa: "Sin campaña, la gestión queda cerrada y no tendrá seguimiento." Al pulsar **"Crear gestión"** la ventana se cierra y la fila pasa a "Cerrada" y "Sin campaña". La gestión queda cerrada desde el inicio: no hay resultado que anotar y solo se puede consultar con **"Ver gestión"**, donde se lee "No se le asignó campaña".
 
@@ -92,7 +92,9 @@ Si eliges **"No asignar campaña"**, la ventana ya no pide fecha de seguimiento 
 | **¿Aceptó la campaña?** | Si el socio aceptó lo que le propusiste. |
 | **¿Renovó?** | **Sí** o **No** cierran la gestión y ya no se puede cambiar; **Pendiente** la deja abierta para seguir revisando al socio (puedes poner una nueva fecha de seguimiento). |
 
-Puedes añadir observaciones. Una gestión cerrada solo se puede consultar con **"Ver gestión"**.
+Puedes añadir observaciones. Al pulsar **guardar**, la ventana se cierra y la lista se actualiza: con **Sí** o **No** la fila pasa a "Cerrada" y muestra **"Ver gestión"**; con **Pendiente** sigue "Pendiente" y puedes volver a abrirla con **"Registrar resultado"**. Una gestión cerrada solo se puede consultar con **"Ver gestión"**.
+
+Si algo sale mal al guardar (por ejemplo, una fecha que no vale), la ventana **no** se cierra: muestra el mensaje para que lo corrijas.
 
 **La fecha del contacto.** Si contactaste al socio, anotas qué día fue. Esa fecha debe estar **entre el día en que se creó la gestión y hoy**: no puede ser anterior a ese día ni una fecha futura. Por ejemplo, si creaste la gestión el 30 de septiembre y hoy es 5 de octubre, vale cualquier día del 30 de septiembre al 5 de octubre.
 
@@ -113,11 +115,29 @@ Una campaña es lo que el gimnasio le propone a un socio para que renueve, por e
 - La **prioridad** ordena las sugerencias: la campaña con prioridad 1 sale primero.
 - Una campaña **inactiva** deja de sugerirse hasta que la actives de nuevo con el botón **"Activar"** de su fila (no pide confirmación; si te equivocas, la vuelves a inactivar). Los socios que ya la tenían asignada la conservan.
 
-## 9. Próximamente
+## 9. Seguimientos pendientes y aviso de datos del mes (en Inicio)
 
-Está planificado, todavía no disponible:
+- **Seguimientos pendientes.** Inicio muestra tres números: **Vencidos** (la fecha de seguimiento ya pasó), **Para hoy** y **Próximos 7 días**. Solo cuentan las gestiones que siguen abiertas ("Pendiente"); las cerradas, incluidas las que se crearon sin campaña, no aparecen.
+- Al pulsar uno de los números se abre la página **Seguimiento** con esos socios. El botón **"Abrir gestión"** abre la misma ventana que en la lista para anotar el resultado. Al guardar, la ventana se cierra y la página se actualiza. Si respondes "¿Renovó?" **Sí** o **No**, la gestión se cierra, el socio sale de la página y el número baja; con **Pendiente** y una nueva fecha, el socio pasa al grupo que le toque.
+- **Aviso de datos del mes.** Si en el mes actual todavía no se subió la plantilla en **Carga**, Inicio avisa "Aún no se han cargado los datos de este mes." con el enlace **"Ir a Carga"**. Los datos históricos del arranque no cuentan: el aviso desaparece al confirmar la primera carga del mes.
+- **Ayuda.** El botón **"¿Cómo funciona el inicio?"**, junto al título, explica estas tres cosas: los seguimientos pendientes, qué hacer al pulsar un número y el aviso de datos del mes.
 
-- una **alerta** cuando no se hayan cargado los datos del mes;
-- **avisos en Inicio** de los seguimientos vencidos, de hoy y de los próximos días.
+En la pantalla de la lista, el botón **"¿Cómo funciona esta lista?"** abre un resumen de esta misma explicación.
 
-Ya disponible: en la pantalla de la lista, el botón **"¿Cómo funciona esta lista?"** abre un resumen de esta misma explicación.
+## 10. Cómo leer el dashboard
+
+El **Dashboard** resume las gestiones del mes que elijas. Debajo del título se lee, por ejemplo, **"Resultados de septiembre de 2026"**. El botón **"¿Cómo funciona el dashboard?"** abre esta misma explicación.
+
+- **El filtro por mes.** Se cuentan las gestiones **creadas** en ese mes. Por defecto es el mes actual.
+- **El embudo.** Cinco barras: gestiones asignadas, socios contactados, campaña ofrecida, campaña aceptada y renovaron. Cada barra muestra el número y el porcentaje sobre las asignadas (por ejemplo "4 · 40,0 %"). Solo cuenta gestiones **con campaña**.
+- **Resultado de las gestiones.** Un gráfico redondo con tres partes: **Renovaron**, **No renovaron** y **Sin resultado** (gestiones que siguen abiertas o que se crearon sin campaña). En el centro está el total de gestiones del mes.
+- **La tabla por campaña.** Para cada campaña: gestiones, socios contactados y renovaciones.
+- **Tasa de renovación y de no renovación.** Se calculan solo con las gestiones cerradas en las que "¿Renovó?" es **Sí** o **No**. Ejemplo: 4 "Sí" de 10 → renovación 40 % y no renovación 60 %.
+- **Casos insuficientes.** Si una campaña tiene menos de 10 gestiones cerradas con respuesta, no se muestra la tasa: dice "Casos insuficientes".
+- **La fila "Sin campaña".** Son los socios gestionados sin campaña. Nunca tienen tasa.
+- **La tarjeta del modelo.** Versión del modelo, fecha en que se entrenó, ciclos usados, próxima revisión y ciclos nuevos acumulados.
+- **Qué significan las cifras.** Son resultados observados: no demuestran que la campaña causó la renovación.
+
+Cada gráfico tiene debajo una tabla con los mismos números, para quien prefiera leerlos.
+
+**Imprimir o guardar en PDF.** El botón **"Imprimir / Guardar PDF"** abre la ventana de impresión del navegador; ahí puedes imprimir o elegir "Guardar como PDF". Se imprimen el título, el mes, los gráficos con sus tablas, la tabla por campaña, la tarjeta del modelo y el aviso; no salen el menú, los botones ni el filtro. El botón está desactivado mientras no hay datos. La aplicación no genera archivos por sí misma: es la impresión normal del navegador.
