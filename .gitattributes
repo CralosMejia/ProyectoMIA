@@ -1,2 +1,4 @@
 # Los scripts de shell se ejecutan en bash (Linux/macOS/Git Bash): siempre fin de linea LF.
 *.sh text eol=lf
+# SQL que psql ejecuta dentro de contenedores Linux (rol de la app, S23): LF.
+Backend/db/roles/*.sql text eol=lf

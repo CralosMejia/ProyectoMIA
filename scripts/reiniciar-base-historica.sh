@@ -52,15 +52,17 @@ done
 command -v docker >/dev/null 2>&1 || error "no se encontro el comando docker. Instale o inicie Docker Desktop."
 command -v curl >/dev/null 2>&1 || error "no se encontro el comando curl."
 
-# Puerto del backend: la variable de la shell gana (igual que en docker compose); si no, la
-# linea BACKEND_PORT del .env; si no, 8000. Solo se lee esa linea y no se imprime nada del .env.
-PUERTO="${BACKEND_PORT:-}"
+# Puerto del FRONTEND: el estado se consulta por nginx (/api), porque desde R-011 (CU-00) el
+# puerto del backend responde 403 al host salvo /api/v1/health. La variable de la shell gana
+# (igual que en docker compose); si no, la linea FRONTEND_PORT del .env; si no, 8080. Solo se
+# lee esa linea y no se imprime nada del .env.
+PUERTO="${FRONTEND_PORT:-}"
 if [ -z "$PUERTO" ]; then
-  PUERTO="$(grep -E '^[[:space:]]*BACKEND_PORT[[:space:]]*=' "$ENV_FILE_RAIZ" | tail -n 1 | cut -d= -f2- | tr -d "\r\"' \t" || true)"
+  PUERTO="$(grep -E '^[[:space:]]*FRONTEND_PORT[[:space:]]*=' "$ENV_FILE_RAIZ" | tail -n 1 | cut -d= -f2- | tr -d "\r\"' \t" || true)"
 fi
-PUERTO="${PUERTO:-8000}"
+PUERTO="${PUERTO:-8080}"
 case "$PUERTO" in
-  '' | *[!0-9]*) error "BACKEND_PORT no es un numero de puerto valido." ;;
+  '' | *[!0-9]*) error "FRONTEND_PORT no es un numero de puerto valido." ;;
 esac
 readonly URL_ESTADO="http://127.0.0.1:${PUERTO}/api/v1/sistema/estado"
 

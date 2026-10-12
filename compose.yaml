@@ -51,16 +51,26 @@ services:
       retries: 10
       start_period: 10s
 
-  # Aplica las migraciones y termina. Es el unico que cambia el esquema; el backend
-  # arranca solo si este sale con codigo 0. Usa la imagen que construye "backend".
-  # IMAGE_TAG separa las imagenes del stack e2e (backend:e2e) de las del principal.
-  migrate:
-    image: backend:${IMAGE_TAG:-dev}
-    pull_policy: never
-    command: ["alembic", "upgrade", "head"]
+  # S23: crea o actualiza el rol de la aplicacion (APP_DB_USER, sin superusuario, sin DDL,
+  # sin DELETE/TRUNCATE) y sus permisos sobre POSTGRES_DB; corre en cada "up" antes de
+  # "migrate" y termina. Idempotente; sirve igual para volumenes nuevos y existentes.
+  # Transicion: sin APP_DB_PASSWORD en el .env solo avisa y termina en 0 (el backend sigue
+  # con el rol propietario de DATABASE_URL). La contrasena la lee psql de su entorno.
+  db-roles:
+    image: postgres:16.15-alpine
+    entrypoint: ["sh", "/roles/aplicar-roles.sh"]
     restart: "no"
     environment:
-      DATABASE_URL: ${DATABASE_URL:?defina DATABASE_URL en .env}
+      PGHOST: db
+      PGPASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD en .env}
+      PGUSER: ${POSTGRES_USER:?defina POSTGRES_USER en .env}
+      POSTGRES_USER: ${POSTGRES_USER:?defina POSTGRES_USER en .env}
+      POSTGRES_DB: ${POSTGRES_DB:?defina POSTGRES_DB en .env}
+      APP_DB_USER: ${APP_DB_USER:-mtabolic_app}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-}
+      APP_DB_ROL_OPCIONAL: "1"
+    volumes:
+      - ./Backend/db/roles:/roles:ro
     healthcheck:
       disable: true
     networks:
@@ -69,18 +79,43 @@ services:
       db:
         condition: service_healthy
 
+  # Aplica las migraciones y termina. Es el unico que cambia el esquema; el backend
+  # arranca solo si este sale con codigo 0. Usa la imagen que construye "backend".
+  # IMAGE_TAG separa las imagenes del stack e2e (backend:e2e) de las del principal.
+  # S23: se conecta con el rol propietario (MIGRATE_DATABASE_URL, usuario POSTGRES_USER);
+  # sin ella usa DATABASE_URL (transicion, mientras DATABASE_URL sea la del propietario).
+  migrate:
+    image: backend:${IMAGE_TAG:-dev}
+    pull_policy: never
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    environment:
+      DATABASE_URL: ${MIGRATE_DATABASE_URL:-${DATABASE_URL:?defina DATABASE_URL en .env}}
+    healthcheck:
+      disable: true
+    networks:
+      - interna
+    depends_on:
+      db:
+        condition: service_healthy
+      db-roles:
+        condition: service_completed_successfully
+
   backend:
     build:
       context: ./Backend
     image: backend:${IMAGE_TAG:-dev}
     restart: unless-stopped
     environment:
+      # S23: con el rol de la aplicacion (APP_DB_USER); nunca ejecuta DDL.
       DATABASE_URL: ${DATABASE_URL:?defina DATABASE_URL en .env}
       CORS_ORIGINS: ${CORS_ORIGINS:?defina CORS_ORIGINS en .env}
       APP_ENV: ${APP_ENV:?defina APP_ENV en .env}
       HISTORICO_PATH: /data/historico
       # CU-00: IPs o rangos CIDR autorizados. Por defecto el propio contenedor y el frontend.
       IPS_PERMITIDAS: ${IPS_PERMITIDAS:-127.0.0.1,::1,${FRONTEND_IP:-172.30.${IMAGE_TAG:+1}${DB_PORT:+2}0.10}}
+      # Cabecera Host aceptada (proteccion contra DNS rebinding). Mismo valor por defecto que app/core/config.py.
+      HOSTS_PERMITIDOS: ${HOSTS_PERMITIDOS:-localhost,127.0.0.1}
       # CU-02: planificador del reentrenamiento (revisa al arrancar y cada hora).
       REENTRENAMIENTO_AUTOMATICO: ${REENTRENAMIENTO_AUTOMATICO:-true}
       # CU-02: criterios del reentrenamiento (mismos valores por defecto que app/core/config.py).

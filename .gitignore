@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 !.env.e2e.example
+!.env.limpia.example
 *.pem
 *.key
 *.p12
@@ -38,5 +39,11 @@ htmlcov/
 .claude/settings.local.json
 /plantillas
 
+# Respaldos de la base (scripts/respaldar-base.*): contienen datos personales de socios
+respaldos/
+
 # Libros historicos con datos personales (no versionar nunca, aunque se quite /plantillas)
 plantillas/Control Gym*.xlsx
+
+
+Documetation/claude/

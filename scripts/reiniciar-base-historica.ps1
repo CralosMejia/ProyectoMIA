@@ -53,18 +53,20 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     Salir-ConError 'no se encontro el comando docker. Instale o inicie Docker Desktop.'
 }
 
-# Puerto del backend: la variable de entorno gana (igual que en docker compose); si no, la
-# linea BACKEND_PORT del .env; si no, 8000. Solo se lee esa linea y no se imprime nada del .env.
-$Puerto = $env:BACKEND_PORT
+# Puerto del FRONTEND: el estado se consulta por nginx (/api), porque desde R-011 (CU-00) el
+# puerto del backend responde 403 al host salvo /api/v1/health. La variable de entorno gana
+# (igual que en docker compose); si no, la linea FRONTEND_PORT del .env; si no, 8080. Solo se
+# lee esa linea y no se imprime nada del .env.
+$Puerto = $env:FRONTEND_PORT
 if ([string]::IsNullOrWhiteSpace($Puerto)) {
-    $linea = Select-String -LiteralPath $EnvFile -Pattern '^\s*BACKEND_PORT\s*=' | Select-Object -Last 1
+    $linea = Select-String -LiteralPath $EnvFile -Pattern '^\s*FRONTEND_PORT\s*=' | Select-Object -Last 1
     if ($null -ne $linea) {
         $Puerto = ($linea.Line -split '=', 2)[1].Trim().Trim('"', "'")
     }
 }
-if ([string]::IsNullOrWhiteSpace($Puerto)) { $Puerto = '8000' }
+if ([string]::IsNullOrWhiteSpace($Puerto)) { $Puerto = '8080' }
 if ($Puerto -notmatch '^\d+$') {
-    Salir-ConError 'BACKEND_PORT no es un numero de puerto valido.'
+    Salir-ConError 'FRONTEND_PORT no es un numero de puerto valido.'
 }
 $UrlEstado = "http://127.0.0.1:$Puerto/api/v1/sistema/estado"
 
