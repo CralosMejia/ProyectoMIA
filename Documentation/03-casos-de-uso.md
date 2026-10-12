@@ -849,12 +849,12 @@ Como el histórico no cumple la plantilla, algunos campos que la plantilla exige
 1. Se arranca el sistema con la base vacía y los libros en su carpeta: el backend migra el histórico 2025–2026 y deja el modelo v1 vigente (CU-03). El informe de migración coincide con el notebook.
 2. Desde el propio PC se abre la aplicación; una petición desde una IP no autorizada recibe acceso denegado (CU-00).
 3. Se carga un archivo de plantilla con membresías de septiembre. Uno con errores se rechaza en la vista previa y, una vez corregido, se carga (CU-01).
-4. Se genera la lista con fecha 31-08-2026 y se compara con la del notebook; luego se genera con la fecha actual (CU-04, CU-05).
+4. Se genera la lista con la **fecha actual** (CU-04, CU-05). La comparación con la lista del notebook al 31-08-2026 se hace con `Backend/scripts/verificar_lista.py --fecha 2026-08-31` (resultado idéntico), porque la aplicación no admite fechas de referencia pasadas ([ADR-006](adr/ADR-006-lista-desde-hoy-y-cedula-en-lugar-de-correo.md); ajuste de R-013).
 5. Se descarga el Excel (CU-12).
 6. Se crean dos campañas (CU-06). En un socio ALTO se ven las campañas compatibles (CU-07) y se asigna una, con fecha de seguimiento (CU-08).
-7. Con el reloj adelantado, la gestión aparece como "para hoy" y luego como "vencida" (CU-09).
+7. Con el reloj adelantado, la gestión aparece como "para hoy" y luego como "vencida" (CU-09). En la demostración no hay reloj simulado en ejecución: se adelanta desplazando la fecha de seguimiento en el stack aislado con `scripts/ensayo-demo-e2e` ([comandos/ensayo-demo-e2e.md](comandos/ensayo-demo-e2e.md)); la prueba de integración `test_escenario_demostracion.py` lo cubre con reloj inyectado (R-013).
 8. Se registra el resultado y la gestión se cierra (CU-10).
 9. El dashboard muestra el embudo, la tabla por campaña y el estado del modelo (CU-11).
-10. Con el comando manual documentado se intenta reentrenar: por falta de ciclos nuevos, el intento queda registrado sin crear versión. Con datos de prueba suficientes, se crea la versión v2 si no es peor que la v1. Con el reloj simulado se muestra además el caso de una fecha perdida registrada como `OMITIDO` (CU-02).
+10. Con el comando manual documentado se intenta reentrenar: por falta de ciclos nuevos, el intento queda registrado sin crear versión. Con datos de prueba suficientes, se crea la versión v2 si no es peor que la v1 (cubierto por la suite de integración de R-011). La fecha perdida registrada como `OMITIDO` (CU-02) se muestra con `ensayo-demo-e2e perder-fecha-reentrenamiento` en el stack aislado (R-013).
 
 Con este flujo, el componente predictivo deja de ser una salida aislada y se integra en un proceso cerrado de retención: **identificar, priorizar, intervenir, observar y aprender de la nueva información**.

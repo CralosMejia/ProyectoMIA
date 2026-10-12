@@ -445,7 +445,7 @@ A petición del usuario. **Estado:** `DONE` (15 tareas + documentación). Sin mi
 **Aviso para el día 7**
 - D7-OP-02: la revisión de seguridad única cubre R-007 a R-012; en R-011 conviene mirar en especial el middleware de IP (`403` en todas las rutas salvo `/health`, IP solo de la conexión), la red fija de compose, el comando `app.cli` (salida sin datos personales) y el hilo del planificador (logs solo con el tipo de excepción). S23 sigue abierto.
 - D7-OP-04: el ensayo de CU-02 y CU-09 con reloj simulado se hace en el stack aislado; en el principal no se ejecuta `reentrenar` sin decisión del usuario.
-- D6-OP-01 queda pendiente de revisión por A; D7-BD-01 (script de respaldo) sigue pendiente: la guía actual usa `pg_dump`/`pg_restore` a mano.
+- D6-OP-01 queda pendiente de revisión por A; D7-BD-01 (script de respaldo) sigue pendiente: la guía actual usa `pg_dump`/`pg_restore` a mano. *(Resuelto en R-013: S23 cerrado y scripts de respaldo; ver Día 7.)*
 - D7-OP-03 puede partir del E2E `alertas-dashboard` ya existente.
 
 #### Arreglos posteriores al Día 6 (R-012)
@@ -471,7 +471,38 @@ A petición del usuario. **Estado:** `DONE` (12 tareas + documentación). Solo f
 | D7-OP-03 | E2E Playwright del escenario principal: carga → lista → gestión → cierre → dashboard. | B | Todo | Prueba en verde. |
 | D7-OP-04 | Ensayo del escenario de demostración de `03` §21, con reloj simulado para CU-02 y CU-09. | A y B | D7-OP-01 | Ensayo completo sin fallos. |
 | D7-OP-05 | Documentación de cierre: `ACTION_PLAN.md`, ajustes en `03` si algo cambió, diferencias con el notebook y lista de lo diferido. | B | Todo | Documentos actualizados. |
-| D7-FE-01 | Mejora del diseño visual de la aplicación (jerarquía, espaciado, tipografía y color con los tokens de `shared/ui`, sin cambiar comportamiento) (añadida por R-006, a pedido del usuario; pendiente). | B | Todo el frontend | Revisión visual con el usuario y suites en verde. |
+| D7-FE-01 | Mejora del diseño visual de la aplicación (jerarquía, espaciado, tipografía y color con los tokens de `shared/ui`, sin cambiar comportamiento) (añadida por R-006, a pedido del usuario). | B | Todo el frontend | Revisión visual con el usuario y suites en verde. |
+
+#### Avance y resumen del Día 7
+
+**Estado:** cerrado en un solo requerimiento (R-013, `DONE`) salvo la **revisión visual del usuario** de D7-FE-01, pendiente. Sin migración de esquema (sigue en `0008`). Hito verificado: el stack principal (http://localhost:8080) funciona con el rol `mtabolic_app` sin superusuario, con respaldo previo y los mismos conteos; la instalación limpia con libros reales da las mismas cifras y el mismo v1 que el principal; el escenario de §21 se ensayó completo sin fallos. Documento de cierre: [07-cierre.md](07-cierre.md).
+
+| ID | Estado | Dónde |
+|---|---|---|
+| D7-BD-01 | Hecho. `scripts/respaldar-base.*` y `restaurar-base.*`; probado en limpio en el stack aislado (conteos iguales) y respaldo real del principal | [comandos/respaldo-y-restauracion.md](comandos/respaldo-y-restauracion.md) |
+| D7-OP-01 | Hecho en el stack efímero equivalente `mtabolic-limpia` (8082): 1.410 socios, 2.748 membresías, v1 con las mismas métricas que el principal, lista de hoy y Excel; borrado al terminar | [10-docker §Instalación limpia](docs/backend/10-docker.md) |
+| D7-OP-02 | Hecho. 0 critical/high abiertos; corregidos S1, S2 (= S23), S3, S4, S6, S7, S8, S9, S11, S24, S25, T6-OBS-1; diferidos listados en el cierre | [07 §Diferido](07-cierre.md), [ADR-012](adr/ADR-012-rol-de-aplicacion-sin-superusuario.md), [ADR-013](adr/ADR-013-proteccion-host-y-origin.md) |
+| D7-OP-03 | Hecho. `Frontend/e2e/escenario-principal.spec.ts` (también vigila que no haya violaciones de CSP) | [Frontend/README](../Frontend/README.md) |
+| D7-OP-04 | Hecho. Prueba de integración con reloj inyectado (`test_escenario_demostracion.py`) y ensayo de los 10 pasos en el stack aislado con `scripts/ensayo-demo-e2e.*` | [03 §21](03-casos-de-uso.md), [comandos/ensayo-demo-e2e.md](comandos/ensayo-demo-e2e.md) |
+| D7-OP-05 | Hecho | [07-cierre.md](07-cierre.md), `ACTION_PLAN.md` |
+| D7-FE-01 | **Hecho, revisión visual del usuario pendiente** | [frontend/01 §Estilos](docs/frontend/01-arquitectura.md) |
+
+**Realizado**
+- S23 cerrado: rol `mtabolic_app` (sin superusuario, sin `CREATE`, sin `DELETE`/`TRUNCATE`), servicio `db-roles` y `migrate` con el propietario por `MIGRATE_DATABASE_URL`; activado en el principal con autorización del usuario → [ADR-012](adr/ADR-012-rol-de-aplicacion-sin-superusuario.md), [09 §Roles](docs/backend/09-esquema-base-de-datos.md).
+- Protección `Host`/`Origin` en backend y nginx; CSP y cabeceras nuevas; límites de tamaño del `.xlsx`, `top_k`, `mes` y filtros de campaña → [ADR-013](adr/ADR-013-proteccion-host-y-origin.md), [API_CONTRACT](docs/API_CONTRACT.md).
+- `reiniciar-base-historica` espera `LISTO` por el puerto del frontend (el backend da `403` desde R-011).
+- Rediseño visual con tokens y primitivas compartidas, sin cambiar comportamiento ni pruebas existentes.
+- Pruebas: Backend 1.970 pytest, `ruff`, `format`, `mypy app`, `lint-imports` limpios; Frontend 857 Vitest, `lint`, `build`; E2E 5/5 en el stack aislado 8081.
+
+**Desviaciones**
+- D7-OP-01 en un stack equivalente del mismo PC (no en el PC de destino).
+- D7-OP-04 sin reloj simulado en ejecución: se desplazan fechas de datos en el stack aislado; la prueba de integración usa reloj inyectado. El paso 4 de §21 (lista al 31-08-2026) contradecía ADR-006: la demo usa la fecha de hoy y la comparación con el notebook se hace con `verificar_lista.py` (idéntica: cartera 59, 57 a priorizar, 0 diferencias); §21 ajustado.
+- `pip-audit`/`npm audit` no se ejecutaron (sin red, S10).
+
+**Qué puede probar el usuario**
+1. Revisión visual de Inicio, Carga, Lista (con ventana de gestión), Seguimiento, Campañas y Dashboard (pendiente).
+2. `scripts/respaldar-base.ps1` en el principal → `respaldos/` con `.dump` y `.conteos`.
+3. Ensayo de la demo en http://localhost:8081 siguiendo [comandos/ensayo-demo-e2e.md](comandos/ensayo-demo-e2e.md).
 
 ---
 

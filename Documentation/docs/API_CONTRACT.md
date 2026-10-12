@@ -31,6 +31,15 @@ Nunca se devuelven tracebacks, SQL ni rutas del sistema.
 
 Solo los orígenes listados en `CORS_ORIGINS`. Métodos `GET, POST, PUT, PATCH, DELETE, OPTIONS`; cabeceras `Authorization, Content-Type`; credenciales permitidas (el comodín está prohibido).
 
+## Host y Origin (R-013, S1)
+
+Filtro previo a cualquier endpoint, incluido `/health` ([ADR-013](../adr/ADR-013-proteccion-host-y-origin.md)):
+
+- Cabecera `Host` (sin puerto, sin distinguir mayúsculas) fuera de `HOSTS_PERMITIDOS` (por defecto `localhost,127.0.0.1`) → **`400 bad_request`** (DNS rebinding). Detrás de nginx, un `Host` desconocido ni siquiera llega: nginx cierra la conexión (`444`).
+- Método distinto de `GET`/`HEAD`/`OPTIONS` con `Origin` que no es el propio (`scheme://Host`) ni está en `CORS_ORIGINS` → **`403 forbidden`** (CSRF). Sin `Origin`, se rechaza solo si `Sec-Fetch-Site: cross-site`.
+- Las respuestas usan el formato único de error y nunca repiten el host ni el origen recibidos.
+- Respuestas de `/api/` con `Cache-Control: no-store` (nginx). Un `500` no lleva traza ni mensaje de la excepción, tampoco en el log (solo el tipo).
+
 ## Endpoints
 
 ### `GET /api/v1/health`
@@ -89,7 +98,7 @@ Convenciones de los DTOs:
   - **R-008 (Excel):** `GET /listas/{id}/excel` mantiene ruta, tipo y nombre de archivo; cambia el contenido: hojas `Socios prioritarios a contactar`, `Otros socios por vencer` y `Resumen`, con las columnas de la tabla de la pantalla (sin celular, score ni monto; desde R-009 incluye "Gestión" y "Campaña") → [12 §Excel](backend/12-modelo-y-listas.md#excel-cu-12). `PrediccionDTO` **conserva** `celular`, `score` y `monto_cobrado` (ya no los usa el Excel).
   - **R-005 (cambio de contrato):** `PrediccionDTO` ya no tiene `correo`; tiene `cedula` (string con el cero inicial, o `null` en listas antiguas con socios sin cédula). Ninguna respuesta de la API devuelve el correo (sigue en la base). Los socios sin cédula no entran en las listas nuevas. Los DTO de **respuesta** aceptan `horizonte_dias` 1..365 para leer listas antiguas; la entrada solo 1..31.
 - `GET /sistema/estado`: `INICIALIZANDO` mientras migra CU-03; `LISTO` con `modelo_vigente`; `FALTAN_DATOS_HISTORICOS` si faltan los libros o la migración falló (el motivo solo va al log; se reintenta al reiniciar el backend, ADR-004). **R-011 (cambio aditivo):** `datos_mes_cargados` (`bool` o `null`): `true` si hay una carga por plantilla no borrada con `fecha_carga` en el mes de negocio actual (Ecuador); `false` si no (la migración histórica no cuenta); `null` si el estado no es `LISTO`.
-- Límites propios (cargas): plantilla ≤ 5 MB y ≤ 500 filas con datos (R-007). Resto: `nombre` de campaña 1..120, `descripcion` ≤ 500 (decisión propia, 03 no la fija), `observaciones` ≤ 500, `responsable` ≤ 120; `horizonte_dias` 1..31 en `POST /listas` (defecto 30; antes 1..365, R-005), `top_k` ≥ 1 (defecto 25), `fecha_referencia` null = hoy de negocio (Ecuador, UTC−5: `hoy_en_negocio(clock.now())`); una fecha anterior a ese día → `422`.
+- Límites propios (cargas): plantilla ≤ 5 MB y ≤ 500 filas con datos (R-007). Resto: `nombre` de campaña 1..120, `descripcion` ≤ 500 (decisión propia, 03 no la fija), `observaciones` ≤ 500, `responsable` ≤ 120; `horizonte_dias` 1..31 en `POST /listas` (defecto 30; antes 1..365, R-005), `top_k` 1..1000 (defecto 25; máximo añadido en R-013, S8; fuera de rango → `400`), en campañas `niveles_riesgo` y `planes` con 1..10 elementos (R-013, S8; más → `400`), `fecha_referencia` null = hoy de negocio (Ecuador, UTC−5: `hoy_en_negocio(clock.now())`); una fecha anterior a ese día → `422`.
 
 ### Campañas y gestiones (CU-06, CU-07, CU-08, CU-10, R-009)
 
@@ -131,7 +140,7 @@ Gestión cerrada → `409` "La gestion esta cerrada y no se puede modificar." (d
 
 **Alertas (CU-09).** Solo gestiones `estado = PENDIENTE` y no borradas (las cerradas, incluida toda gestión sin campaña, quedan fuera). `vencidas`: `fecha_seguimiento < hoy`; `hoy`: `= hoy`; `proximos_7_dias`: de hoy+1 a hoy+7, ambos incluidos. Cada gestión cuenta en un solo grupo. `GET /gestiones?filtro=` devuelve esas mismas gestiones ordenadas por `fecha_seguimiento, id`; filtro ausente o distinto de `vencidas|hoy|proximas` → `400`. **Cambio aditivo:** `GestionResumenDTO` añade `prediccion_id` (para abrir la ventana de gestión); `celular` sigue en el DTO pero la pantalla no lo muestra.
 
-**Dashboard (CU-11).** `mes` = `YYYY-MM` (01–12; otro formato → `400`); ausente → mes actual. Una gestión pertenece al mes de su creación (`created_at`, igual a `fecha_asignacion`) dentro del rango `[día 1 05:00Z, día 1 del mes siguiente 05:00Z)`; las borradas no cuentan.
+**Dashboard (CU-11).** `mes` = `YYYY-MM` (mes 01–12 y, desde R-013 (S7), año 1900–2999; otro formato o año → `400`); ausente → mes actual. Una gestión pertenece al mes de su creación (`created_at`, igual a `fecha_asignacion`) dentro del rango `[día 1 05:00Z, día 1 del mes siguiente 05:00Z)`; las borradas no cuentan.
 
 - `embudo` {`asignadas`, `contactadas`, `ofrecidas`, `aceptadas`, `renovaron`}: solo gestiones **con campaña**; `contactado` verdadero y respuestas `SI`. Un nulo nunca cuenta.
 - `por_campania` [`campania_id`, `nombre`, `gestiones`, `contactados`, `renovaciones`, `gestiones_cerradas`, `tasa_renovacion`, `casos_insuficientes`]: `gestiones_cerradas` = cerradas **con resultado** (`renovo_declarado` `SI`/`NO`); `tasa_renovacion` = `renovaciones / gestiones_cerradas` como string de 8 decimales solo con ≥ 10 cerradas con resultado; si no, `null` y `casos_insuficientes: true`. Orden: `gestiones` descendente, nombre, id; la fila "Sin campaña" (`campania_id: null`) va **siempre al final** y siempre con `casos_insuficientes: true`. Mes sin gestiones → embudo en ceros y `por_campania: []`.
@@ -157,6 +166,7 @@ Orden de comprobación y mensajes exactos (`error.message`):
 | 2 | 400 `validation_error` | Sin `Registros` y con hojas con nombre de mes | "El archivo tiene el formato antiguo de hojas mensuales; use la plantilla oficial de carga." |
 | 2 | 400 `validation_error` | Títulos A..N de la fila 1 distintos de la plantilla oficial | "Los títulos de la hoja Registros no coinciden con la plantilla oficial." |
 | 2 | 400 `validation_error` | Más de 500 filas con datos | "El archivo tiene más de 500 filas con datos; divídalo en varios archivos." |
+| 2 | 400 `validation_error` | **R-013 (S3)**, motivo `DEMASIADO_GRANDE`: contenido descomprimido > 50 MB, relación de compresión > 100 o más de 5.000 filas recorridas en `Registros` (protege contra *zip bombs* y hojas infladas) | "El contenido del archivo es demasiado grande para una plantilla de carga; use la plantilla oficial." |
 | 3 | 409 `conflict` | Migración histórica (CU-03) no `COMPLETADA` | "La migracion del historico aun no se ha completado." |
 | 4 | 422 `domain_rule_violated` | `POST /cargas` con alguna fila con error | "Hay filas con error; corrija el archivo y vuelva a subirlo." |
 | 4 | 422 `domain_rule_violated` | `POST /cargas` sin filas nuevas (vacío o todo duplicado, incluida una segunda confirmación concurrente) | "El archivo no tiene filas nuevas para guardar." |

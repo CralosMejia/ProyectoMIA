@@ -5,9 +5,321 @@
 
 ## ACTIVO
 
-Ninguno.
+_(vacío)_
 
 ## TERMINADOS RECIENTEMENTE
+
+### R-014 — Tablas sin recorte horizontal en escritorio (Lista, Seguimiento, Campañas, Dashboard) · **DONE** 2026-10-01
+
+**Cierre:** Seguridad: sin revisión nueva (solo estilos de frontend, sin superficie nueva). Frontend 861 Vitest, `lint`, `build`; E2E 10/10 en 8081 con el nuevo `anchos-tablas.spec.ts`. `/lista` cabe a 1366 px (39 px de margen con datos reales) y a 1920; a 390 px la tabla se desplaza dentro de su recuadro. T4 sin cambios de código (Seguimiento, Campañas y Dashboard, también impreso, no desbordaban). Principal reconstruido, `LISTO`, conteos iguales. Documento: [frontend/01 §`shared/ui` y §Estilos](docs/frontend/01-arquitectura.md).
+
+**Objetivo:** en 1366–1920 px las tablas se ven completas sin desplazamiento horizontal y en pantallas estrechas siguen siendo usables, sin cambiar comportamiento ni textos.
+
+**Fuente:** petición del usuario (continuación de D7-FE-01, R-013 decisión (f)) · `docs/frontend/01-arquitectura.md` §`shared/ui`, §Estilos.
+
+**Notas de alcance del planner**
+- Dentro de alcance (ajuste visual del diseño del día 7). Solo `Frontend/`; sin backend, API, migraciones ni librerías nuevas.
+- **Causa medida en el código:** `AppLayout` limita `header` y `main` a `max-w-6xl` (72rem = 1152 px; con `sm:px-8` quedan ~1088 px útiles) y `DataTable` pinta 11 columnas de `TablaLista` con `px-4` (~352 px solo de relleno) y cabeceras en una línea; "Motivos principales" (lista) y "Nombre" fijan el ancho mínimo y el resto desborda dentro de `overflow-x-auto`.
+- **Decisiones del planner (reversibles):**
+  - (a) Ancho del marco: `header` y `main` pasan de `max-w-6xl` a un máximo de **96rem (1536 px)** (`max-w-[96rem]` o la utilidad equivalente de Tailwind 4); `AccesoDenegadoPage` conserva su tarjeta `max-w-xl`. Se mantienen `print:max-w-none print:p-0` y `print:hidden` del `header` (los comprueba `DashboardPage.test.tsx`).
+  - (b) `DataTable` gana una prop **opcional** por columna `className?: string`, aplicada a su `th` y a sus `td` (contrato compatible: ninguna llamada existente cambia). Celdas compactas (`px-3`), cabeceras que pueden partirse en dos líneas y alineadas arriba; el contenedor conserva `overflow-x-auto` como respaldo en pantallas estrechas y añade `print:overflow-visible` para no recortar al imprimir.
+  - (c) Las clases de ancho/ajuste de cada columna viven en el componente de la tabla (p. ej. `TablaLista`), no en `DataTable`; sin `style=` (lo prohíbe `estilos.test.ts`).
+- **Pruebas:** las existentes (`*.test.tsx`, E2E) **no se modifican** y siguen en verde. Se añade un E2E de anchos en el stack aislado `mtabolic-e2e` (8081). Stack principal (8080): **no se crean datos**; solo reconstrucción del frontend al final.
+
+**Tareas**
+
+- [x] **T1** · `frontend` · Marco más ancho en `AppLayout`
+  - Archivos: `Frontend/src/core/layout/AppLayout.tsx` (principal).
+  - Docs: `Documentation/docs/frontend/01-arquitectura.md` §Estilos (sistema de diseño R-013, impresión R-012); decisión (a).
+  - Aceptación:
+    - `header > div` y `main` (los dos, incluido el `main` de acceso denegado) usan el mismo ancho máximo de 96rem en lugar de `max-w-6xl`; viewport 1920 → contenido de 1536 px centrado; viewport 1366 → contenido = 1366 px menos el relleno lateral.
+    - `main` conserva `print:max-w-none print:p-0`; `header` conserva `print:hidden`, `sticky` y la navegación con los mismos 5 enlaces, textos y orden.
+    - Sin colores literales, paleta por defecto ni `style=` (`tokens.test.ts`, `estilos.test.ts` en verde).
+  - Pruebas: `AppLayout.test.tsx`, `DashboardPage.test.tsx` (aserciones de impresión) y `tokens.test.ts` sin modificar y en verde; `npm run lint`, `npm run build`.
+
+- [x] **T2** · `frontend` · `DataTable` compacto con clase opcional por columna
+  - Archivos: `Frontend/src/shared/ui/DataTable.tsx` (principal), `Frontend/src/shared/ui/DataTable.test.tsx` (solo casos nuevos; los existentes no se tocan).
+  - Docs: `Documentation/docs/frontend/01-arquitectura.md` §`shared/ui` (contrato de `DataTable<T>`); decisión (b).
+  - Aceptación:
+    - `DataTableColumn<T>` acepta `className?: string`; columna con `className: 'w-40'` → su `th` y cada `td` de esa columna contienen `w-40`; columna sin `className` → mismas clases base que antes de la prop.
+    - Celdas y cabeceras con relleno horizontal `px-3` (antes `px-4`); `th` puede partirse en varias líneas (sin `whitespace-nowrap`) y se alinea arriba (`align-bottom` o `align-top`, el mismo en todas).
+    - Contenedor: conserva `overflow-x-auto`, borde `line`, `rounded-card`, `shadow-sm`; añade `print:overflow-visible`.
+    - Sin cambios en `caption`, `scope="col"`, mensaje de vacío (`colSpan`), filas alternas ni `getRowKey`; todas las tablas que lo usan (Carga, Lista, Seguimiento, Campañas, Dashboard) siguen mostrando los mismos textos.
+  - Pruebas: unitarias nuevas en `DataTable.test.tsx` (prop `className` en `th`/`td`; sin `className` no se añade nada); suite completa `npm test`, `tokens.test.ts` en verde.
+
+- [x] **T3** · `frontend` · Columnas de `TablaLista` que caben en 1366 px
+  - Archivos: `Frontend/src/features/lista/components/TablaLista.tsx` (principal).
+  - Docs: `Documentation/docs/frontend/01-arquitectura.md` §`shared/ui` y §Estilos; decisiones (b), (c).
+  - Aceptación:
+    - Con la `className` de T2: columnas cortas sin salto (`Prioridad`, `Cédula`, `Vence el`, `Días para vencer`, `Nivel de riesgo`, `Gestión`, `Acción` con `whitespace-nowrap` en la celda, no en la cabecera); `Nombre`, `Plan`, `Campaña` y `Motivos principales` pueden partirse; `Motivos principales` con un ancho mínimo razonable (p. ej. `min-w-56`) y un máximo (p. ej. `max-w-xs`) para que no acapare la fila.
+    - Mismos 11 encabezados en el mismo orden, mismos textos de celda (fecha `es-EC`, "—", "Sin gestión", "Sin campaña", "Sin factores de riesgo destacados"), mismos nombres accesibles de los botones ("Gestionar prioridad N", "Registrar resultado prioridad N", "Ver gestión prioridad N") y mismas dos tablas (prioritarios / otros).
+    - Viewport 1366×768, lista con 30 filas y 3 motivos por fila (stack e2e) → para cada `table` de `/lista`, `table.scrollWidth <= contenedor.clientWidth` y `document.documentElement.scrollWidth <= window.innerWidth`.
+  - Pruebas: `TablaLista.test.tsx` y `ListaPage.test.tsx` sin modificar y en verde; la medición queda cubierta por el E2E de T5.
+
+- [x] **T4** · `frontend` · Mismo criterio en Seguimiento, Campañas y Dashboard (solo si desbordan)
+  - Archivos: `Frontend/src/features/campanias/components/TablaCampanias.tsx` (principal), `Frontend/src/features/lista/pages/SeguimientoPage.tsx`, `Frontend/src/features/dashboard/components/TablaResultadosCampania.tsx`.
+  - Docs: `Documentation/docs/frontend/01-arquitectura.md` §Estilos (impresión R-012, sistema de diseño R-013); decisión (c).
+  - Aceptación:
+    - El developer mide primero en 1366 px (stack e2e) `/seguimiento?filtro=vencidas|hoy|proximas`, `/campanias` y `/dashboard`; **solo** las tablas que desborden reciben `className` por columna (p. ej. `Descripción` de campañas con `min-w-48` y partible; `Acciones` y fechas con `whitespace-nowrap`). Si ninguna desborda, la tarea se cierra sin cambios de código y se registra la medición en `.harness/tests.md`.
+    - Tras el cambio: en 1366 y 1920 px, `table.scrollWidth <= contenedor.clientWidth` en las cuatro pantallas.
+    - Impresión del Dashboard (`page.emulateMedia({ media: 'print' })` a 1366 px): sin cabecera ni botones, y las tablas "Datos del embudo", "Datos del gráfico de resultados" y la de resultados por campaña sin recorte (`scrollWidth <= clientWidth`).
+    - Mismos textos, encabezados, nombres accesibles ("Editar X", "Inactivar X", "Activar X", "Abrir gestión X") y llamadas a la API.
+  - Pruebas: `TablaCampanias`/`CampaniasPage`, `SeguimientoPage.test.tsx`, `DashboardPage.test.tsx` y `componentes.test.tsx` sin modificar y en verde.
+
+- [x] **T5** · `frontend` · E2E de anchos y verificación visual en el stack aislado
+  - Archivos: `Frontend/e2e/anchos-tablas.spec.ts` (principal, nuevo); `Frontend/e2e/plantilla-sintetica.ts` (solo lectura, patrón de datos).
+  - Docs: `Documentation/docs/backend/10-docker.md` §Stack E2E aislado; `Documentation/comandos/ensayo-demo-e2e.md`.
+  - Aceptación:
+    - Contra `mtabolic-e2e` (8081): genera una lista (como `carga-lista-excel.spec.ts`) y, con viewport 1366×768 y 1920×1080, comprueba en `/lista`, `/seguimiento?filtro=proximas`, `/campanias` y `/dashboard`: cada `table` con `scrollWidth <= clientWidth` de su contenedor y sin desplazamiento horizontal de la página → pasa.
+    - Viewport 390×844 en `/lista`: la página no desborda (`document.documentElement.scrollWidth <= innerWidth`); el contenedor de la tabla sí puede desplazarse (`overflow-x: auto`) y el botón de acción de la primera fila es visible tras desplazarlo → pasa.
+    - Dashboard con `emulateMedia print` a 1366 px: `header` oculto y tablas sin recorte → pasa.
+    - E2E existentes (5) + el nuevo en verde en 8081 sin violaciones de CSP; capturas a 1366 y 1920 de `/lista` revisadas (registro en `.harness/tests.md`).
+  - Pruebas: Playwright (`npx playwright test` contra 8081); suite `npm test`, `npm run lint`, `npm run build`.
+
+- [x] **T6** · `infra-deploy` · Reconstrucción del stack principal (orquestador)
+  - Archivos: ninguno versionado.
+  - Docs: `Documentation/docs/backend/10-docker.md` §Servicios.
+  - Aceptación: `docker compose up -d --build frontend` en `proyectofinal` → `LISTO` en 8080; `/lista` muestra la última lista sin desplazamiento horizontal a 1366 px; **sin crear, generar ni borrar datos** (conteos de las 9 tablas antes = después).
+  - Pruebas: comprobación manual; registro en `.harness/tests.md`.
+
+- [x] **DOC-1** · doc-agent · `docs/frontend/01-arquitectura.md`: contrato de `DataTable<T>` con `className?` por columna y nota de anchos (R-014) en §Estilos; cierre en este board.
+
+**Dependencias**
+- T1 y T2 independientes (lote 1). T3 y T4 dependen de T2 (y su medición de T1). T5 depende de T1–T4. T6 depende de T5. DOC-1 al final.
+- Externa: stack `mtabolic-e2e` levantado con el frontend reconstruido para T3–T5.
+
+**Riesgos**
+1. Ensanchar el marco a 96rem alarga líneas de texto en Inicio/Carga/Ayuda; mitigación: las tarjetas y formularios conservan sus propios `max-w-*` (p. ej. `max-w-md`, `max-w-xl`); revisión visual en T5.
+2. `print:overflow-visible` y columnas más estrechas pueden cambiar los saltos de página del PDF del Dashboard; mitigación: criterio de impresión en T4/T5 y `DashboardPage.test.tsx` intacto.
+3. Datos reales con nombres o motivos más largos que los sintéticos pueden volver a desbordar a 1366 px; mitigación: columnas largas partibles con ancho máximo, `overflow-x-auto` como respaldo y comprobación en el principal (T6) solo mirando.
+
+### R-013 — Día 7 del cronograma: respaldo y restauración, rol de BD sin superusuario (S23), instalación limpia, revisión de seguridad única, E2E del escenario principal, ensayo de la demostración, diseño visual y documentación de cierre · **DONE** 2026-10-01
+
+**Cierre:** Seguridad `clean` (SEC-1 + re-revisión: 0 critical/high abiertos). Backend 1970 pytest, `ruff`, `format`, `mypy`, `lint-imports` limpios; Frontend 857 Vitest, `lint`, `build`; E2E 5/5 en 8081 sin violaciones de CSP. S23 activado en el principal con autorización del usuario tras respaldo (conteos iguales). Instalación limpia `mtabolic-limpia` equivalente al principal y borrada. Ensayo de 03 §21 completo. **Pendiente:** revisión visual del usuario (T21). Documentos: [07-cierre](07-cierre.md), [ADR-012](adr/ADR-012-rol-de-aplicacion-sin-superusuario.md), [ADR-013](adr/ADR-013-proteccion-host-y-origin.md), [comandos/respaldo-y-restauracion](comandos/respaldo-y-restauracion.md), [comandos/ensayo-demo-e2e](comandos/ensayo-demo-e2e.md). DOC-1 y DOC-2 unificaron en `07-cierre.md` el nombre previsto `07-cierre-de-la-entrega.md` y dividieron `comandos/respaldo-y-ensayo.md` en dos documentos.
+
+**Objetivo:** cerrar la entrega con respaldo/restauración probados, la app conectada con un rol sin superusuario, una instalación limpia verificada, sin hallazgos critical/high, el escenario de 03 §21 ensayado con reloj simulado, la interfaz con mejor diseño visual y la documentación de cierre.
+
+**Fuente:** [05 Día 7](05-cronograma-semana.md) (D7-BD-01, D7-OP-01..05, D7-FE-01) y su "Aviso para el día 7" · [03 §20, §21](03-casos-de-uso.md) · `docs/backend/10-docker.md` (S23, stack E2E) · `Backend/README.md` §5 · `.claude/rules/deploy.md` §Base de datos en producción · `docs/frontend/01-arquitectura.md` §shared/ui, §Estilos.
+
+**Notas de alcance del planner**
+- No existe `products/P##-*.md`. Todo lo pedido está dentro del alcance (día 7 del cronograma). Nada de §Fuera de alcance.
+- **Proceso (05 §1):** pruebas de los criterios de aceptación (sin TDD obligatorio). Sin login: sin pruebas de aislamiento entre usuarios. Las tareas nuevas de R-013 pasan por el security-reviewer del flujo normal; **SEC-1** es además la revisión única de todo R-001..R-012.
+- **Stacks:**
+  - `proyectofinal` (8080, principal, datos reales): **no se crean datos de prueba, no se reentrena, no se borra**. Solo: respaldo de lectura (T1), cambio de credenciales a S23 y reconstrucción (T22), y mirar.
+  - `mtabolic-e2e` (8081/8001/5433, libros sintéticos): E2E, respaldo/restauración en limpio, verificación de S23, ensayo de la demostración. Se puede recrear con `down -v` (siempre con `-p mtabolic-e2e`).
+  - `mtabolic-limpia` (8082/8002/5434, libros reales, efímero): instalación limpia D7-OP-01; se borra con `down -v -p mtabolic-limpia` al terminar.
+- **Decisiones del planner (reversibles; se avisan al usuario):**
+  - (a) **S23:** la app se conecta con un rol nuevo `APP_DB_USER` (por defecto `mtabolic_app`): `LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`, `CONNECT` a la base, `USAGE` en `public` sin `CREATE`, `SELECT, INSERT, UPDATE` en tablas y `USAGE, SELECT` en secuencias, **sin `DELETE` ni `TRUNCATE`** (refuerza "nada se borra físicamente"; el código de `Backend/app` no contiene `DELETE`/`TRUNCATE`/DDL, verificado con `Grep`). Las migraciones (`migrate`) siguen con el rol propietario `POSTGRES_USER` vía `MIGRATE_DATABASE_URL`: rol distinto con DDL, como pide `deploy.md`. Residual documentado: el propietario es superusuario del clúster (imagen oficial); convertirlo en no superusuario queda diferido.
+  - (b) **Aplicación de roles automática e idempotente:** servicio de un solo uso `db-roles` (misma imagen `postgres:16.15-alpine`) que corre en cada `up` antes de `migrate`: crea o actualiza el rol (contraseña por variable de `psql`, nunca en archivo ni en log), concede permisos sobre lo existente y fija `ALTER DEFAULT PRIVILEGES FOR ROLE <propietario>` para las tablas que creen migraciones futuras. Sirve igual para volúmenes nuevos y existentes (el principal no se recrea).
+  - (c) **Reloj simulado:** se mantiene la decisión de R-011 (sin reloj simulado en ejecución: con `APP_ENV=development` también en el principal, un interruptor por entorno no lo protegería). CU-09 y CU-02 se ensayan (1) con una prueba de integración de punta a punta con `Clock` inyectado (T8) y (2) en el stack e2e desplazando fechas de datos con un script fijado a `-p mtabolic-e2e` (T10), equivalente a adelantar el reloj.
+  - (d) **Instalación limpia (D7-OP-01)** en el tercer proyecto `mtabolic-limpia` con los libros **reales** (montados `:ro`) y base vacía, subred `172.31.0.0/24` y frontend `172.31.0.10` explícitos (no chocan con principal ni e2e). Se borra al terminar.
+  - (e) **Respaldo/restauración (D7-BD-01):** la restauración **solo crea una base nueva** con nombre validado; nunca renombra, sobrescribe ni borra bases (poner en uso la restaurada sigue siendo el paso manual de `Backend/README.md` §5). Prueba en limpio en el stack e2e. En el principal solo se ejecuta el respaldo (lectura) antes de T22.
+  - (f) **Diseño (D7-FE-01):** tokens nuevos en `@theme` (`--color-canvas` fondo de página, `--color-line` bordes, `--color-muted` texto secundario) y primitivas compartidas en `shared/ui/Diseno.tsx`: `Boton` (variantes `primario`/`secundario`/`peligro`), `Tarjeta` (sección con título opcional) y `EncabezadoPagina` (`h1`, subtítulo, acciones). **Sin cambiar comportamiento:** mismos textos visibles, nombres accesibles, roles, niveles de encabezado, orden de foco, rutas y llamadas a la API. Los `*.test.tsx` existentes **no se modifican** (excepción: aserciones sobre clases CSS, y solo si existen). Sin librerías nuevas.
+  - (g) **Defecto detectado al planificar:** `scripts/reiniciar-base-historica.sh` (línea 65) y `.ps1` esperan `LISTO` en `http://127.0.0.1:${BACKEND_PORT}/api/v1/sistema/estado`, que desde R-011 responde `403` (filtro de IP): el script nunca llegaría a `LISTO`. Se corrige en T5 (sin ejecutarlo en el principal).
+  - (h) **03 §21 paso 4** ("lista con fecha 31-08-2026") choca con ADR-006 (fecha pasada → `422`); la comparación con el notebook se hace con `Backend/scripts/verificar_lista.py` (R-005). DOC-2 ajusta §21.
+- **Variables nuevas** (`APP_DB_USER`, `APP_DB_PASSWORD`, `MIGRATE_DATABASE_URL`; `DATABASE_URL` pasa al rol de la app): los `.env` locales (`.env`, `.env.e2e`, `.env.limpia`) los actualiza el orquestador generando contraseñas hexadecimales **sin mostrarlas**; nunca se versionan. **Se avisa al usuario** de que su `.env` principal cambia en T22.
+
+**Tareas**
+
+- [x] **T1** · `infra-deploy` · Script de respaldo (D7-BD-01)
+  - Archivos: `scripts/respaldar-base.sh` (principal, nuevo), `scripts/respaldar-base.ps1` (nuevo, equivalente), `.gitignore` (`respaldos/`).
+  - Docs: `Backend/README.md` §5 Respaldo y restauración; `scripts/reiniciar-base-historica.sh` como patrón (proyecto fijo, `.env` resuelto desde el script, credenciales expandidas dentro del contenedor); decisión (e).
+  - Aceptación:
+    - `respaldar-base.sh` (sin argumentos) → proyecto `proyectofinal` con `.env`; `-p mtabolic-e2e` → `.env.e2e`; `-p mtabolic-limpia` → `.env.limpia`; cualquier otro nombre o archivo `.env*` inexistente → código 1 **sin ejecutar ningún comando docker**.
+    - Genera `respaldos/<proyecto>-AAAAMMDD-HHMMSS.dump` (`pg_dump -Fc` dentro del contenedor + `docker compose cp`; borra el temporal) y `respaldos/<mismo>.conteos` con 9 líneas `tabla=n` (`socios`, `membresias`, `cargas`, `modelos`, `intentos_reentrenamiento`, `listas_priorizadas`, `predicciones`, `campanias`, `gestiones_retencion`) → código 0.
+    - No imprime contraseñas, URLs ni valores del `.env`; no ejecuta `DROP`, `DELETE`, `down` ni `restart`. Conteos de la base antes = después.
+    - `git check-ignore respaldos/x.dump` → ignorado.
+    - Ejecutado en `mtabolic-e2e` → `.dump` no vacío y `.conteos` coherente con un `count(*)` manual.
+  - Pruebas: verificación manual en el stack e2e (registro en `.harness/tests.md`); `bash -n` y análisis de PowerShell sin errores.
+
+- [x] **T2** · `infra-deploy` · Script de restauración en base nueva (D7-BD-01)
+  - Archivos: `scripts/restaurar-base.sh` (principal, nuevo), `scripts/restaurar-base.ps1` (nuevo).
+  - Docs: `Backend/README.md` §5; decisiones (a), (e).
+  - Aceptación:
+    - `restaurar-base.sh <archivo.dump> [-p proyecto] [--base nombre]`; base por defecto `app_db_restaurada_AAAAMMDDHHMMSS`.
+    - Nombre igual a `POSTGRES_DB`, ya existente o que no cumple `^[a-z_][a-z0-9_]{0,62}$`, o dump inexistente → código 1 sin crear nada.
+    - `createdb` + `pg_restore --no-owner --no-privileges --exit-on-error` en la base nueva; aplica a esa base los permisos del rol de la app (`Backend/db/roles/permisos.sql` de T3); compara los 9 conteos con el `.conteos` del dump → "Conteos iguales" y código 0, o la lista de diferencias y código 1.
+    - Nunca renombra, sobrescribe ni borra bases; la base en uso no cambia (conteos antes = después).
+    - **Prueba en limpio** en `mtabolic-e2e`: respaldo (T1) → restauración → conteos iguales; como el rol de la app, `SELECT count(*) FROM socios` en la base restaurada funciona.
+  - Pruebas: verificación manual en el stack e2e.
+
+- [x] **T3** · `db` · Rol de la app sin superusuario (S23)
+  - Archivos: `Backend/db/roles/aplicar-roles.sh` (principal, nuevo), `Backend/db/roles/permisos.sql` (nuevo), `compose.yaml` (servicio `db-roles`; `migrate` depende de él y usa `DATABASE_URL: ${MIGRATE_DATABASE_URL:?}`; `backend` usa el rol de la app), `.env.example` (`APP_DB_USER`, `APP_DB_PASSWORD`, `MIGRATE_DATABASE_URL`, `DATABASE_URL` con el rol de la app; `TEST_DATABASE_URL` sigue con el propietario).
+  - Docs: `Documentation/docs/backend/10-docker.md` §Servicios, §Variables, §Limitaciones (S23); `docs/backend/09-esquema-base-de-datos.md` (S23); `.claude/rules/deploy.md` §Base de datos en producción; decisiones (a), (b).
+  - Aceptación:
+    - `aplicar-roles.sh`: `APP_DB_USER` fuera de `^[a-z_][a-z0-9_]{0,62}$`, igual a `POSTGRES_USER`, o `APP_DB_PASSWORD` vacía → código ≠ 0 con mensaje que nombra la variable sin su valor. Válidas → `psql -X -v ON_ERROR_STOP=1` con la contraseña como variable de `psql`; imprime solo "Roles aplicados". Dos ejecuciones seguidas → ambas código 0 (idempotente).
+    - Tras aplicarlo: `rolsuper`, `rolcreatedb`, `rolcreaterole` = `false` para el rol de la app; `has_table_privilege(app, t, 'SELECT,INSERT,UPDATE')` = `true` y `'DELETE'`/`'TRUNCATE'` = `false` en las 10 tablas; `has_schema_privilege(app, 'public', 'CREATE')` = `false`; una tabla creada después por el propietario hereda los permisos (privilegios por defecto).
+    - `compose.yaml`: `db-roles` con `restart: "no"`, depende de `db` healthy, monta `./Backend/db/roles` `:ro`; `migrate` depende de `db-roles` `service_completed_successfully`. Sin secretos en `compose.yaml` (todo `${VAR:?}`). `docker compose config` con el `.env.example` copiado → válido.
+    - `migrate` no cambia de comportamiento (con la base ya migrada termina en 0 sin cambios); el backend no ejecuta DDL.
+  - Pruebas: verificación en T4 (stack e2e). Backend `pytest`, `ruff`, `mypy`, `lint-imports` en verde (sin cambios de código de `app/`).
+
+- [x] **T4** · `infra-deploy` · S23 verificado en el stack e2e (volumen existente y desde cero)
+  - Archivos: `.env.e2e.example` (principal: variables de T3 con marcadores); `.env.e2e` local (orquestador, no versionado).
+  - Docs: `docs/backend/10-docker.md` §Stack E2E aislado; decisiones (a), (b).
+  - Aceptación:
+    - **Volumen existente:** `up -d --build` sobre el volumen e2e actual → `db-roles` 0, `migrate` 0, `LISTO` por 8081, conteos iguales a antes.
+    - **Desde cero:** `down -v -p mtabolic-e2e` + `up -d --build` → `LISTO` (migración sintética y v1 con el rol de la app).
+    - `SELECT DISTINCT usename FROM pg_stat_activity WHERE datname = 'app_db_e2e' AND usename <> '<propietario>'` → solo el rol de la app (el backend).
+    - Como rol de la app: `DELETE FROM campanias` → `permission denied`; `CREATE TABLE x (id int)` → `permission denied`; `INSERT` en una transacción con `ROLLBACK` → permitido.
+    - E2E 4/4 en verde en 8081; `docker compose -p mtabolic-e2e --env-file .env.e2e exec backend python -m app.cli reentrenar` → código 0 (`CRITERIOS_NO_CUMPLIDOS`); 8001 → `403` salvo `/health`.
+  - Pruebas: e2e + verificación manual.
+
+- [x] **T5** · `infra-deploy` · Reinicio de la base: esperar `LISTO` por el frontend
+  - Archivos: `scripts/reiniciar-base-historica.sh` (principal), `scripts/reiniciar-base-historica.ps1`.
+  - Docs: `Documentation/comandos/reiniciar-base-historica.md`; `docs/backend/10-docker.md` §Red interna; decisión (g).
+  - Aceptación: la espera consulta `http://127.0.0.1:${FRONTEND_PORT:-8080}/api/v1/sistema/estado` (variable de la shell, si no la línea `FRONTEND_PORT` del `.env`, si no `8080`; no numérico → código 1); ninguna referencia a `BACKEND_PORT` para el estado. Proyecto, confirmación `BORRAR` y `--si` sin cambios. `bash -n` y el analizador de PowerShell sin errores. **No se ejecuta** en el principal; `curl` de solo lectura a esa URL en 8080 → `200` con `estado`.
+  - Pruebas: verificación estática + `curl` de lectura.
+
+- [x] **T6** · `infra-deploy` · Instalación limpia equivalente con libros reales (D7-OP-01)
+  - Archivos: `.env.limpia.example` (principal, nuevo: `DB_PORT=5434`, `BACKEND_PORT=8002`, `FRONTEND_PORT=8082`, `IMAGE_TAG=limpia`, `RED_INTERNA_SUBNET=172.31.0.0/24`, `FRONTEND_IP=172.31.0.10`, `CORS_ORIGINS=http://localhost:8082`, `POSTGRES_DB=app_db_limpia`, variables de T3 con marcadores, `HISTORICO_DIR` marcador), `.gitignore` (`!.env.limpia.example`).
+  - Docs: `docs/backend/10-docker.md` §Primer arranque, §Stack E2E aislado; `Backend/README.md` §1 Instalación; decisión (d).
+  - Aceptación:
+    - `docker compose -p mtabolic-limpia --env-file .env.limpia up -d --build` con volumen nuevo → `db-roles` 0, `migrate` 0 (`alembic current` = `0008 (head)`), estado `LISTO` por 8082.
+    - Informe de migración: `socios` 1.410, `membresias` 2.748 (cifras del notebook, 05 §2 día 2), `modelos` 1 (v1); métricas del v1 iguales a las del v1 del principal (consulta de solo lectura en 8080/5432).
+    - `POST /api/v1/listas` con la fecha de hoy por 8082 → `201` con ítems; Excel → `200`.
+    - Backend conectado como rol de la app (no superusuario).
+    - Al terminar: `docker compose -p mtabolic-limpia --env-file .env.limpia down -v`; el principal y el e2e siguen igual (conteos del principal antes = después).
+  - Pruebas: verificación manual (registro en `.harness/tests.md`).
+
+- [x] **T7 (SEC-1)** · `security-reviewer` · Revisión de seguridad única de R-001 a R-012 (D7-OP-02)
+  - Alcance: `Backend/app/**`, `Backend/alembic/**`, `Backend/Dockerfile`, `Frontend/src/**`, `Frontend/nginx.conf`, `Frontend/Dockerfile`, `compose.yaml`, `.env*.example`, `scripts/**`, `Backend/scripts/**`; dependencias (`pip`/`npm audit`). Puntos señalados en 05 "Aviso para el día 7": middleware de IP (`403` salvo `/health`, IP solo de la conexión), red fija de compose, `app.cli` (salida sin datos personales), hilo del planificador (logs solo con el tipo de excepción), exposición de la cédula (R-005), carga de archivos (tamaño, tipo, `exceljs`/`uuid`), SQL parametrizado, cabeceras de nginx (S19), S23 (diseño de T3).
+  - Docs: `docs/backend/10-docker.md` §Limitaciones; ADR-010.
+  - Aceptación: lista de hallazgos con severidad, archivo:línea y corrección propuesta. Por cada `critical`/`high` → el orquestador pide al planner una tarea **SEC-FIX-n** (≤ 4 archivos, con prueba que reproduce el fallo antes de corregirlo). `medium`/`low` no corregidos → a la lista de diferidos de DOC-2. Cierre: **0 critical/high abiertos**.
+  - Pruebas: las de cada SEC-FIX.
+
+- [x] **T8** · `api` · Escenario de demostración de punta a punta con reloj simulado (integración)
+  - Archivos: `Backend/tests/integration/api/test_escenario_demostracion.py` (principal, nuevo); reutiliza sin modificar `tests/integration/sistema/migracion_sintetica.py`, `tests/integration/api/listas_datos.py`, `tests/integration/reentrenamiento_datos.py` (si hace falta un ayudante nuevo, en el mismo archivo).
+  - Docs: `Documentation/docs/API_CONTRACT.md` (§Cargas, §Campañas y gestiones, §Alertas y dashboard); `docs/backend/12-modelo-y-listas.md` §Reentrenamiento; [03 §21](03-casos-de-uso.md); decisión (c).
+  - Aceptación (una sola prueba en orden, `get_clock` sobrescrito con un reloj ajustable, base de prueba real):
+    1. Histórico sintético migrado → `GET /sistema/estado` `LISTO`, modelo `v1`.
+    2. Plantilla con errores → vista previa con errores y confirmar rechazado (código del contrato); corregida → confirmada (`201`).
+    3. `POST /listas` con la fecha de hoy → `201`; Excel → `200`.
+    4. Dos campañas → `201`; sugerencias de un socio ALTO las incluyen; `POST /gestiones` con campaña y `fecha_seguimiento` = hoy + 2 → `201` `PENDIENTE`.
+    5. Reloj + 2 días → `GET /alertas` hoy = 1, vencidas = 0; `GET /gestiones?filtro=hoy` la contiene. Reloj + 3 días → vencidas = 1, hoy = 0.
+    6. Registrar resultado Renovó Sí → `200` `CERRADA`; alertas 0/0/0.
+    7. `GET /dashboard?mes=<mes de creación>` → asignadas 1, renovaron 1; tarjeta del modelo `v1`.
+    8. Reentrenamiento manual → `CRITERIOS_NO_CUMPLIDOS`, un intento registrado, sin modelo nuevo.
+    9. Planificador con el reloj después de la fecha programada → un `OMITIDO`; repetir → no añade otro.
+    - Deja la base como la encontró.
+  - Pruebas: integración.
+
+- [x] **T9** · `frontend` · E2E del escenario principal (D7-OP-03)
+  - Archivos: `Frontend/e2e/escenario-principal.spec.ts` (principal, nuevo); reutiliza `Frontend/e2e/plantilla-sintetica.ts` (sin cambiar su API).
+  - Docs: `Frontend/README.md` (E2E); `docs/backend/10-docker.md` §Stack E2E aislado; partir de `Frontend/e2e/alertas-dashboard.spec.ts` y `carga-lista-excel.spec.ts`.
+  - Aceptación (solo contra 8081; contra 8080 se salta como los demás): Carga → "Revisar archivo" → "Confirmar carga" de una plantilla sintética con nombres únicos por ejecución → Lista generada con la fecha de hoy → "Gestionar prioridad N" con campaña y fecha de seguimiento → el diálogo se cierra y la fila muestra "Pendiente" → "Registrar resultado prioridad N" → Renovó Sí → la fila muestra "Cerrada" → Dashboard del mes actual: la gestión cuenta en el embudo y en "Renovaron". 5/5 E2E en verde en 8081 (4 existentes + este), también al repetirse sobre la misma base.
+  - Pruebas: e2e.
+
+- [x] **T10** · `infra-deploy` · Ensayo de la demostración en el stack aislado (D7-OP-04)
+  - Archivos: `scripts/ensayo-demo-e2e.sh` (principal, nuevo), `scripts/ensayo-demo-e2e.ps1` (nuevo).
+  - Docs: [03 §21](03-casos-de-uso.md); `Backend/README.md` §4 (planificador, `OMITIDO`); `docs/backend/10-docker.md` §Stack E2E aislado; decisiones (c), (h).
+  - Aceptación:
+    - Proyecto fijo `mtabolic-e2e` con `.env.e2e` (no acepta otro). Subcomandos: `adelantar-seguimientos <dias>` (1..60; resta N días a `fecha_seguimiento` de las gestiones `PENDIENTE` no borradas, en una transacción, e imprime cuántas cambió) y `perder-fecha-reentrenamiento` (pone la próxima fecha programada en ayer y reinicia el backend). Otro subcomando o argumento inválido → código 1 sin tocar nada. Sin datos personales en la salida.
+    - Ensayo de los 10 pasos de §21 en 8081 registrado en `.harness/tests.md` con resultado por paso: 1 (migración) cubierto por T6 con libros reales; 2 `403` desde una IP no autorizada (`docker run --rm --network mtabolic-e2e_interna curlimages/curl`) y `/health` `200`; 3 carga con error rechazada y corregida confirmada; 4 lista de hoy (la comparación con el notebook al 31-08-2026, con `verificar_lista.py`); 5 Excel; 6 dos campañas, sugerencias y gestión con seguimiento hoy + 1; 7 `adelantar-seguimientos 1` → "Para hoy" = 1, luego `adelantar-seguimientos 1` → "Vencidos" = 1; 8 resultado → cerrada; 9 dashboard; 10 `app.cli reentrenar` → `CRITERIOS_NO_CUMPLIDOS` (el caso v2 lo cubre la suite de integración de R-011) y `perder-fecha-reentrenamiento` → un `OMITIDO`. **Ensayo completo sin fallos.**
+  - Pruebas: verificación manual en el stack e2e.
+
+- [x] **T11** · `frontend` · Tokens y primitivas de diseño (D7-FE-01)
+  - Archivos: `Frontend/src/shared/ui/Diseno.tsx` (principal, nuevo: `Boton({ variante, ...props de button })`, `Tarjeta({ titulo?, children, ...props de section })`, `EncabezadoPagina({ titulo, subtitulo?, acciones? })`), `Frontend/src/shared/ui/Diseno.test.tsx` (nuevo), `Frontend/src/index.css` (`--color-canvas`, `--color-line`, `--color-muted`), `Frontend/src/shared/ui/tokens.test.ts` (añade `Diseno.tsx` a "solo tokens" y "no importa features"; afirma los 3 tokens nuevos).
+  - Docs: `docs/frontend/01-arquitectura.md` §shared/ui, §Estilos; `.claude/rules/frontend.md` §Estilos; decisión (f).
+  - Aceptación: `Boton` renderiza un `button` con `type="button"` por defecto, pasa `disabled`, `onClick`, `aria-*` y `type="submit"`; las 3 variantes dan clases distintas con foco visible (`focus-visible:`). `Tarjeta titulo="X"` → `section` con encabezado "X" (nivel configurable, por defecto `h2`). `EncabezadoPagina titulo="Lista"` → un `h1` "Lista", subtítulo y acciones opcionales. Sin colores literales, paleta por defecto ni `style`. Tokens nuevos declarados y distintos de `--color-ink`/`--color-surface`.
+  - Pruebas: frontend.
+
+- [x] **T12** · `frontend` · Marco de la app y páginas transversales
+  - Archivos: `Frontend/src/core/layout/AppLayout.tsx` (principal: fondo `canvas`, cabecera con el nombre "Mtabolic" no encabezado, contenido con ancho máximo y márgenes), `Frontend/src/core/layout/AccesoDenegadoPage.tsx`, `Frontend/src/features/health/pages/HealthPage.tsx`, `Frontend/src/features/health/components/HealthStatusCard.tsx`.
+  - Docs: `docs/frontend/01-arquitectura.md` §Navegación, §Estilos; decisión (f).
+  - Aceptación: nav "Principal" con los 5 enlaces y estado activo igual; `print:hidden` de la cabecera y `print:p-0` se conservan; "Acceso no permitido" igual. `AppLayout.test.tsx`, `router*.test.tsx`, `HealthPage*.test.tsx` sin cambios y en verde.
+  - Pruebas: frontend (suites existentes).
+
+- [x] **T13** · `frontend` · Componentes base de `shared/ui`
+  - Archivos: `Frontend/src/shared/ui/DataTable.tsx` (principal: cabecera, filas alternas, bordes `line`), `Frontend/src/shared/ui/Modal.tsx`, `Frontend/src/shared/ui/ErrorAlert.tsx` (usa `Boton`), `Frontend/src/shared/ui/LoadingIndicator.tsx`.
+  - Docs: `docs/frontend/01-arquitectura.md` §shared/ui; decisión (f).
+  - Aceptación: contratos de §shared/ui sin cambios (props, roles, `aria-modal`, `Escape`, foco, "Reintentar", `caption`). Sus `*.test.tsx`, `ui.edge.test.tsx` y `tokens.test.ts` sin cambios y en verde.
+  - Pruebas: frontend.
+
+- [x] **T14** · `frontend` · Inicio
+  - Archivos: `Frontend/src/features/inicio/pages/InicioPage.tsx` (principal, usa `EncabezadoPagina`/`Tarjeta`), `Frontend/src/features/inicio/components/EstadoSistemaPanel.tsx`, `Frontend/src/features/inicio/components/AlertasSeguimiento.tsx`.
+  - Docs: `docs/frontend/01-arquitectura.md` §Inicio y Carga, §R-011; decisión (f).
+  - Aceptación: textos, enlaces ("Ir a Carga", contadores), botón de ayuda y aviso de datos del mes iguales; tests de `features/inicio` sin cambios y en verde.
+  - Pruebas: frontend.
+
+- [x] **T15** · `frontend` · Carga
+  - Archivos: `Frontend/src/features/carga/pages/CargaPage.tsx` (principal), `Frontend/src/features/carga/components/SelectorArchivo.tsx`, `Frontend/src/features/carga/components/VistaPreviaCarga.tsx`.
+  - Docs: `docs/frontend/01-arquitectura.md` §Inicio y Carga (tres pasos de R-008); decisión (f).
+  - Aceptación: los tres pasos (elegir → "Revisar archivo" → "Confirmar carga") y sus estados deshabilitados iguales; tests de `features/carga` sin cambios y en verde.
+  - Pruebas: frontend.
+
+- [x] **T16** · `frontend` · Lista
+  - Archivos: `Frontend/src/features/lista/pages/ListaPage.tsx` (principal), `Frontend/src/features/lista/components/TablaLista.tsx`, `Frontend/src/features/lista/components/HistorialListas.tsx`, `Frontend/src/features/lista/components/DescargarExcelButton.tsx`.
+  - Docs: `docs/frontend/01-arquitectura.md` §Lista priorizada, §R-009; decisión (f).
+  - Aceptación: columnas, botones por fila ("Gestionar/Registrar resultado/Ver gestión prioridad N"), nombre editable, historial y descarga iguales; `RiskBadge` conserva sus tokens; tests de `features/lista` (salvo los de T17) sin cambios y en verde.
+  - Pruebas: frontend.
+
+- [x] **T17** · `frontend` · Ventana de gestión y Seguimiento
+  - Archivos: `Frontend/src/features/lista/components/FormularioGestion.tsx` (principal), `Frontend/src/features/lista/components/ResultadoGestion.tsx`, `Frontend/src/features/lista/pages/SeguimientoPage.tsx`.
+  - Docs: `docs/frontend/01-arquitectura.md` §R-009, §R-011, §R-012 (decisión (e) de R-012); decisión (f).
+  - Aceptación: campos, etiquetas, validaciones, cierre tras guardar y mensajes de error iguales; tests de esos archivos sin cambios y en verde.
+  - Pruebas: frontend.
+
+- [x] **T18** · `frontend` · Campañas
+  - Archivos: `Frontend/src/features/campanias/pages/CampaniasPage.tsx` (principal), `Frontend/src/features/campanias/components/TablaCampanias.tsx`, `Frontend/src/features/campanias/components/FormularioCampania.tsx`.
+  - Docs: `docs/frontend/01-arquitectura.md` §R-009 (campañas), ADR-009 (Activar/Inactivar); decisión (f).
+  - Aceptación: crear, editar, inactivar (con confirmación) y activar (sin confirmación) iguales; tests de `features/campanias` sin cambios y en verde.
+  - Pruebas: frontend.
+
+- [x] **T19** · `frontend` · Dashboard: página, tabla y tarjeta
+  - Archivos: `Frontend/src/features/dashboard/pages/DashboardPage.tsx` (principal), `Frontend/src/features/dashboard/components/TablaResultadosCampania.tsx`, `Frontend/src/features/dashboard/components/EstadoModeloCard.tsx`.
+  - Docs: `docs/frontend/01-arquitectura.md` §R-011, §R-012; decisión (f).
+  - Aceptación: `h1` "Dashboard", "Resultados de <mes>", filtro, ayuda, "Imprimir / Guardar PDF" y todos los `print:hidden` iguales; tests de `features/dashboard` sin cambios y en verde.
+  - Pruebas: frontend.
+
+- [x] **T20** · `frontend` · Dashboard: gráficos
+  - Archivos: `Frontend/src/features/dashboard/components/EmbudoGestion.tsx` (principal), `Frontend/src/features/dashboard/components/GraficoResultados.tsx`.
+  - Docs: `docs/frontend/01-arquitectura.md` §R-012, §Estilos; decisiones (a)–(d) de R-012.
+  - Aceptación: cifras, `aria-label`, tablas equivalentes y colores por token iguales; el único `style` sigue siendo el que depende del dato; `componentes.test.tsx` y `GraficoResultados.test.tsx` sin cambios y en verde.
+  - Pruebas: frontend.
+
+- [!] **T21** · `frontend` · Guardia global de estilos y revisión visual del usuario — guardia y suites hechas; **revisión visual del usuario pendiente**
+  - Archivos: `Frontend/src/shared/ui/estilos.test.ts` (principal, nuevo: recorre con `import.meta.glob('../../**/*.tsx', { query: '?raw' })` todo `src/` salvo `*.test.tsx` y `mocks/`).
+  - Docs: `docs/frontend/01-arquitectura.md` §Estilos; decisión (f).
+  - Aceptación: ningún `.tsx` de `src/` tiene colores literales ni paleta por defecto de Tailwind; `style={` solo en `EmbudoGestion.tsx` y `GraficoResultados.tsx`. `git diff --stat` de R-013 sobre `Frontend/src/**/*.test.tsx` vacío (salvo `tokens.test.ts`, `Diseno.test.tsx`, `estilos.test.ts`). `npm test`, `npm run lint`, `npm run build` en verde; E2E 5/5 en 8081. **Revisión visual:** el orquestador pide al usuario revisar Inicio, Carga, Lista (con ventana de gestión), Seguimiento, Campañas y Dashboard en 8081; la tarea queda `[!]` hasta su respuesta; ajustes pequeños se vuelven T21.n, cambios de comportamiento → requerimiento nuevo.
+  - Pruebas: frontend + e2e + revisión del usuario.
+
+- [x] **T22** · `infra-deploy` · Stack principal: respaldo, S23 y reconstrucción
+  - Archivos: ninguno versionado (`.env` local por el orquestador; `.harness/tests.md` para el registro).
+  - Docs: `Backend/README.md` §1, §5; `docs/backend/10-docker.md`; decisiones (a), (b), (e).
+  - Aceptación:
+    - **Antes de tocar nada:** `scripts/respaldar-base.sh` → `respaldos/proyectofinal-*.dump` + `.conteos` (solo lectura).
+    - `.env` principal con `APP_DB_USER`, `APP_DB_PASSWORD` (hex generada, no mostrada), `MIGRATE_DATABASE_URL` (propietario) y `DATABASE_URL` (rol de la app); `docker compose up -d --build` **sin `-v`** → `db-roles` 0, `migrate` 0, `alembic current` = `0008 (head)`, `LISTO` por 8080.
+    - Conteos iguales al `.conteos` del respaldo; el backend conectado como rol de la app (no superusuario); 8000 → `403` salvo `/health`.
+    - **Solo mirando:** Inicio, Lista (sin generar), Campañas, Dashboard con el diseño nuevo. Sin crear datos, sin `reentrenar`, sin `down -v`.
+    - Backend `pytest`, `ruff`, `format`, `mypy app`, `lint-imports`; Frontend `npm test`, `lint`, `build`; E2E 5/5 en 8081: todo en verde.
+    - Reversión si falla: volver a `DATABASE_URL` anterior en `.env` y `up -d` (no destructivo).
+  - Pruebas: suites + verificación manual.
+
+- [x] **DOC-1** · `docs` (doc-agent) · Operación: respaldo, roles e instalación limpia
+  - Archivos: `Backend/README.md` (§1 variables nuevas, §5 con los scripts de T1/T2, §6 nota de T5), `Documentation/docs/backend/10-docker.md` (`db-roles`, `MIGRATE_DATABASE_URL`, `mtabolic-limpia`, S23 cerrado con su residual), `Documentation/docs/backend/09-esquema-base-de-datos.md` (S23: roles y permisos), `Documentation/comandos/respaldo-y-ensayo.md` (nuevo: respaldo, restauración y `ensayo-demo-e2e`). El doc-agent valora un ADR para (a)/(b) (cambia el acceso a la base).
+  - Aceptación: ningún documento dice que la app se conecta con el propietario; S23 ya no figura como abierto; los comandos documentados coinciden con los scripts.
+
+- [x] **DOC-2** · `docs` (doc-agent) · Documentación de cierre (D7-OP-05)
+  - Archivos: `Documentation/05-cronograma-semana.md` (estado de las tareas del Día 7 y "Avance y resumen del Día 7"), `Documentation/03-casos-de-uso.md` (§21 pasos 4, 7 y 10 según (c) y (h); otros ajustes si algo cambió), `Documentation/07-cierre-de-la-entrega.md` (nuevo: diferencias con el notebook —ADR-005, `11-historico`, niveles por percentiles, fecha ≥ hoy, cédula—, lista de lo diferido —03 §20, S18, S19, S21, S24, abrir a otro PC, propietario superusuario, hallazgos medium/low de SEC-1—, estado final y cifras de las suites), `Documentation/docs/frontend/01-arquitectura.md` (§shared/ui: `Boton`, `Tarjeta`, `EncabezadoPagina`; §Estilos: tokens nuevos y guardia global), `ACTION_PLAN.md` (cierre, DECISIONES IMPORTANTES con (a)–(h), PRÓXIMO).
+  - Aceptación: cada tarea D7-* con estado y enlace; sin contradicciones con ADR-006 en §21; diferidos y hallazgos aceptados listados.
+
+**Lotes de desarrollo** (archivos disjuntos dentro de cada lote)
+
+| Lote | Tareas |
+|---|---|
+| 1 | T1, T3, T5, T8, T11, SEC-1 (solo lectura, en paralelo) |
+| 2 | T2, T4, T9, T12, T13, T14, T15, T18, SEC-FIX-n (si los hay; antes que cualquier tarea de diseño que toque el mismo archivo) |
+| 3 | T6, T16, T19, T20 |
+| 4 | T10, T17 |
+| 5 | T21 (revisión visual del usuario) |
+| 6 | T22 (orquestador) → DOC-1 → DOC-2 |
+
+**Dependencias:** T3 → T2 (`permisos.sql`), T3 → T4 → T6, T9, T10, T22. T1 → T6 (`.gitignore`, en serie), T1 → T2 (`.conteos`), T1 → T22. T4 + T8 + T9 + T6 → T10. T11 → T12..T20 (primitivas y tokens); T13 → T14..T20 (si usan `ErrorAlert`/`DataTable`); T16 → T17 (misma carpeta de pruebas, en serie). T12..T20 → T21. SEC-1 → SEC-FIX-n → T22; un SEC-FIX que toque un archivo de diseño va **antes** de esa tarea de diseño. T21 + T22 → DOC-1 → DOC-2. Externas: Docker Desktop en marcha; los libros reales en `HISTORICO_DIR` (T6); respuesta del usuario en la revisión visual (T21). Sin librerías nuevas ni migración de esquema (sigue en `0008`).
+
+**Riesgos:**
+1. **S23 deja la app sin arrancar o a medias:** un permiso que falte (secuencias, privilegios por defecto, una tabla nueva) rompería CU-03, cargas o gestiones con `permission denied`; y como `compose.yaml` exige las variables nuevas con `${VAR:?}`, un `.env` sin ellas impide cualquier comando de compose. Mitigación: probar en e2e con volumen existente y desde cero (T4) y en la instalación limpia (T6) antes del principal; respaldo previo (T22) y reversión no destructiva a la `DATABASE_URL` anterior.
+2. **Scripts que tocan la base principal por error:** un `-p` mal resuelto o una restauración que sobrescriba destruiría datos reales. Mitigación: lista blanca de proyectos, restauración solo a base nueva con nombre validado, nunca `DROP`/rename/`down`, script de ensayo fijado a `mtabolic-e2e`, conteos antes/después.
+3. **El rediseño cambia comportamiento:** tocar `className` en 25+ archivos puede alterar textos, roles, foco o el contraste (accesibilidad) y romper E2E. Mitigación: pruebas existentes sin modificar como red de seguridad, guardia global de estilos (T21), E2E 5/5 y revisión visual del usuario antes del cierre.
 
 ### R-012 — Arreglos tras el Día 6: gráficos del dashboard, ventana de gestión que se cierra al guardar, ayudas de Dashboard e Inicio e impresión del dashboard · **DONE** 2026-09-30
 
@@ -2561,8 +2873,17 @@ Ninguno.
 - 2026-09-30 · R-012 · (g) Botón "Imprimir / Guardar PDF" (`window.print()` + `@media print`); **RN-11.2 precisada**: sin exportación propia, impresión del navegador permitida. Aislado en T9: retirable sin tocar lo demás → [03 §14](03-casos-de-uso.md).
 - 2026-09-30 · R-012 · La revisión de seguridad de R-012 se difiere a la revisión única del día 7 ([05 §1](05-cronograma-semana.md)).
 
+- 2026-10-01 · R-013 · (a)(b) S23: la app usa `mtabolic_app` sin superusuario, sin `CREATE`, sin `DELETE`/`TRUNCATE`; `migrate` con el propietario por `MIGRATE_DATABASE_URL`; servicio `db-roles` idempotente; transición sin `APP_DB_PASSWORD`. Residual: propietario superusuario del clúster → [ADR-012](adr/ADR-012-rol-de-aplicacion-sin-superusuario.md), [09 §Roles](docs/backend/09-esquema-base-de-datos.md).
+- 2026-10-01 · R-013 · S1: filtro de `Host` (`400`, `HOSTS_PERMITIDOS`) y de `Origin` en escrituras (`403`, `CORS_ORIGINS`) en el backend; nginx `default_server` `444`, CSP y cabeceras → [ADR-013](adr/ADR-013-proteccion-host-y-origin.md), [API_CONTRACT §Host y Origin](docs/API_CONTRACT.md).
+- 2026-10-01 · R-013 · SEC-1: límites `DEMASIADO_GRANDE` del `.xlsx`, `top_k` ≤ 1000, filtros de campaña ≤ 10, `mes` 1900–2999, `500` sin traza en logs → [API_CONTRACT](docs/API_CONTRACT.md). Diferidos S5, S10, S26, TLS, residual S23 → [07 §3](07-cierre.md).
+- 2026-10-01 · R-013 · (c) Sin reloj simulado en ejecución: prueba de integración con reloj inyectado y script `ensayo-demo-e2e` fijado al stack aislado → [comandos/ensayo-demo-e2e](comandos/ensayo-demo-e2e.md).
+- 2026-10-01 · R-013 · (d) Instalación limpia en el stack efímero `mtabolic-limpia` (8082) con libros reales → [10-docker](docs/backend/10-docker.md).
+- 2026-10-01 · R-013 · (e) Restauración solo a base nueva con nombre validado; nunca renombra, sobrescribe ni borra → [comandos/respaldo-y-restauracion](comandos/respaldo-y-restauracion.md).
+- 2026-10-01 · R-013 · (f) Sistema de diseño: tokens `canvas`, `line`, `muted`, `brand-strong`, `danger`; primitivas `Boton`, `Tarjeta`, `EncabezadoPagina`; guardia global `estilos.test.ts` → [frontend/01 §Estilos](docs/frontend/01-arquitectura.md).
+- 2026-10-01 · R-013 · (g) `reiniciar-base-historica` espera `LISTO` por `FRONTEND_PORT` → [comandos/reiniciar-base-historica](comandos/reiniciar-base-historica.md).
+- 2026-10-01 · R-013 · (h) 03 §21 paso 4 corregido para no contradecir ADR-006: lista con la fecha de hoy; comparación con el notebook con `verificar_lista.py` → [03 §21](03-casos-de-uso.md).
+- 2026-10-01 · R-014 · Marco a `max-w-[96rem]`; `DataTable` con `className?` por columna (en `th`/`td`), celdas `px-3`, `print:overflow-visible`; anchos por columna en el componente de la tabla, nunca en `DataTable` ni con `style=` → [frontend/01 §Estilos](docs/frontend/01-arquitectura.md).
+
 ## PRÓXIMO
 
-Día 7 del [cronograma](05-cronograma-semana.md): revisión de seguridad única de R-007 a R-012 y S23 (D7-OP-02), respaldo (D7-BD-01), instalación limpia (D7-OP-01), E2E del escenario principal (D7-OP-03), ensayo de la demostración con reloj simulado en el stack aislado (D7-OP-04) y documentación de cierre (D7-OP-05). Ver "Aviso para el día 7" en [05 Día 6](05-cronograma-semana.md).
-
-Registrado por R-006, sin implementar: **D7-FE-01** (mejora del diseño visual de la aplicación con los tokens de `shared/ui`, sin cambiar comportamiento; a pedido del usuario) → [05 Día 7](05-cronograma-semana.md).
+Entrega cerrada ([07-cierre](07-cierre.md)). Pendiente del usuario: revisión visual del rediseño (R-013 T21); ajustes pequeños → T21.n, cambios de comportamiento → requerimiento nuevo. Diferidos y riesgos residuales en [07 §3](07-cierre.md).

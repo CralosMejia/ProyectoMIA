@@ -11,6 +11,7 @@ Registro del paso del notebook `MVP.ipynb` a una aplicación web. Sirve de insum
 | 04 | [Decisiones y pendientes para iniciar el desarrollo](04-pendientes-para-iniciar-desarrollo.md) | Decisiones D-01 a D-18 confirmadas, implicaciones de la instalación en un solo PC, acciones sobre repositorio y datos, ajustes de configuración y plan resumido de la semana | 2026-09-28 |
 | 05 | [Cronograma de la entrega de una semana](05-cronograma-semana.md) | Tareas por día de base de datos, backend, frontend y apoyo, con responsable, dependencias, criterio de "hecho", ruta crítica, carga por persona y orden de recorte | 2026-09-28 |
 | 06 | [¿Cómo funciona la lista de socios por vencer?](06-como-funciona-la-lista.md) | Guía para el personal del gimnasio, sin términos técnicos: fecha y días a revisar, socios prioritarios, nombre de la lista, niveles alto/medio/bajo, motivos, datos mostrados (pantalla y Excel iguales) y casos frecuentes | 2026-09-29 |
+| 07 | [Cierre de la entrega](07-cierre.md) | Qué se entregó, diferencias con el notebook, lo diferido y riesgos residuales, cómo operar | 2026-10-01 |
 
 > `01` se conserva como registro del análisis inicial; el alcance vigente es el de `03`.
 
@@ -33,6 +34,8 @@ Registro del paso del notebook `MVP.ipynb` a una aplicación web. Sirve de insum
 | Documento | Contenido |
 |---|---|
 | [comandos/reiniciar-base-historica.md](comandos/reiniciar-base-historica.md) | Reiniciar la base principal a solo datos históricos (borra cargas mensuales, listas y predicciones; no toca `mtabolic-e2e`) |
+| [comandos/respaldo-y-restauracion.md](comandos/respaldo-y-restauracion.md) | Respaldo de solo lectura y restauración en una base nueva con comparación de conteos (R-013) |
+| [comandos/ensayo-demo-e2e.md](comandos/ensayo-demo-e2e.md) | Ensayo de la demostración (03 §21) en el stack aislado: adelantar seguimientos y perder la fecha de reentrenamiento (R-013) |
 
 ## Decisiones de arquitectura (ADR)
 
@@ -41,5 +44,7 @@ Registro del paso del notebook `MVP.ipynb` a una aplicación web. Sirve de insum
 | [ADR-001](adr/ADR-001-fastapi-react-postgresql.md) | FastAPI + React + PostgreSQL en lugar de Streamlit (cierra P-07) |
 | [ADR-007](adr/ADR-007-excel-igual-a-la-pantalla-y-nombre-de-lista.md) | Excel igual a la tabla de la pantalla y nombre editable de la lista (R-008) |
 | [ADR-008](adr/ADR-008-gestion-por-ciclo-y-nombre-de-campania-congelado.md) | Gestión por ciclo de membresía, nombre de la campaña congelado al asignar y reglas de campañas y gestiones (R-009) |
+| [ADR-012](adr/ADR-012-rol-de-aplicacion-sin-superusuario.md) | La app se conecta con un rol sin superusuario ni `DELETE`; migraciones con el propietario (S23, R-013) |
+| [ADR-013](adr/ADR-013-proteccion-host-y-origin.md) | Filtro de `Host` y `Origin` contra DNS rebinding y CSRF (S1, R-013) |
 
 Cómo levantar el stack: [README.md de la raíz](../README.md).

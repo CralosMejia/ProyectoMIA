@@ -87,6 +87,16 @@ Sin `CASCADE`, sin `TRUNCATE`, sin reiniciar secuencias y sin script versionado.
 - `0008` (`down_revision = "0007"`, R-009): añade `gestiones_retencion.campania_nombre TEXT NULL`, la rellena desde `campanias.nombre` en las gestiones existentes con campaña y después crea el `CHECK campania_nombre_coherente`. Editar, renombrar o inactivar una campaña no cambia las gestiones ya creadas ([ADR-008](../../adr/ADR-008-gestion-por-ciclo-y-nombre-de-campania-congelado.md)). Las pruebas verifican el relleno sobre una base en `0007`, `IntegrityError` con `campania_id` sin nombre o al revés, el ciclo `downgrade 0007` → `upgrade head` y `alembic current` → `0008 (head)`. Aplicadas al stack principal sin `down -v`: `campanias` 3 (de ejemplo), `gestiones_retencion` 0, resto de conteos intactos.
 - Fixture `db_session` (`tests/integration/conftest.py`): `Session` sobre una conexión con transacción externa que termina en `rollback`; la usan las pruebas de repositorios ([11-historico.md](11-historico.md)).
 
-## Pendientes
+## Roles y permisos (S23, R-013)
 
-- **S23**: rol de BD sin superusuario para la app y rol separado para migraciones (día 7).
+Dos roles ([ADR-012](../../adr/ADR-012-rol-de-aplicacion-sin-superusuario.md)):
+
+| Rol | Quién lo usa | Permisos |
+|---|---|---|
+| Propietario (`POSTGRES_USER`) | `migrate` (`MIGRATE_DATABASE_URL`), pruebas de integración (`TEST_DATABASE_URL`), scripts de respaldo y restauración | Dueño de las tablas; DDL. Superusuario del clúster (imagen oficial): **residual aceptado** |
+| Aplicación (`APP_DB_USER`, por defecto `mtabolic_app`) | backend (`DATABASE_URL`) | `LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`; `CONNECT`; `USAGE` en `public` **sin `CREATE`**; `SELECT, INSERT, UPDATE` en las tablas y `USAGE, SELECT` en las secuencias; **sin `DELETE` ni `TRUNCATE`**; `alembic_version` solo lectura |
+
+- Lo aplica el servicio `db-roles` en cada `up` (`Backend/db/roles/aplicar-roles.sh` + `permisos.sql`, idempotente). `ALTER DEFAULT PRIVILEGES FOR ROLE <propietario>` da los mismos permisos a las tablas y secuencias que creen migraciones futuras.
+- Sin `DELETE`/`TRUNCATE` la base refuerza la regla "nada del negocio se borra físicamente". Los `downgrade` que borran filas (p. ej. `0007`) solo los ejecuta el propietario.
+- `scripts/restaurar-base.*` aplica `permisos.sql` también a la base restaurada.
+- Verificado en R-013 (e2e con volumen existente y desde cero, instalación limpia y stack principal): `DELETE` y `CREATE TABLE` como rol de la app → `permission denied`; conteos iguales antes y después.

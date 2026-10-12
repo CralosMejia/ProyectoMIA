@@ -132,18 +132,26 @@ Sin cambios de backend, API ni esquema. Decisiones (a)–(h) en [ACTION_PLAN §D
 
 | Componente | Contrato |
 |---|---|
-| `DataTable<T>` | `columns: {key, header, render?}[]`, `rows`, `getRowKey`, `emptyMessage`, `caption` |
+| `DataTable<T>` | `columns: {key, header, render?, className?}[]`, `rows`, `getRowKey`, `emptyMessage`, `caption`. `className` (opcional, R-014) se añade al `th` y a cada `td` de esa columna; sin ella, las clases base. Celdas `px-3`, cabeceras partibles; contenedor `overflow-x-auto` + `print:overflow-visible` |
 | `RiskBadge` | `nivel: "ALTO" \| "MEDIO" \| "BAJO"` → "Alto"/"Medio"/"Bajo" con los tokens `risk-high`/`risk-medium`/`risk-low` |
 | `LoadingIndicator` | `role="status"`, texto accesible configurable |
 | `ErrorAlert` | `role="alert"`, `message`, `onRetry?` → botón "Reintentar" |
 | `Modal` | `open`, `title`, `onClose`; `role="dialog"`, `aria-modal`, `aria-labelledby`; cierra con `Escape` y "Cerrar"; foco al abrir |
 | `BotonAyuda` · `SeccionAyuda` (`Ayuda.tsx`, R-012) | `BotonAyuda({ titulo, children })` → botón con ese nombre que abre un `Modal` con el mismo título y contenido desplazable (`max-h-[60vh]`); al cerrar, el foco vuelve al botón. `SeccionAyuda({ titulo, children })` → bloque con subtítulo. Solo tokens; no importa `features/` |
+| `Boton` (`Diseno.tsx`, R-013) | Props de `button` + `variante: "primario" \| "secundario" \| "peligro"` (por defecto `secundario`); `type="button"` por defecto; pasa `disabled`, `onClick`, `aria-*`, `type="submit"`; foco visible (`focus-visible:`) |
+| `Tarjeta` (`Diseno.tsx`, R-013) | Props de `section` + `titulo?` y `nivelTitulo` (por defecto `2`) → `section` con encabezado opcional, fondo `surface` y borde `line` |
+| `EncabezadoPagina` (`Diseno.tsx`, R-013) | `titulo`, `subtitulo?`, `acciones?` → un `h1` por página con subtítulo y acciones alineadas |
+| `clases.ts` (R-013) | `CLASE_CAMPO` (clase común de `input`/`select`/`textarea`) y `claseBoton(variante)` para elementos que deben verse como botón sin serlo (p. ej. enlaces) |
 
 ## Estilos
 
 Tokens (colores `ok`/`degraded`, `risk-high`/`risk-medium`/`risk-low`, tipografía, radios) declarados una sola vez en `src/index.css` dentro de `@theme` y consumidos por nombre en clases Tailwind. No hay CSS fuera de `index.css`. Aún no existe `06-estilos-y-design-system.md`.
 
 R-012: token `--color-brand` (barras del embudo). Los gráficos usan solo tokens (`ok`, `risk-high`, `ink` atenuado, `brand`) por clases `fill-*`/`stroke-*`/`bg-*`; el único `style` permitido es el ancho o la longitud que depende del dato. La app no tiene modo oscuro; no se creó uno. `index.css` incluye `@media print` con `print-color-adjust: exact`, sin `dialog` impreso y sin cortes dentro de gráficos y tablas; la variante `print:` de Tailwind oculta lo que no se imprime.
+
+**Sistema de diseño (R-013, D7-FE-01).** Tokens nuevos en `@theme`: `--color-canvas` (fondo de página), `--color-line` (bordes y separadores), `--color-muted` (texto secundario), `--color-brand-strong` (botón primario al pasar el cursor) y `--color-danger` (acciones destructivas). Todas las pantallas (marco, Inicio, Carga, Lista y ventana de gestión, Seguimiento, Campañas, Dashboard, Acceso no permitido, Health) usan las primitivas de `Diseno.tsx` y `clases.ts`, **sin cambiar comportamiento**: mismos textos, nombres accesibles, roles, niveles de encabezado, foco, rutas y llamadas a la API; las pruebas existentes no se modificaron. **Guardia global** `shared/ui/estilos.test.ts`: recorre todos los `.tsx` de `src/` (salvo pruebas y `mocks/`) y falla si hay colores literales o la paleta por defecto de Tailwind, o un `style=` fuera de `EmbudoGestion.tsx` y `GraficoResultados.tsx`. `tokens.test.ts` cubre los tokens nuevos y que `Diseno.tsx` solo use tokens y no importe `features/`. Revisión visual del usuario: pendiente al cierre de R-013.
+
+**Ancho del marco y de las tablas (R-014).** `AppLayout` limita `header` y `main` a `max-w-[96rem]` (1536 px; antes `max-w-6xl`); se conservan `print:max-w-none print:p-0` y `print:hidden` del `header`. Criterio de anchos: las clases de ancho y ajuste de cada columna viven en el componente de la tabla (vía `className` de `DataTable`), nunca en `DataTable` ni con `style=`; columnas cortas (cédula, fechas, nivel, acciones) sin salto, columnas de texto largo partibles con ancho mínimo (en `TablaLista`: Nombre y Campaña `min-w-28`, Motivos `min-w-52`). Objetivo medido: a 1366 y 1920 px ninguna tabla de Lista, Seguimiento, Campañas ni Dashboard (también impreso) desborda; en pantallas estrechas (390 px) la tabla se desplaza dentro de su recuadro sin mover la página. Seguimiento, Campañas y Dashboard no necesitaron clases por columna. Lo cubre `e2e/anchos-tablas.spec.ts`.
 
 ## MSW (datos simulados)
 

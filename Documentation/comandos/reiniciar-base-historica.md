@@ -42,7 +42,7 @@ Sin preguntar (uso no interactivo, **borra sin confirmación**): `-Si` en PowerS
 2. Muestra qué se borrará y pide la confirmación `BORRAR` (salvo con `-Si` / `--si`).
 3. `docker compose -p proyectofinal -f compose.yaml --env-file .env down -v` (borra contenedores y el volumen de la base principal).
 4. `docker compose -p proyectofinal -f compose.yaml --env-file .env up -d` (recrea la base; el servicio `migrate` aplica el esquema y el backend migra el histórico y entrena el modelo v1).
-5. Consulta `GET /api/v1/sistema/estado` hasta que esté `LISTO` (espera como máximo 15 minutos).
+5. Consulta `GET /api/v1/sistema/estado` **por el puerto del frontend** (`FRONTEND_PORT`: variable de la shell, si no la línea del `.env`, si no `8080`; no numérico → código 1) hasta que esté `LISTO` (espera como máximo 15 minutos). Desde R-011 el backend por 8000 responde `403`; corregido en R-013 (T5).
 6. Muestra los conteos de `socios`, `membresias`, `cargas`, `listas_priorizadas` y `predicciones`, sin imprimir credenciales.
 
 ## Resultado esperado
