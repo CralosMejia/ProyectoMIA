@@ -1,4 +1,5 @@
 import type { ChangeEvent } from 'react'
+import { CLASE_CAMPO } from '../../../shared/ui/clases'
 import type { ListaResumen } from '../types'
 
 /** Texto de una opcion: "<nombre> · <n> prioritarios", con n = min(topK, totalItems). */
@@ -33,8 +34,8 @@ export function HistorialListas({
   const conocida = listas.some((l) => l.id === seleccionadaId)
 
   return (
-    <div className="flex flex-col gap-2 font-sans text-ink">
-      <label htmlFor="historial-listas" className="font-medium">
+    <div className="flex flex-col gap-1.5 font-sans text-ink">
+      <label htmlFor="historial-listas" className="text-sm font-medium">
         Listas anteriores
       </label>
       <select
@@ -42,7 +43,7 @@ export function HistorialListas({
         value={conocida ? String(seleccionadaId) : ''}
         onChange={onChange}
         disabled={deshabilitado}
-        className="max-w-md rounded-card border border-ink/30 px-3 py-2"
+        className={`${CLASE_CAMPO} max-w-md`}
       >
         {!conocida && (
           <option value="" disabled>

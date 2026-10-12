@@ -1,4 +1,6 @@
 import { useState, type FormEvent } from 'react'
+import { CLASE_CAMPO } from '../../../shared/ui/clases'
+import { Boton } from '../../../shared/ui/Diseno'
 import { ErrorAlert } from '../../../shared/ui/ErrorAlert'
 import type { CampaniaEntrada, NivelRiesgo, PlanCampania } from '../types'
 import { NIVELES, PLANES } from './etiquetas'
@@ -7,6 +9,12 @@ const NOMBRE_MAXIMO = 120
 const DESCRIPCION_MAXIMA = 500
 const PRIORIDAD_MAXIMA = 999
 const ENTERO = /^\d+$/
+
+const CLASE_ETIQUETA = 'text-sm font-semibold text-ink'
+const CLASE_ERROR = 'text-sm font-medium text-danger'
+/** Casilla como insignia seleccionable: resalta con `brand` la marcada. */
+const CLASE_CASILLA =
+  'flex cursor-pointer items-center gap-2 rounded-pill border border-line bg-surface px-3 py-1.5 text-sm transition-colors hover:bg-canvas has-[:checked]:border-brand has-[:checked]:bg-brand/5 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50'
 
 const MENSAJE_NOMBRE = 'Escriba un nombre para la campaña.'
 const MENSAJE_NIVELES = 'Elija al menos un nivel de riesgo.'
@@ -75,10 +83,10 @@ export function FormularioCampania({
       aria-label="Datos de la campaña"
       noValidate
       onSubmit={onSubmit}
-      className="flex flex-col gap-4 font-sans text-ink"
+      className="flex flex-col gap-5 font-sans text-ink"
     >
-      <div className="flex flex-col gap-1">
-        <label htmlFor="campania-nombre" className="font-medium">
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="campania-nombre" className={CLASE_ETIQUETA}>
           Nombre
         </label>
         <input
@@ -90,17 +98,17 @@ export function FormularioCampania({
           disabled={guardando}
           aria-invalid={errores.nombre ? true : undefined}
           aria-describedby={errores.nombre ? 'campania-nombre-error' : undefined}
-          className="rounded-card border border-ink/30 px-3 py-2"
+          className={CLASE_CAMPO}
         />
         {errores.nombre && (
-          <p id="campania-nombre-error" className="text-sm text-degraded">
+          <p id="campania-nombre-error" className={CLASE_ERROR}>
             {errores.nombre}
           </p>
         )}
       </div>
 
-      <div className="flex flex-col gap-1">
-        <label htmlFor="campania-descripcion" className="font-medium">
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="campania-descripcion" className={CLASE_ETIQUETA}>
           Descripción
         </label>
         <textarea
@@ -110,20 +118,21 @@ export function FormularioCampania({
           value={descripcion}
           onChange={(e) => setDescripcion(e.target.value)}
           disabled={guardando}
-          className="rounded-card border border-ink/30 px-3 py-2"
+          className={CLASE_CAMPO}
         />
       </div>
 
       <fieldset
         aria-describedby={errores.niveles ? 'campania-niveles-error' : undefined}
-        className="flex flex-col gap-1"
+        className="flex flex-col gap-2"
       >
-        <legend className="font-medium">Niveles de riesgo</legend>
-        <div className="flex flex-wrap gap-4">
+        <legend className={`mb-2 ${CLASE_ETIQUETA}`}>Niveles de riesgo</legend>
+        <div className="flex flex-wrap gap-2">
           {NIVELES.map((n) => (
-            <label key={n.valor} className="flex items-center gap-2">
+            <label key={n.valor} className={CLASE_CASILLA}>
               <input
                 type="checkbox"
+                className="size-4 accent-brand"
                 checked={niveles.includes(n.valor)}
                 onChange={() => setNiveles((actuales) => alternar(actuales, n.valor))}
                 disabled={guardando}
@@ -133,7 +142,7 @@ export function FormularioCampania({
           ))}
         </div>
         {errores.niveles && (
-          <p id="campania-niveles-error" className="text-sm text-degraded">
+          <p id="campania-niveles-error" className={CLASE_ERROR}>
             {errores.niveles}
           </p>
         )}
@@ -141,14 +150,15 @@ export function FormularioCampania({
 
       <fieldset
         aria-describedby={errores.planes ? 'campania-planes-error' : undefined}
-        className="flex flex-col gap-1"
+        className="flex flex-col gap-2"
       >
-        <legend className="font-medium">Planes</legend>
-        <div className="flex flex-wrap gap-4">
+        <legend className={`mb-2 ${CLASE_ETIQUETA}`}>Planes</legend>
+        <div className="flex flex-wrap gap-2">
           {PLANES.map((p) => (
-            <label key={p.valor} className="flex items-center gap-2">
+            <label key={p.valor} className={CLASE_CASILLA}>
               <input
                 type="checkbox"
+                className="size-4 accent-brand"
                 checked={planes.includes(p.valor)}
                 onChange={() => setPlanes((actuales) => alternar(actuales, p.valor))}
                 disabled={guardando}
@@ -158,14 +168,14 @@ export function FormularioCampania({
           ))}
         </div>
         {errores.planes && (
-          <p id="campania-planes-error" className="text-sm text-degraded">
+          <p id="campania-planes-error" className={CLASE_ERROR}>
             {errores.planes}
           </p>
         )}
       </fieldset>
 
-      <div className="flex flex-col gap-1">
-        <label htmlFor="campania-prioridad" className="font-medium">
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="campania-prioridad" className={CLASE_ETIQUETA}>
           Prioridad
         </label>
         <input
@@ -181,13 +191,13 @@ export function FormularioCampania({
           aria-describedby={
             errores.prioridad ? 'campania-prioridad-ayuda campania-prioridad-error' : 'campania-prioridad-ayuda'
           }
-          className="rounded-card border border-ink/30 px-3 py-2"
+          className={CLASE_CAMPO}
         />
-        <p id="campania-prioridad-ayuda" className="text-sm text-ink/60">
+        <p id="campania-prioridad-ayuda" className="text-xs text-muted">
           1 es la que se sugiere primero.
         </p>
         {errores.prioridad && (
-          <p id="campania-prioridad-error" className="text-sm text-degraded">
+          <p id="campania-prioridad-error" className={CLASE_ERROR}>
             {errores.prioridad}
           </p>
         )}
@@ -195,22 +205,13 @@ export function FormularioCampania({
 
       {error && <ErrorAlert message={error} />}
 
-      <div className="flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={onCancelar}
-          disabled={guardando}
-          className="rounded-pill border border-ink/20 px-4 py-2 text-sm font-medium disabled:opacity-50"
-        >
+      <div className="flex justify-end gap-2 border-t border-line pt-4">
+        <Boton onClick={onCancelar} disabled={guardando}>
           Cancelar
-        </button>
-        <button
-          type="submit"
-          disabled={guardando}
-          className="rounded-pill bg-ink px-4 py-2 text-sm font-medium text-surface disabled:opacity-50"
-        >
+        </Boton>
+        <Boton type="submit" variante="primario" disabled={guardando}>
           Guardar
-        </button>
+        </Boton>
       </div>
     </form>
   )

@@ -1,5 +1,7 @@
 import { Link, useSearchParams } from 'react-router-dom'
+import { claseBoton } from '../../../shared/ui/clases'
 import { DataTable, type DataTableColumn } from '../../../shared/ui/DataTable'
+import { Boton, EncabezadoPagina, Tarjeta } from '../../../shared/ui/Diseno'
 import { ErrorAlert } from '../../../shared/ui/ErrorAlert'
 import { LoadingIndicator } from '../../../shared/ui/LoadingIndicator'
 import { FormularioGestion } from '../components/FormularioGestion'
@@ -13,8 +15,8 @@ const TITULOS: Record<FiltroAlerta, string> = {
   proximas: 'Seguimientos de los próximos 7 días',
 }
 
-const CLASE_BOTON = 'rounded-pill bg-ink px-4 py-2 text-sm font-medium text-surface'
-const CLASE_ENLACE = 'text-sm font-medium underline'
+/** Enlace con aspecto de boton secundario (la guia de `Boton`), para la navegacion de vuelta. */
+const CLASE_ENLACE = claseBoton('secundario')
 
 /**
  * Pagina de ruta `/seguimiento?filtro=vencidas|hoy|proximas` (CU-09): gestiones pendientes del
@@ -27,14 +29,19 @@ export default function SeguimientoPage() {
 
   if (filtro === null) {
     return (
-      <section aria-labelledby="seguimiento-title" className="flex flex-col gap-4 font-sans text-ink">
-        <h1 id="seguimiento-title" className="text-2xl font-semibold">
-          Grupo de seguimiento no válido
-        </h1>
-        <p>Elija uno de los grupos de seguimiento desde la página de Inicio.</p>
-        <Link to="/" className={CLASE_ENLACE}>
-          Volver a Inicio
-        </Link>
+      <section
+        aria-label="Grupo de seguimiento no válido"
+        className="flex flex-col gap-6 font-sans text-ink"
+      >
+        <EncabezadoPagina titulo="Grupo de seguimiento no válido" />
+        <Tarjeta className="items-start">
+          <p className="text-sm text-muted">
+            Elija uno de los grupos de seguimiento desde la página de Inicio.
+          </p>
+          <Link to="/" className={CLASE_ENLACE}>
+            Volver a Inicio
+          </Link>
+        </Tarjeta>
       </section>
     )
   }
@@ -54,28 +61,27 @@ export default function SeguimientoPage() {
       key: 'id',
       header: 'Acción',
       render: (g) => (
-        <button
-          type="button"
+        <Boton
           aria-label={`Abrir gestión ${g.socioNombre}`}
           onClick={() => seguimiento.abrir(g)}
-          className={CLASE_BOTON}
+          className="whitespace-nowrap px-3 py-1"
         >
           Abrir gestión
-        </button>
+        </Boton>
       ),
     },
   ]
 
   return (
-    <section aria-labelledby="seguimiento-title" className="flex flex-col gap-6 font-sans text-ink">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 id="seguimiento-title" className="text-2xl font-semibold">
-          {TITULOS[filtro]}
-        </h1>
-        <Link to="/" className={CLASE_ENLACE}>
-          Volver a Inicio
-        </Link>
-      </div>
+    <section aria-label={TITULOS[filtro]} className="flex flex-col gap-6 font-sans text-ink">
+      <EncabezadoPagina
+        titulo={TITULOS[filtro]}
+        acciones={
+          <Link to="/" className={CLASE_ENLACE}>
+            Volver a Inicio
+          </Link>
+        }
+      />
 
       {seguimiento.cargando && <LoadingIndicator label="Cargando seguimientos..." />}
       {seguimiento.error && (

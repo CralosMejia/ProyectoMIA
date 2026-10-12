@@ -57,29 +57,29 @@ export function EmbudoGestion({ embudo }: EmbudoGestionProps) {
   return (
     <section
       aria-labelledby="embudo-title"
-      className="flex flex-col gap-5 rounded-card border border-ink/10 bg-surface p-5 font-sans text-ink shadow-sm"
+      className="flex flex-col gap-5 rounded-card border border-line bg-surface p-5 font-sans text-ink shadow-sm"
     >
       <header className="flex flex-col gap-1">
         <h2 id="embudo-title" className="text-lg font-semibold">
           Avance de las gestiones con campaña
         </h2>
-        <p className="text-sm text-ink/60">Porcentaje sobre las gestiones asignadas</p>
+        <p className="text-sm text-muted">Porcentaje sobre las gestiones asignadas</p>
       </header>
 
       <div role="img" aria-label={resumen} className="flex flex-col gap-4">
         {filas.map((fila) => (
           <div key={fila.clave} data-etapa={fila.clave} className="flex flex-col gap-1.5">
             <div className="flex items-baseline justify-between gap-3 text-sm">
-              <span className="font-medium text-ink/80">{fila.etapa}</span>
+              <span className="font-medium text-ink">{fila.etapa}</span>
               <span className="tabular-nums">
                 <span className="text-base font-semibold">{fila.numero}</span>
-                <span className="text-ink/60">{` · ${fila.porcentaje}`}</span>
+                <span className="text-muted">{` · ${fila.porcentaje}`}</span>
               </span>
             </div>
-            <div className="h-3 overflow-hidden rounded-pill bg-ink/10">
+            <div className="h-2.5 overflow-hidden rounded-pill bg-ink/10">
               <div
                 data-barra
-                className={`h-full rounded-pill ${fila.clave === 'renovaron' ? 'bg-ok' : 'bg-brand'}`}
+                className={`h-full rounded-pill transition-[width] duration-500 ${fila.clave === 'renovaron' ? 'bg-ok' : 'bg-brand'}`}
                 // Unico valor dinamico: el ancho depende del dato y no puede ser una clase fija.
                 style={{ width: `${ancho(fila.numero, embudo.asignadas)}%` }}
               />

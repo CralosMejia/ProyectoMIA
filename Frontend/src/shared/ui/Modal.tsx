@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react'
+import { Boton } from './Diseno'
 
 export interface ModalProps {
   open: boolean
@@ -26,26 +27,20 @@ export function Modal({ open, title, onClose, children }: ModalProps) {
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm">
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="w-full max-w-lg rounded-card bg-surface p-6 font-sans text-ink shadow-sm outline-none"
+        className="w-full max-w-lg rounded-card border border-line bg-surface p-6 font-sans text-ink shadow-xl outline-none"
       >
-        <div className="mb-4 flex items-center justify-between gap-4">
-          <h2 id={titleId} className="text-xl font-semibold">
+        <div className="mb-5 flex items-center justify-between gap-4 border-b border-line pb-4">
+          <h2 id={titleId} className="text-lg font-semibold tracking-tight">
             {title}
           </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-pill border border-ink/20 px-3 py-1 text-sm font-medium"
-          >
-            Cerrar
-          </button>
+          <Boton onClick={onClose}>Cerrar</Boton>
         </div>
         {children}
       </div>

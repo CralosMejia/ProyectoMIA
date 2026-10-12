@@ -1,4 +1,6 @@
 import { type FormEvent, type Ref, useId, useState } from 'react'
+import { CLASE_CAMPO } from '../../../shared/ui/clases'
+import { Boton } from '../../../shared/ui/Diseno'
 import {
   type BorradorResultado,
   type CampoResultado,
@@ -28,9 +30,9 @@ import type {
 
 export const TEXTO_GESTION_CERRADA = 'Gestión cerrada: no se puede modificar.'
 
-const CLASE_CAMPO = 'rounded-card border border-ink/30 px-3 py-2'
-const CLASE_BOTON =
-  'rounded-pill bg-ink px-4 py-2 text-sm font-medium text-surface disabled:opacity-50'
+/** Opcion de radio como fila seleccionable: resalta con `brand` la marcada. */
+const CLASE_OPCION =
+  'flex flex-col rounded-card border border-line bg-surface transition-colors hover:bg-canvas has-[:checked]:border-brand has-[:checked]:bg-brand/5 has-[:disabled]:opacity-60 has-[:disabled]:hover:bg-surface'
 
 export interface OpcionRadio<T extends string> {
   valor: T
@@ -64,17 +66,20 @@ export function GrupoRadios<T extends string>({
   const errorId = `${id}-error`
   return (
     <fieldset
-      className="flex flex-col gap-1"
+      className="flex flex-col gap-2"
       aria-describedby={error ? errorId : undefined}
       aria-invalid={error ? true : undefined}
     >
-      <legend className="font-medium">{legend}</legend>
+      <legend className="mb-2 text-sm font-semibold text-ink">{legend}</legend>
       {opciones.map((opcion, i) => {
         const inputId = `${id}-${opcion.valor}`
         const descripcionId = opcion.descripcion ? `${inputId}-descripcion` : undefined
         return (
-          <div key={opcion.valor} className="flex flex-col">
-            <label htmlFor={inputId} className="flex items-center gap-2">
+          <div key={opcion.valor} className={CLASE_OPCION}>
+            <label
+              htmlFor={inputId}
+              className="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm has-[:disabled]:cursor-not-allowed"
+            >
               <input
                 ref={i === 0 ? primerCampoRef : undefined}
                 id={inputId}
@@ -84,12 +89,13 @@ export function GrupoRadios<T extends string>({
                 checked={valor === opcion.valor}
                 disabled={permitidas !== undefined && !permitidas.includes(opcion.valor)}
                 aria-describedby={descripcionId}
+                className="size-4 accent-brand"
                 onChange={() => onCambiar(opcion.valor)}
               />
               {opcion.etiqueta}
             </label>
             {opcion.descripcion && (
-              <p id={descripcionId} className="pl-6 text-sm text-ink/60">
+              <p id={descripcionId} className="px-3 pb-2 pl-10 text-xs text-muted">
                 {opcion.descripcion}
               </p>
             )}
@@ -97,7 +103,7 @@ export function GrupoRadios<T extends string>({
         )
       })}
       {error && (
-        <p id={errorId} className="text-sm text-degraded">
+        <p id={errorId} className="text-sm font-medium text-danger">
           {error}
         </p>
       )}
@@ -146,8 +152,8 @@ export function CampoFormulario({
     className: CLASE_CAMPO,
   }
   return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="font-medium">
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={id} className="text-sm font-semibold text-ink">
         {etiqueta}
       </label>
       {tipo === 'textarea' ? (
@@ -162,12 +168,12 @@ export function CampoFormulario({
         />
       )}
       {ayuda && (
-        <p id={`${id}-ayuda`} className="text-sm text-ink/60">
+        <p id={`${id}-ayuda`} className="text-xs text-muted">
           {ayuda}
         </p>
       )}
       {error && (
-        <p id={`${id}-error`} className="text-sm text-degraded">
+        <p id={`${id}-error`} className="text-sm font-medium text-danger">
           {error}
         </p>
       )}
@@ -309,14 +315,16 @@ export function ResultadoGestion({
 
   return (
     <form aria-label="Resultado del seguimiento" noValidate onSubmit={onSubmit} className="flex flex-col gap-4">
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-        <dt className="font-medium">Campaña asignada</dt>
-        <dd>{gestion.campaniaNombre ?? 'Sin campaña'}</dd>
-        <dt className="font-medium">Seguimiento previsto</dt>
-        <dd>{fechaDdMmAaaa(gestion.fechaSeguimiento)}</dd>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 rounded-card border border-line bg-canvas px-4 py-3 text-sm">
+        <dt className="text-muted">Campaña asignada</dt>
+        <dd className="font-medium">{gestion.campaniaNombre ?? 'Sin campaña'}</dd>
+        <dt className="text-muted">Seguimiento previsto</dt>
+        <dd className="font-medium">{fechaDdMmAaaa(gestion.fechaSeguimiento)}</dd>
       </dl>
-      {cerrada && <p className="font-medium">{TEXTO_GESTION_CERRADA}</p>}
-      <fieldset disabled={cerrada} className="flex flex-col gap-4">
+      {cerrada && (
+        <p className="rounded-card bg-ok/10 px-3 py-2 text-sm font-medium">{TEXTO_GESTION_CERRADA}</p>
+      )}
+      <fieldset disabled={cerrada} className="flex flex-col gap-5">
         <GrupoRadios
           id={`${id}-contactado`}
           legend="¿Se contactó al socio?"
@@ -401,10 +409,10 @@ export function ResultadoGestion({
         />
       </fieldset>
       {!cerrada && (
-        <div>
-          <button type="submit" disabled={enviando} className={CLASE_BOTON}>
+        <div className="flex justify-end border-t border-line pt-4">
+          <Boton type="submit" variante="primario" disabled={enviando}>
             Guardar resultado
-          </button>
+          </Boton>
         </div>
       )}
     </form>

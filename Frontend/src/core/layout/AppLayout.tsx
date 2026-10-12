@@ -13,8 +13,11 @@ const NAV_ITEMS = [
 ] as const
 
 function navLinkClass({ isActive }: { isActive: boolean }): string {
-  const base = 'rounded-pill px-4 py-2 text-sm font-medium'
-  return isActive ? `${base} bg-ink text-surface` : `${base} text-ink hover:bg-ink/10`
+  const base =
+    'rounded-pill px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand'
+  return isActive
+    ? `${base} bg-brand text-surface shadow-sm`
+    : `${base} text-muted hover:bg-brand/10 hover:text-ink`
 }
 
 /**
@@ -27,8 +30,8 @@ export function AppLayout() {
 
   if (denegado) {
     return (
-      <div className="min-h-screen bg-surface font-sans text-ink">
-        <main className="p-8">
+      <div className="min-h-screen bg-canvas font-sans text-ink">
+        <main className="mx-auto w-full max-w-[96rem] px-4 py-12 sm:px-8">
           <AccesoDenegadoPage />
         </main>
       </div>
@@ -36,21 +39,28 @@ export function AppLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-surface font-sans text-ink">
-      <header className="border-b border-ink/10 px-8 py-4 print:hidden">
-        <nav aria-label="Principal">
-          <ul className="flex flex-wrap gap-2">
-            {NAV_ITEMS.map(({ to, label }) => (
-              <li key={to}>
-                <NavLink to={to} end={to === '/'} className={navLinkClass}>
-                  {label}
-                </NavLink>
-              </li>
-            ))}
-          </ul>
-        </nav>
+    <div className="min-h-screen bg-canvas font-sans text-ink print:bg-surface">
+      <header className="sticky top-0 z-40 border-b border-line bg-surface/95 shadow-sm backdrop-blur print:hidden">
+        <div className="mx-auto flex w-full max-w-[96rem] flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-8">
+          {/* Marca: texto, no encabezado (el unico h1 es el de cada pagina). */}
+          <span className="flex items-center gap-2 text-lg font-semibold tracking-tight text-ink">
+            <span aria-hidden="true" className="size-2.5 rounded-pill bg-brand" />
+            Mtabolic
+          </span>
+          <nav aria-label="Principal">
+            <ul className="flex flex-wrap gap-1">
+              {NAV_ITEMS.map(({ to, label }) => (
+                <li key={to}>
+                  <NavLink to={to} end={to === '/'} className={navLinkClass}>
+                    {label}
+                  </NavLink>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        </div>
       </header>
-      <main className="p-8 print:p-0">
+      <main className="mx-auto w-full max-w-[96rem] px-4 py-8 sm:px-8 print:max-w-none print:p-0">
         <Suspense fallback={<LoadingIndicator />}>
           <Outlet />
         </Suspense>

@@ -1,3 +1,4 @@
+import { Boton } from '../../../shared/ui/Diseno'
 import { ErrorAlert } from '../../../shared/ui/ErrorAlert'
 import { LoadingIndicator } from '../../../shared/ui/LoadingIndicator'
 
@@ -20,15 +21,9 @@ export function DescargarExcelButton({
   return (
     <div className="flex flex-col gap-2">
       <div>
-        <button
-          type="button"
-          onClick={() => onDescargar(listaId)}
-          disabled={descargando}
-          aria-busy={descargando}
-          className="rounded-pill bg-ink px-4 py-2 text-sm font-medium text-surface disabled:opacity-50"
-        >
+        <Boton onClick={() => onDescargar(listaId)} disabled={descargando} aria-busy={descargando}>
           Descargar Excel
-        </button>
+        </Boton>
       </div>
       {descargando && <LoadingIndicator label="Descargando Excel..." />}
       {error && <ErrorAlert message={error} />}

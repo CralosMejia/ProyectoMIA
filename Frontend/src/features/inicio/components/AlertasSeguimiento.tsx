@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { Tarjeta } from '../../../shared/ui/Diseno'
 import type { Alertas } from '../types'
 
 export interface AlertasSeguimientoProps {
@@ -6,7 +7,14 @@ export interface AlertasSeguimientoProps {
 }
 
 const CLASE_ENLACE =
-  'flex min-w-40 flex-col gap-1 rounded-card border border-ink/20 p-4 hover:bg-ink/5'
+  'flex h-full flex-col gap-2 rounded-card border border-line border-l-4 bg-surface p-4 transition-colors hover:bg-canvas focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand'
+
+/** Acento de cada grupo: lo vencido destaca en peligro; lo de hoy, en aviso; lo proximo, marca. */
+const ACENTO = {
+  vencidas: 'border-l-danger',
+  hoy: 'border-l-degraded',
+  proximas: 'border-l-brand',
+} as const
 
 /**
  * Presentacional: tres contadores de seguimientos pendientes (CU-09), cada uno enlaza a la lista
@@ -16,24 +24,31 @@ export function AlertasSeguimiento({ alertas }: AlertasSeguimientoProps) {
   const grupos = [
     { filtro: 'vencidas', etiqueta: 'Vencidos', total: alertas.vencidas },
     { filtro: 'hoy', etiqueta: 'Para hoy', total: alertas.hoy },
-    { filtro: 'proximas', etiqueta: 'Próximos 7 días', total: alertas.proximos7Dias },
-  ]
+    {
+      filtro: 'proximas',
+      etiqueta: 'Próximos 7 días',
+      total: alertas.proximos7Dias,
+    },
+  ] as const
 
   return (
-    <section aria-labelledby="alertas-title" className="flex flex-col gap-3 font-sans text-ink">
+    <Tarjeta aria-labelledby="alertas-title">
       <h2 id="alertas-title" className="text-lg font-semibold">
         Seguimientos pendientes
       </h2>
-      <ul className="flex flex-wrap gap-4">
+      <ul className="grid gap-4 sm:grid-cols-3">
         {grupos.map(({ filtro, etiqueta, total }) => (
           <li key={filtro}>
-            <Link to={`/seguimiento?filtro=${filtro}`} className={CLASE_ENLACE}>
-              <span className="text-sm text-ink/70">{etiqueta}</span>{' '}
-              <span className="text-2xl font-semibold">{total}</span>
+            <Link
+              to={`/seguimiento?filtro=${filtro}`}
+              className={`${CLASE_ENLACE} ${ACENTO[filtro]}`}
+            >
+              <span className="text-sm font-medium text-muted">{etiqueta}</span>{' '}
+              <span className="text-3xl font-semibold tabular-nums">{total}</span>
             </Link>
           </li>
         ))}
       </ul>
-    </section>
+    </Tarjeta>
   )
 }

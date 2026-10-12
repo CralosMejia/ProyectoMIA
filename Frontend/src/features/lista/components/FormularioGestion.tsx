@@ -1,4 +1,5 @@
 import { type FormEvent, type Ref, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { Boton } from '../../../shared/ui/Diseno'
 import { ErrorAlert } from '../../../shared/ui/ErrorAlert'
 import { LoadingIndicator } from '../../../shared/ui/LoadingIndicator'
 import { Modal } from '../../../shared/ui/Modal'
@@ -33,8 +34,6 @@ export const AVISO_SIN_CAMPANIA = 'Sin campaña, la gestión queda cerrada y no 
 export const TEXTO_SIN_CAMPANIA = 'No se le asignó campaña'
 
 const SIN_CAMPANIA = 'ninguna'
-const CLASE_BOTON =
-  'rounded-pill bg-ink px-4 py-2 text-sm font-medium text-surface disabled:opacity-50'
 
 type EleccionCampania = typeof SIN_CAMPANIA | `${number}`
 
@@ -108,7 +107,7 @@ function NuevaGestion({
   }
 
   return (
-    <form aria-label="Nueva gestión" noValidate onSubmit={onSubmit} className="flex flex-col gap-4">
+    <form aria-label="Nueva gestión" noValidate onSubmit={onSubmit} className="flex flex-col gap-5">
       <GrupoRadios
         id={`${id}-campania`}
         legend="Campaña"
@@ -124,7 +123,7 @@ function NuevaGestion({
         }}
       />
       {sinCampania ? (
-        <p>{AVISO_SIN_CAMPANIA}</p>
+        <p className="rounded-card bg-degraded/10 px-3 py-2 text-sm">{AVISO_SIN_CAMPANIA}</p>
       ) : (
         <>
           <CampoFormulario
@@ -156,10 +155,10 @@ function NuevaGestion({
           />
         </>
       )}
-      <div>
-        <button type="submit" disabled={bloqueado} className={CLASE_BOTON}>
+      <div className="flex justify-end border-t border-line pt-4">
+        <Boton type="submit" variante="primario" disabled={bloqueado}>
           Crear gestión
-        </button>
+        </Boton>
       </div>
     </form>
   )
@@ -236,12 +235,12 @@ export function FormularioGestion({
       onClose={onCerrar}
     >
       <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto pr-2">
-        <p className="flex flex-wrap items-center gap-2 text-sm">
+        <p className="flex flex-wrap items-center gap-2 rounded-card border border-line bg-canvas px-4 py-3 text-sm text-ink">
           <span>{`Plan: ${prediccion.plan}`}</span>
-          <span aria-hidden="true">·</span>
+          <span aria-hidden="true" className="text-muted">·</span>
           <span>{`Vence el ${fechaCorta(prediccion.fechaVencimiento)}`}</span>
-          <span aria-hidden="true">·</span>
-          <span>Nivel de riesgo:</span>
+          <span aria-hidden="true" className="text-muted">·</span>
+          <span className="text-muted">Nivel de riesgo:</span>
           <RiskBadge nivel={prediccion.nivelRiesgo} />
         </p>
         {cargando && <LoadingIndicator label="Cargando la gestión..." />}
@@ -256,7 +255,9 @@ export function FormularioGestion({
             onCrear={onCrear}
           />
         )}
-        {vista === 'sinCampania' && <p>{TEXTO_SIN_CAMPANIA}</p>}
+        {vista === 'sinCampania' && (
+          <p className="rounded-card bg-canvas px-3 py-2 text-sm text-muted">{TEXTO_SIN_CAMPANIA}</p>
+        )}
         {gestion !== null && (vista === 'resultado' || vista === 'cerrada') && (
           <ResultadoGestion
             key={`${gestion.id}-${gestion.estado}`}

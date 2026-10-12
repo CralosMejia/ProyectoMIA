@@ -6,8 +6,21 @@
   --color-degraded: #d97706;
   --color-surface: #ffffff;
   --color-ink: #111827;
-  /* Color de marca para graficos (barras del embudo). */
+  /* Color de marca: graficos (barras del embudo), boton primario y anillo de foco.
+     Texto surface sobre brand: 6.3:1 (WCAG AA). */
   --color-brand: #4f46e5;
+  /* Estado hover/activo del boton primario (texto surface: 8.6:1). */
+  --color-brand-strong: #4338ca;
+
+  /* Diseno (R-013, D7-FE-01). */
+  /* Fondo de pagina, detras de las tarjetas (surface). */
+  --color-canvas: #f5f7fb;
+  /* Bordes y separadores de tarjetas, tablas y botones secundarios (decorativo). */
+  --color-line: #dde2ea;
+  /* Texto secundario: subtitulos, ayudas, metadatos. Sobre surface 7.6:1, sobre canvas 7.0:1. */
+  --color-muted: #4b5563;
+  /* Acciones destructivas (boton peligro). Texto surface sobre danger: 6.5:1. */
+  --color-danger: #b91c1c;
 
   --color-risk-high: #dc2626;
   --color-risk-medium: #d97706;

@@ -1,4 +1,5 @@
 import { DataTable, type DataTableColumn } from '../../../shared/ui/DataTable'
+import { Boton } from '../../../shared/ui/Diseno'
 import { RiskBadge } from '../../../shared/ui/RiskBadge'
 import type { ListaPriorizada, Prediccion } from '../types'
 import { rangoFechas } from './formatoFechas'
@@ -24,9 +25,9 @@ function sinAporte(factor: string): string {
 }
 
 function Factores({ factores }: { factores: string[] }) {
-  if (factores.length === 0) return <span className="text-ink/60">{SIN_FACTORES}</span>
+  if (factores.length === 0) return <span className="text-muted">{SIN_FACTORES}</span>
   return (
-    <ul className="list-disc pl-4">
+    <ul className="list-disc space-y-0.5 pl-4 marker:text-muted">
       {factores.map((factor, i) => (
         <li key={`${i}-${factor}`}>{sinAporte(factor)}</li>
       ))}
@@ -56,28 +57,65 @@ function BotonGestion({ prediccion, onGestionar }: { prediccion: Prediccion; onG
   const texto = accion(prediccion)
   // El nombre accesible lleva la prioridad (unica en la lista), no el nombre del socio.
   return (
-    <button
-      type="button"
+    <Boton
       aria-label={`${texto} prioridad ${prediccion.prioridad}`}
       onClick={() => onGestionar?.(prediccion)}
-      className="whitespace-nowrap rounded-pill border border-ink/20 px-3 py-1 text-sm font-medium"
+      className="whitespace-nowrap px-3 py-1"
     >
       {texto}
-    </button>
+    </Boton>
   )
 }
 
+/** Clases del estado de la gestion: insignia suave por token (pendiente `degraded`, cerrada `ok`). */
+const CLASE_ESTADO: Record<NonNullable<Prediccion['gestionEstado']>, string> = {
+  PENDIENTE: 'bg-degraded/10 text-ink',
+  CERRADA: 'bg-ok/10 text-ink',
+}
+
+function EstadoGestion({ prediccion }: { prediccion: Prediccion }) {
+  if (prediccion.gestionEstado === null) {
+    return <span className="whitespace-nowrap text-muted">{SIN_GESTION}</span>
+  }
+  return (
+    <span
+      className={`inline-flex whitespace-nowrap rounded-pill px-2.5 py-0.5 text-xs font-medium ${CLASE_ESTADO[prediccion.gestionEstado]}`}
+    >
+      {TEXTO_ESTADO[prediccion.gestionEstado]}
+    </span>
+  )
+}
+
+/*
+ * Anchos (R-014): las 11 columnas caben en 1366 px. Las cortas no parten la celda (el `span`
+ * lleva `whitespace-nowrap`; la cabecera si puede partirse); Nombre, Plan y Campaña parten por
+ * palabras con un minimo legible y "Motivos principales" tiene minimo y maximo para no acaparar.
+ */
 const COLUMNAS: DataTableColumn<Prediccion>[] = [
-  { key: 'prioridad', header: 'Prioridad' },
-  { key: 'socioNombre', header: 'Nombre' },
-  { key: 'cedula', header: 'Cédula', render: (p) => p.cedula ?? '—' },
+  {
+    key: 'prioridad',
+    header: 'Prioridad',
+    render: (p) => <span className="font-semibold tabular-nums">{p.prioridad}</span>,
+  },
+  { key: 'socioNombre', header: 'Nombre', className: 'min-w-28' },
+  {
+    key: 'cedula',
+    header: 'Cédula',
+    render: (p) => <span className="whitespace-nowrap tabular-nums">{p.cedula ?? '—'}</span>,
+  },
   { key: 'plan', header: 'Plan' },
   {
     key: 'fechaVencimiento',
     header: 'Vence el',
-    render: (p) => formatearFecha(p.fechaVencimiento, FECHA_CORTA),
+    render: (p) => (
+      <span className="whitespace-nowrap">{formatearFecha(p.fechaVencimiento, FECHA_CORTA)}</span>
+    ),
   },
-  { key: 'diasParaVencer', header: 'Días para vencer' },
+  {
+    key: 'diasParaVencer',
+    header: 'Días para vencer',
+    render: (p) => <span className="tabular-nums">{p.diasParaVencer}</span>,
+  },
   {
     key: 'nivelRiesgo',
     header: 'Nivel de riesgo',
@@ -86,14 +124,15 @@ const COLUMNAS: DataTableColumn<Prediccion>[] = [
   {
     key: 'factoresPrincipales',
     header: 'Motivos principales',
+    className: 'min-w-52 max-w-xs',
     render: (p) => <Factores factores={p.factoresPrincipales} />,
   },
   {
     key: 'gestionEstado',
     header: 'Gestión',
-    render: (p) => (p.gestionEstado === null ? SIN_GESTION : TEXTO_ESTADO[p.gestionEstado]),
+    render: (p) => <EstadoGestion prediccion={p} />,
   },
-  { key: 'campaniaAsignada', header: 'Campaña', render: campania },
+  { key: 'campaniaAsignada', header: 'Campaña', className: 'min-w-28', render: campania },
 ]
 
 function columnas(onGestionar?: (p: Prediccion) => void): DataTableColumn<Prediccion>[] {
@@ -119,15 +158,13 @@ interface TablaProps {
 
 function Tabla({ titulo, filas, onGestionar }: TablaProps) {
   return (
-    <div className="overflow-x-auto">
-      <DataTable
-        caption={titulo}
-        columns={columnas(onGestionar)}
-        rows={filas}
-        getRowKey={(p) => p.prediccionId}
-        emptyMessage="No hay socios cuya membresía venza en esos días."
-      />
-    </div>
+    <DataTable
+      caption={titulo}
+      columns={columnas(onGestionar)}
+      rows={filas}
+      getRowKey={(p) => p.prediccionId}
+      emptyMessage="No hay socios cuya membresía venza en esos días."
+    />
   )
 }
 
@@ -149,12 +186,12 @@ export function TablaLista({ lista, onGestionar }: TablaListaProps) {
 
   return (
     <section aria-labelledby="tabla-lista-title" className="flex flex-col gap-4 font-sans text-ink">
-      <h2 id="tabla-lista-title" className="text-lg font-semibold">
+      <h2 id="tabla-lista-title" className="text-lg font-semibold tracking-tight">
         {lista.nombre}
       </h2>
-      <div className="flex flex-col gap-1">
-        <p>{`Rango de fechas: ${rangoFechas(lista.fechaGeneracion, lista.horizonteDias)}`}</p>
-        <p>{`Socios priorizados para campañas: ${prioritarios.length}`}</p>
+      <div className="flex flex-wrap gap-2 text-sm">
+        <p className="rounded-pill bg-canvas px-3 py-1 text-muted">{`Rango de fechas: ${rangoFechas(lista.fechaGeneracion, lista.horizonteDias)}`}</p>
+        <p className="rounded-pill bg-brand/10 px-3 py-1 font-medium text-brand-strong">{`Socios priorizados para campañas: ${prioritarios.length}`}</p>
       </div>
       <Tabla titulo={TITULO_PRIORITARIOS} filas={prioritarios} onGestionar={onGestionar} />
       {otros.length > 0 && <Tabla titulo={TITULO_OTROS} filas={otros} onGestionar={onGestionar} />}

@@ -1,3 +1,5 @@
+import { Boton } from './Diseno'
+
 export interface ErrorAlertProps {
   message: string
   /** Si se recibe, se muestra el boton "Reintentar". */
@@ -9,18 +11,10 @@ export function ErrorAlert({ message, onRetry }: ErrorAlertProps) {
   return (
     <div
       role="alert"
-      className="flex items-center justify-between gap-4 rounded-card border border-degraded bg-degraded/10 p-4 font-sans text-ink"
+      className="flex flex-wrap items-center justify-between gap-4 rounded-card border border-degraded/40 border-l-4 border-l-degraded bg-degraded/10 p-4 font-sans text-sm text-ink"
     >
       <p>{message}</p>
-      {onRetry && (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="rounded-pill bg-ink px-4 py-2 text-sm font-medium text-surface"
-        >
-          Reintentar
-        </button>
-      )}
+      {onRetry && <Boton onClick={onRetry}>Reintentar</Boton>}
     </div>
   )
 }

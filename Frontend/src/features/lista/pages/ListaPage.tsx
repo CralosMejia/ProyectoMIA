@@ -1,4 +1,6 @@
 import type { FormEvent } from 'react'
+import { CLASE_CAMPO } from '../../../shared/ui/clases'
+import { Boton, EncabezadoPagina, Tarjeta } from '../../../shared/ui/Diseno'
 import { ErrorAlert } from '../../../shared/ui/ErrorAlert'
 import { LoadingIndicator } from '../../../shared/ui/LoadingIndicator'
 import { AyudaLista } from '../components/AyudaLista'
@@ -47,8 +49,8 @@ function Campo({
     .filter((v) => v !== null)
     .join(' ')
   return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="font-medium">
+    <div className="flex min-w-48 flex-1 flex-col gap-1.5">
+      <label htmlFor={id} className="text-sm font-medium text-ink">
         {etiqueta}
       </label>
       <input
@@ -63,15 +65,15 @@ function Campo({
         disabled={deshabilitado}
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy === '' ? undefined : describedBy}
-        className="rounded-card border border-ink/30 px-3 py-2"
+        className={CLASE_CAMPO}
       />
       {ayuda && (
-        <p id={`${id}-ayuda`} className="text-sm text-ink/60">
+        <p id={`${id}-ayuda`} className="text-xs text-muted">
           {ayuda}
         </p>
       )}
       {error && (
-        <p id={`${id}-error`} className="text-sm text-degraded">
+        <p id={`${id}-error`} className="text-sm font-medium text-danger">
           {error}
         </p>
       )}
@@ -97,19 +99,14 @@ export default function ListaPage() {
   }
 
   return (
-    <section aria-labelledby="lista-title" className="flex flex-col gap-6 font-sans text-ink">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 id="lista-title" className="text-2xl font-semibold">
-          Lista priorizada
-        </h1>
-        <AyudaLista />
-      </div>
+    <section aria-label="Lista priorizada" className="flex flex-col gap-6 font-sans text-ink">
+      <EncabezadoPagina titulo="Lista priorizada" acciones={<AyudaLista />} />
 
       <form
         aria-label="Parámetros de la lista"
         noValidate
         onSubmit={onSubmit}
-        className="flex flex-wrap items-start gap-4"
+        className="flex flex-wrap items-start gap-4 rounded-card border border-line bg-surface p-5 shadow-sm"
       >
         <Campo
           id="lista-nombre"
@@ -160,14 +157,10 @@ export default function ListaPage() {
           deshabilitado={vista.generando}
           onCambiar={vista.cambiarParametro}
         />
-        <div className="self-center">
-          <button
-            type="submit"
-            disabled={vista.generando}
-            className="rounded-pill bg-ink px-4 py-2 text-sm font-medium text-surface disabled:opacity-50"
-          >
+        <div className="flex w-full justify-end border-t border-line pt-4">
+          <Boton type="submit" variante="primario" disabled={vista.generando}>
             Generar lista
-          </button>
+          </Boton>
         </div>
       </form>
 
@@ -185,9 +178,11 @@ export default function ListaPage() {
       {vista.cargandoInicial && <LoadingIndicator label="Cargando la última lista..." />}
       {vista.errorInicial && <ErrorAlert message={vista.errorInicial} onRetry={vista.reintentar} />}
       {vista.sinListas && (
-        <p className="rounded-card border border-ink/20 p-4">
-          Aún no se ha generado ninguna lista. Elija la fecha y los días y pulse «Generar lista».
-        </p>
+        <Tarjeta>
+          <p className="text-sm text-muted">
+            Aún no se ha generado ninguna lista. Elija la fecha y los días y pulse «Generar lista».
+          </p>
+        </Tarjeta>
       )}
       {vista.cargandoLista && <LoadingIndicator label="Cargando lista..." />}
 

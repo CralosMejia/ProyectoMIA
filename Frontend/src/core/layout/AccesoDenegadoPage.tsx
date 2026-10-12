@@ -7,12 +7,13 @@ export function AccesoDenegadoPage() {
   return (
     <section
       aria-labelledby="acceso-denegado-title"
-      className="mx-auto max-w-xl rounded-card border border-degraded bg-degraded/10 p-6 font-sans text-ink"
+      className="mx-auto flex max-w-xl flex-col gap-3 rounded-card border border-line border-t-4 border-t-degraded bg-surface p-8 font-sans text-ink shadow-sm"
     >
-      <h1 id="acceso-denegado-title" className="mb-4 text-2xl font-semibold">
+      <span aria-hidden="true" className="size-3 rounded-pill bg-degraded" />
+      <h1 id="acceso-denegado-title" className="text-2xl font-semibold tracking-tight">
         {TITULO_ACCESO_DENEGADO}
       </h1>
-      <p>{TEXTO_ACCESO_DENEGADO}</p>
+      <p className="text-base leading-relaxed text-muted">{TEXTO_ACCESO_DENEGADO}</p>
     </section>
   )
 }

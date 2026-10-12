@@ -4,7 +4,9 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import appLayoutSource from '../../core/layout/AppLayout.tsx?raw'
 import ayudaSource from './Ayuda.tsx?raw'
+import clasesSource from './clases.ts?raw'
 import dataTableSource from './DataTable.tsx?raw'
+import disenoSource from './Diseno.tsx?raw'
 import errorAlertSource from './ErrorAlert.tsx?raw'
 import loadingIndicatorSource from './LoadingIndicator.tsx?raw'
 import modalSource from './Modal.tsx?raw'
@@ -39,13 +41,33 @@ describe('tokens de diseno (index.css)', () => {
     expect(valor('--color-risk-high')).not.toBe(valor('--color-risk-low'))
     expect(valor('--color-risk-high')).not.toBe(valor('--color-risk-medium'))
   })
+
+  it.each(['--color-canvas', '--color-line', '--color-muted', '--color-brand-strong', '--color-danger'])(
+    '@theme declara el token de diseno %s',
+    (token) => {
+      expect(themeBlock(indexCss)).toMatch(new RegExp(`${token}\\s*:\\s*[^;]+;`))
+    },
+  )
+
+  it('canvas, line y muted son distintos de ink y surface', () => {
+    const theme = themeBlock(indexCss)
+    const valor = (t: string) =>
+      new RegExp(`${t}\\s*:\\s*([^;]+);`).exec(theme)?.[1]?.trim().toLowerCase()
+    const base = [valor('--color-ink'), valor('--color-surface')]
+    for (const token of ['--color-canvas', '--color-line', '--color-muted']) {
+      expect(valor(token)).toBeDefined()
+      expect(base).not.toContain(valor(token))
+    }
+  })
 })
 
 describe('componentes solo con tokens de index.css', () => {
   it.each([
     ['core/layout/AppLayout.tsx', appLayoutSource],
     ['shared/ui/Ayuda.tsx', ayudaSource],
+    ['shared/ui/clases.ts', clasesSource],
     ['shared/ui/DataTable.tsx', dataTableSource],
+    ['shared/ui/Diseno.tsx', disenoSource],
     ['shared/ui/ErrorAlert.tsx', errorAlertSource],
     ['shared/ui/LoadingIndicator.tsx', loadingIndicatorSource],
     ['shared/ui/Modal.tsx', modalSource],
@@ -58,7 +80,9 @@ describe('componentes solo con tokens de index.css', () => {
 
   it.each([
     ['shared/ui/Ayuda.tsx', ayudaSource],
+    ['shared/ui/clases.ts', clasesSource],
     ['shared/ui/DataTable.tsx', dataTableSource],
+    ['shared/ui/Diseno.tsx', disenoSource],
     ['shared/ui/ErrorAlert.tsx', errorAlertSource],
     ['shared/ui/LoadingIndicator.tsx', loadingIndicatorSource],
     ['shared/ui/Modal.tsx', modalSource],

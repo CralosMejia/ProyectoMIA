@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react'
+import { Boton } from './Diseno'
 import { Modal } from './Modal'
 
 /**
@@ -48,14 +49,9 @@ export function BotonAyuda({ titulo, children }: BotonAyudaProps) {
 
   return (
     <>
-      <button
-        ref={botonRef}
-        type="button"
-        onClick={() => setAbierta(true)}
-        className="self-start rounded-pill border border-ink/20 px-4 py-2 text-sm font-medium"
-      >
+      <Boton ref={botonRef} onClick={() => setAbierta(true)} className="self-start">
         {titulo}
-      </button>
+      </Boton>
       <Modal open={abierta} title={titulo} onClose={cerrar}>
         <div className="flex max-h-[60vh] flex-col gap-4 overflow-y-auto pr-2 text-sm">
           {children}

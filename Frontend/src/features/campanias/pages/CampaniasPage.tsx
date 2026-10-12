@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Boton, EncabezadoPagina } from '../../../shared/ui/Diseno'
 import { ErrorAlert } from '../../../shared/ui/ErrorAlert'
 import { LoadingIndicator } from '../../../shared/ui/LoadingIndicator'
 import { Modal } from '../../../shared/ui/Modal'
@@ -47,19 +48,15 @@ export default function CampaniasPage() {
   }
 
   return (
-    <section aria-labelledby="campanias-title" className="flex flex-col gap-6 font-sans text-ink">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 id="campanias-title" className="text-2xl font-semibold">
-          Campañas
-        </h1>
-        <button
-          type="button"
-          onClick={() => abrir({ tipo: 'nueva' })}
-          className="rounded-pill bg-ink px-4 py-2 text-sm font-medium text-surface"
-        >
-          Nueva campaña
-        </button>
-      </div>
+    <section aria-label="Campañas" className="flex flex-col gap-6 font-sans text-ink">
+      <EncabezadoPagina
+        titulo="Campañas"
+        acciones={
+          <Boton variante="primario" onClick={() => abrir({ tipo: 'nueva' })}>
+            Nueva campaña
+          </Boton>
+        }
+      />
 
       {vista.cargando && <LoadingIndicator label="Cargando campañas..." />}
       {vista.errorCarga && <ErrorAlert message={vista.errorCarga} onRetry={vista.recargar} />}
@@ -93,28 +90,22 @@ export default function CampaniasPage() {
 
       <Modal open={dialogo?.tipo === 'inactivar'} title="Inactivar campaña" onClose={cerrar}>
         {dialogo?.tipo === 'inactivar' && (
-          <div className="flex flex-col gap-4">
-            <p>
+          <div className="flex flex-col gap-5">
+            <p className="text-sm leading-relaxed">
               ¿Inactivar «{dialogo.campania.nombre}»? {AVISO_INACTIVAR}
             </p>
             {vista.error && <ErrorAlert message={vista.error} />}
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={cerrar}
-                disabled={vista.guardando}
-                className="rounded-pill border border-ink/20 px-4 py-2 text-sm font-medium disabled:opacity-50"
-              >
+            <div className="flex justify-end gap-2 border-t border-line pt-4">
+              <Boton onClick={cerrar} disabled={vista.guardando}>
                 Cancelar
-              </button>
-              <button
-                type="button"
+              </Boton>
+              <Boton
+                variante="peligro"
                 onClick={() => void confirmarInactivar()}
                 disabled={vista.guardando}
-                className="rounded-pill bg-ink px-4 py-2 text-sm font-medium text-surface disabled:opacity-50"
               >
                 Inactivar
-              </button>
+              </Boton>
             </div>
           </div>
         )}

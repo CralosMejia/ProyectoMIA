@@ -1,10 +1,14 @@
+import { Tarjeta } from '../../../shared/ui/Diseno'
 import type { EstadoSistema } from '../types'
 
 export interface EstadoSistemaPanelProps {
   estado: EstadoSistema
 }
 
-const FECHA_HORA = new Intl.DateTimeFormat('es-EC', { dateStyle: 'long', timeStyle: 'short' })
+const FECHA_HORA = new Intl.DateTimeFormat('es-EC', {
+  dateStyle: 'long',
+  timeStyle: 'short',
+})
 const FECHA = new Intl.DateTimeFormat('es-EC', { dateStyle: 'long' })
 
 export const SIN_MODELO = 'El modelo de predicción aún no está disponible'
@@ -17,7 +21,14 @@ function formatear(fecha: Date | null): string {
 export function EstadoSistemaPanel({ estado }: EstadoSistemaPanelProps) {
   if (estado.estado === 'INICIALIZANDO') {
     return (
-      <p role="status" className="rounded-card border border-ink/20 p-4 font-sans text-ink">
+      <p
+        role="status"
+        className="flex items-center gap-3 rounded-card border border-line bg-surface p-5 font-sans text-ink shadow-sm"
+      >
+        <span
+          aria-hidden="true"
+          className="size-2.5 shrink-0 animate-pulse rounded-pill bg-brand"
+        />
         Inicializando datos históricos. Esto puede tardar unos minutos.
       </p>
     )
@@ -27,7 +38,7 @@ export function EstadoSistemaPanel({ estado }: EstadoSistemaPanelProps) {
     return (
       <div
         role="alert"
-        className="rounded-card border border-degraded bg-degraded/10 p-4 font-sans text-ink"
+        className="flex flex-col gap-1 rounded-card border border-degraded/40 border-l-4 border-l-degraded bg-degraded/10 p-4 font-sans text-sm text-ink"
       >
         <p className="font-semibold">Faltan los datos históricos.</p>
         <p>
@@ -41,14 +52,26 @@ export function EstadoSistemaPanel({ estado }: EstadoSistemaPanelProps) {
   const modelo = estado.modeloVigente
 
   return (
-    <div className="rounded-card border border-ink/20 p-4 font-sans text-ink">
-      <h2 className="mb-4 text-lg font-semibold">Sistema listo</h2>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
-        <dt className="text-ink/70">Modelo de predicción</dt>
-        <dd>{modelo ? `Activo desde ${FECHA.format(modelo.fechaEntrenamiento)}` : SIN_MODELO}</dd>
-        <dt className="text-ink/70">Última carga</dt>
-        <dd>{formatear(estado.ultimaCargaEn)}</dd>
+    <Tarjeta
+      titulo={
+        <span className="flex items-center gap-2">
+          <span aria-hidden="true" className="size-2.5 rounded-pill bg-ok" />
+          Sistema listo
+        </span>
+      }
+    >
+      <dl className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-1 rounded-card bg-canvas p-4">
+          <dt className="text-sm text-muted">Modelo de predicción</dt>
+          <dd className="font-medium">
+            {modelo ? `Activo desde ${FECHA.format(modelo.fechaEntrenamiento)}` : SIN_MODELO}
+          </dd>
+        </div>
+        <div className="flex flex-col gap-1 rounded-card bg-canvas p-4">
+          <dt className="text-sm text-muted">Última carga</dt>
+          <dd className="font-medium">{formatear(estado.ultimaCargaEn)}</dd>
+        </div>
       </dl>
-    </div>
+    </Tarjeta>
   )
 }

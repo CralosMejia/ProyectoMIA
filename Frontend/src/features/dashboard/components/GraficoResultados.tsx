@@ -84,17 +84,17 @@ export function GraficoResultados({ resumen }: GraficoResultadosProps) {
   return (
     <section
       aria-labelledby="resultados-title"
-      className="flex flex-col gap-5 rounded-card border border-ink/10 bg-surface p-5 font-sans text-ink shadow-sm"
+      className="flex flex-col gap-5 rounded-card border border-line bg-surface p-5 font-sans text-ink shadow-sm"
     >
       <header className="flex flex-col gap-1">
         <h2 id="resultados-title" className="text-lg font-semibold">
           Resultado de las gestiones del mes
         </h2>
-        <p className="text-sm text-ink/60">Sin resultado: gestiones abiertas o sin campaña.</p>
+        <p className="text-sm text-muted">Sin resultado: gestiones abiertas o sin campaña.</p>
       </header>
 
       {vacio ? (
-        <p className="rounded-card bg-ink/5 p-4 text-center text-ink/70">Sin gestiones en este mes</p>
+        <p className="rounded-card bg-canvas p-4 text-center text-sm text-muted">Sin gestiones en este mes</p>
       ) : (
         <>
           <div className="flex flex-col items-center gap-6 sm:flex-row sm:justify-center">
@@ -106,7 +106,7 @@ export function GraficoResultados({ resumen }: GraficoResultadosProps) {
                   r={RADIO}
                   fill="none"
                   strokeWidth="14"
-                  className="stroke-ink/5"
+                  className="stroke-canvas"
                 />
                 {arcos(lista, resumen.total).map(({ sector, largo, inicio }) => (
                   <circle
@@ -126,8 +126,8 @@ export function GraficoResultados({ resumen }: GraficoResultadosProps) {
                 ))}
               </svg>
               <p className="absolute inset-0 flex flex-col items-center justify-center leading-tight">
-                <span className="text-3xl font-bold tabular-nums">{resumen.total}</span>{' '}
-                <span className="text-sm text-ink/60">
+                <span className="text-3xl font-semibold tracking-tight tabular-nums">{resumen.total}</span>{' '}
+                <span className="text-sm text-muted">
                   {resumen.total === 1 ? 'gestión' : 'gestiones'}
                 </span>
               </p>
@@ -135,12 +135,12 @@ export function GraficoResultados({ resumen }: GraficoResultadosProps) {
 
             <ul aria-label="Leyenda" className="flex flex-col gap-3">
               {lista.map((s) => (
-                <li key={s.clave} className="flex items-center gap-3">
+                <li key={s.clave} className="flex items-center gap-3 rounded-card bg-canvas px-3 py-2">
                   <span aria-hidden="true" className={`size-3.5 shrink-0 rounded-pill ${s.muestra}`} />
                   <span className="text-sm">
                     <span className="font-medium">{s.resultado}</span>{' '}
                     <span className="font-semibold tabular-nums">{s.numero}</span>{' '}
-                    <span className="text-ink/60 tabular-nums">{`(${s.porcentaje})`}</span>
+                    <span className="text-muted tabular-nums">{`(${s.porcentaje})`}</span>
                   </span>
                 </li>
               ))}

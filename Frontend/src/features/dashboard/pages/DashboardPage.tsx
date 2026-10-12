@@ -1,3 +1,5 @@
+import { CLASE_CAMPO } from '../../../shared/ui/clases'
+import { Boton, EncabezadoPagina, Tarjeta } from '../../../shared/ui/Diseno'
 import { ErrorAlert } from '../../../shared/ui/ErrorAlert'
 import { LoadingIndicator } from '../../../shared/ui/LoadingIndicator'
 import { AyudaDashboard } from '../components/AyudaDashboard'
@@ -17,29 +19,22 @@ export default function DashboardPage() {
     useDashboard()
 
   return (
-    <section aria-labelledby="dashboard-title" className="flex flex-col gap-6 font-sans text-ink">
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <h1 id="dashboard-title" className="text-2xl font-semibold">
-            Dashboard
-          </h1>
-          <p className="text-lg text-ink/70">{`Resultados de ${nombreMes}`}</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 print:hidden">
-          <AyudaDashboard />
-          <button
-            type="button"
-            onClick={() => window.print()}
-            disabled={datos === null}
-            className="rounded-pill bg-ink px-4 py-2 text-sm font-medium text-surface disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Imprimir / Guardar PDF
-          </button>
-        </div>
-      </header>
+    <section aria-label="Dashboard" className="flex flex-col gap-6 font-sans text-ink">
+      <EncabezadoPagina
+        titulo="Dashboard"
+        subtitulo={`Resultados de ${nombreMes}`}
+        acciones={
+          <div className="flex flex-wrap items-center gap-2 print:hidden">
+            <AyudaDashboard />
+            <Boton variante="primario" onClick={() => window.print()} disabled={datos === null}>
+              Imprimir / Guardar PDF
+            </Boton>
+          </div>
+        }
+      />
 
-      <div className="flex flex-col gap-1 print:hidden">
-        <label htmlFor="dashboard-mes" className="font-medium">
+      <div className="flex flex-wrap items-center gap-3 rounded-card border border-line bg-surface px-5 py-3 shadow-sm print:hidden">
+        <label htmlFor="dashboard-mes" className="text-sm font-semibold">
           Mes
         </label>
         <input
@@ -47,7 +42,7 @@ export default function DashboardPage() {
           type="month"
           value={mes}
           onChange={(event) => cambiarMes(event.target.value)}
-          className="w-fit rounded-card border border-ink/30 px-3 py-2"
+          className={`${CLASE_CAMPO} w-fit`}
         />
       </div>
 
@@ -61,18 +56,16 @@ export default function DashboardPage() {
       {datos && (
         <>
           {datos.porCampania.length === 0 || resumen === null ? (
-            <p className="rounded-card border border-ink/20 p-4">
-              No hay gestiones asignadas en este mes
-            </p>
+            <Tarjeta>
+              <p className="text-sm text-muted">No hay gestiones asignadas en este mes</p>
+            </Tarjeta>
           ) : (
             <>
               <div className="grid gap-6 lg:grid-cols-2">
                 <EmbudoGestion embudo={datos.embudo} />
                 <GraficoResultados resumen={resumen} />
               </div>
-              <div className="rounded-card border border-ink/10 bg-surface p-5 shadow-sm">
-                <TablaResultadosCampania filas={datos.porCampania} />
-              </div>
+              <TablaResultadosCampania filas={datos.porCampania} />
             </>
           )}
           <EstadoModeloCard estadoModelo={datos.estadoModelo} />
