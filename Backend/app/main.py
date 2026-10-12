@@ -21,7 +21,8 @@ from sqlalchemy.exc import ArgumentError
 
 from app.api.acceso_ip import FiltroAccesoIp
 from app.api.dependencies import crear_migracion_historica, crear_reentrenamiento
-from app.api.errors import register_exception_handlers
+from app.api.errors import CapturaErroresNoControlados, register_exception_handlers
+from app.api.proteccion_origen import FiltroHostYOrigen
 from app.api.routers import campanias, cargas, dashboard, gestiones, health, listas, sistema
 from app.application.sistema.migrar_historico import MigrarHistorico
 from app.application.sistema.ports import RegistroMigracion, ResultadoMigracion
@@ -116,6 +117,9 @@ def create_app(
     app = FastAPI(title="Backend API", debug=resolved.DEBUG, lifespan=lifespan)
     app.state.registro_migracion = registro_migracion
     register_exception_handlers(app)
+    # S6 (R-013): el mas interno; una excepcion no controlada se responde con 500 aqui y no
+    # llega al servidor (que la registraria con su traza). CORS la envuelve.
+    app.add_middleware(CapturaErroresNoControlados)
     # CORS explicito por origen (Settings rechaza '*' y origenes mal formados).
     app.add_middleware(
         CORSMiddleware,
@@ -124,8 +128,15 @@ def create_app(
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type"],
     )
+    # S1 (R-013): Host permitido (DNS rebinding) y escrituras solo desde el propio origen o
+    # CORS_ORIGINS (CSRF). Corre despues del filtro de IP y antes de CORS.
+    app.add_middleware(
+        FiltroHostYOrigen,
+        hosts=resolved.HOSTS_PERMITIDOS,
+        origenes=resolved.CORS_ORIGINS,
+    )
     # CU-00: el ultimo middleware anadido es el mas externo; asi el filtro de IP corre antes
-    # que CORS y tambien cubre OPTIONS y /docs.
+    # que el de Host/Origin y CORS, y tambien cubre OPTIONS y /docs.
     app.add_middleware(FiltroAccesoIp, redes=resolved.IPS_PERMITIDAS)
     for router in (
         health.router,

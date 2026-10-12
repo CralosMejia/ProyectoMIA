@@ -73,6 +73,15 @@ def _ensure_database_exists(url: URL) -> None:
         admin.dispose()
 
 
+@pytest.fixture(autouse=True)
+def _hosts_permitidos_de_pruebas(monkeypatch: pytest.MonkeyPatch) -> None:
+    """S1 (R-013): ``TestClient`` envia ``Host: testserver``; se anade a los hosts locales.
+
+    ``Settings`` lee la variable del entorno; una prueba puede pasar el valor explicito.
+    """
+    monkeypatch.setenv("HOSTS_PERMITIDOS", "localhost,127.0.0.1,testserver")
+
+
 @pytest.fixture(scope="session")
 def test_database_url() -> URL:
     url = _guard_test_database(_require_test_database_url())

@@ -15,6 +15,8 @@ from app.domain.common.enums import NivelRiesgo, Plan
 # Planes que admite una campana (todos salvo DIARIO); debe coincidir con PLANES_CAMPANIA.
 PlanCampania = Literal[Plan.MENSUAL, Plan.TRIMESTRAL, Plan.SEMESTRAL, Plan.ANUAL, Plan.OTRO]
 PLANES_CAMPANIA_DTO: tuple[Plan, ...] = get_args(PlanCampania)
+# S8 (R-013): tope de elementos de niveles/planes (se admiten repetidos, pero no sin limite).
+MAX_ELEMENTOS_FILTRO = 10
 
 NombreCampania = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=LONGITUD_MAXIMA_NOMBRE)
@@ -62,6 +64,6 @@ class CampaniaEntradaDTO(BaseModel):
 
     nombre: NombreCampania
     descripcion: DescripcionCampania | None = None
-    niveles_riesgo: list[NivelRiesgo] = Field(min_length=1)
-    planes: list[PlanCampania] = Field(min_length=1)
+    niveles_riesgo: list[NivelRiesgo] = Field(min_length=1, max_length=MAX_ELEMENTOS_FILTRO)
+    planes: list[PlanCampania] = Field(min_length=1, max_length=MAX_ELEMENTOS_FILTRO)
     prioridad: int = Field(ge=PRIORIDAD_MINIMA, le=PRIORIDAD_MAXIMA)

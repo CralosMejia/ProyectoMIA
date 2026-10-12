@@ -74,7 +74,7 @@ NIVEL_TEXTO: dict[NivelRiesgo, str] = {
 }
 # Aporte numerico al final del texto de un motivo, p. ej. " (+0,12)" (APORTE_FINAL del front).
 APORTE_FINAL = re.compile(r"\s*\([^()]*\)\s*$")
-_PREFIJOS_FORMULA = ("=", "+", "-", "@")
+_PREFIJOS_FORMULA = ("=", "+", "-", "@", "\t", "\r")  # S11 (R-013): tab y CR iniciales
 _SEPARADOR_FACTORES = "; "
 
 

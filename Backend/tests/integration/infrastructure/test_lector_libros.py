@@ -3,12 +3,13 @@
 import logging
 import math
 import shutil
+import warnings
 from collections import Counter
 from datetime import date, datetime
 from pathlib import Path
 
 import pytest
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 
 from app.application.historial.ports import LectorHistorico, LibrosLeidos
 from app.domain.common.exceptions import DomainError
@@ -310,3 +311,24 @@ def test_leer_error_de_una_hoja_no_devuelve_resultado_parcial(tmp_path: Path) ->
     with pytest.raises(HojaSinEncabezadoError) as error:
         LectorLibrosExcel().leer([buena, mala])
     assert (error.value.libro, error.value.hoja) == ("Control Gym 2024 malo.xlsx", "MAYO")
+
+
+def test_leer_fecha_fuera_de_rango_no_emite_avisos_de_openpyxl_con_datos_de_celdas(
+    tmp_path: Path,
+) -> None:
+    ruta = _libro(
+        tmp_path / "Control Gym 2024.xlsx",
+        {"MAYO": [["CEDULA", "NOMBRE", "FECHA INICIO"], ["1700000019", "Socio Ficticio", None]]},
+    )
+    libro = load_workbook(ruta)
+    celda = libro["MAYO"]["C2"]
+    celda.value = 10**10
+    celda.number_format = "yyyy-mm-dd"
+    libro.save(ruta)
+
+    with warnings.catch_warnings(record=True) as avisos:
+        warnings.simplefilter("always")
+        leidos = LectorLibrosExcel().leer([ruta])
+
+    assert [str(a.message) for a in avisos] == []
+    assert [f.fila for f in leidos.filas] == [2]

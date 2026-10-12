@@ -12,6 +12,8 @@ from app.domain.listas.nombre import LONGITUD_MAXIMA_NOMBRE
 HORIZONTE_DIAS_POR_DEFECTO = 30
 HORIZONTE_DIAS_MAXIMO = 31
 TOP_K_POR_DEFECTO = 25
+# S8 (R-013): tope razonable de prioritarios (los vencimientos de 31 dias son cientos).
+TOP_K_MAXIMO = 1000
 
 NombreLista = Annotated[
     str,
@@ -53,7 +55,7 @@ class GenerarListaDTO(BaseModel):
     nombre: NombreLista | None = None
     fecha_referencia: date | None = None
     horizonte_dias: int = Field(default=HORIZONTE_DIAS_POR_DEFECTO, ge=1, le=HORIZONTE_DIAS_MAXIMO)
-    top_k: int = Field(default=TOP_K_POR_DEFECTO, ge=1)
+    top_k: int = Field(default=TOP_K_POR_DEFECTO, ge=1, le=TOP_K_MAXIMO)
 
 
 class PrediccionDTO(BaseModel):

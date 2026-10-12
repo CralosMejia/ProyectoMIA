@@ -5,8 +5,9 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-# Mes de consulta ``YYYY-MM`` con mes entre 01 y 12.
-MES_PATTERN = r"^\d{4}-(0[1-9]|1[0-2])$"
+# Mes de consulta ``YYYY-MM`` con anio 1900..2999 y mes 01..12. S7 (R-013): el anio acotado
+# evita ``date``/``datetime`` fuera de rango (0000-01, 9999-12) que daban 500.
+MES_PATTERN = r"^(19|2\d)\d{2}-(0[1-9]|1[0-2])$"
 
 
 class EmbudoDTO(BaseModel):

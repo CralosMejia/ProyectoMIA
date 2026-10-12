@@ -18,6 +18,7 @@ ENV_VARS = (
     "HISTORICO_PATH",
     "MIGRAR_HISTORICO_AL_ARRANCAR",
     "IPS_PERMITIDAS",
+    "HOSTS_PERMITIDOS",
     "REENTRENAMIENTO_AUTOMATICO",
     "REENTRENAR_MIN_CICLOS_NUEVOS",
     "REENTRENAR_MIN_COBERTURA_VENCIMIENTO",
@@ -448,3 +449,33 @@ def test_settings_umbrales_de_reentrenamiento_fuera_de_rango_fallan(
         Settings()
 
     assert variable in str(exc_info.value)
+
+
+def test_settings_hosts_permitidos_default_is_only_local(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", DB_URL)
+
+    assert Settings().HOSTS_PERMITIDOS == ("localhost", "127.0.0.1")
+
+
+def test_settings_hosts_permitidos_parses_comma_list_lowercase(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", DB_URL)
+    monkeypatch.setenv("HOSTS_PERMITIDOS", " LocalHost , 127.0.0.1,testserver ")
+
+    assert Settings().HOSTS_PERMITIDOS == ("localhost", "127.0.0.1", "testserver")
+
+
+@pytest.mark.parametrize("valor", ["", " , ", "*", "*.example.com", "localhost:8080", "a b"])
+def test_settings_hosts_permitidos_invalid_raises_without_value(
+    monkeypatch: pytest.MonkeyPatch, valor: str
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", DB_URL)
+    monkeypatch.setenv("HOSTS_PERMITIDOS", valor)
+
+    with pytest.raises(ValidationError) as exc_info:
+        Settings()
+
+    assert "HOSTS_PERMITIDOS" in str(exc_info.value)
+    if valor.strip(" ,"):
+        assert valor not in str(exc_info.value)

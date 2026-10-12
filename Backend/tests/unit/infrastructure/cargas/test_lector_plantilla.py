@@ -5,6 +5,7 @@ nombres y cedulas ficticios. Sin login (RT-12): no hay pruebas de aislamiento en
 """
 
 import io
+import warnings
 import zipfile
 from datetime import date, datetime
 from pathlib import Path
@@ -15,7 +16,9 @@ from openpyxl import Workbook  # type: ignore[import-untyped]  # openpyxl no pub
 from app.application.cargas.ports import LectorPlantilla
 from app.domain.cargas.errores import MotivoPlantillaInvalida, PlantillaInvalidaError
 from app.domain.cargas.fila import COLUMNAS
+from app.infrastructure.cargas import lector_plantilla
 from app.infrastructure.cargas.lector_plantilla import (
+    MAX_FILAS_ITERADAS,
     MAX_FILAS_PLANTILLA,
     TITULOS_PLANTILLA,
     LectorPlantillaOpenpyxl,
@@ -234,3 +237,125 @@ def test_error_messages_never_contain_cell_values(lector: LectorPlantillaOpenpyx
 
     for error in errores:
         assert not any(valor in str(error) for valor in valores)
+
+
+# ---------------------------------------------------- S3 (R-013): zip bomb y filas iteradas
+
+MENSAJE_DEMASIADO_GRANDE = (
+    "El contenido del archivo es demasiado grande para una plantilla de carga; "
+    "use la plantilla oficial."
+)
+
+
+def _con_entrada_extra(contenido: bytes, nombre: str, datos: bytes) -> bytes:
+    """Copia el libro y anade una entrada comprimida (deflate) al zip."""
+    buffer = io.BytesIO()
+    with (
+        zipfile.ZipFile(io.BytesIO(contenido)) as origen,
+        zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as destino,
+    ):
+        for info in origen.infolist():
+            destino.writestr(info, origen.read(info.filename))
+        destino.writestr(nombre, datos)
+    return buffer.getvalue()
+
+
+def test_leer_highly_compressed_zip_raises_too_big_before_opening(
+    lector: LectorPlantillaOpenpyxl,
+) -> None:
+    valida = (PLANTILLAS / PLANTILLA_VALIDA).read_bytes()
+    bomba = _con_entrada_extra(valida, "xl/media/relleno.bin", bytes(20 * 1024 * 1024))
+
+    error = motivo_de(lector, bomba)
+
+    assert error.motivo is MotivoPlantillaInvalida.DEMASIADO_GRANDE
+    assert str(error) == MENSAJE_DEMASIADO_GRANDE
+
+
+def test_leer_uncompressed_total_above_limit_raises_too_big(
+    lector: LectorPlantillaOpenpyxl, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(lector_plantilla, "MAX_BYTES_DESCOMPRIMIDOS", 100_000)
+
+    error = motivo_de(lector, (PLANTILLAS / PLANTILLA_VALIDA).read_bytes())
+
+    assert error.motivo is MotivoPlantillaInvalida.DEMASIADO_GRANDE
+
+
+def test_uncompressed_limit_is_fifty_megabytes() -> None:
+    assert lector_plantilla.MAX_BYTES_DESCOMPRIMIDOS == 50 * 1024 * 1024
+
+
+def test_leer_more_iterated_rows_than_limit_raises_too_big(lector: LectorPlantillaOpenpyxl) -> None:
+    filas: list[list[object]] = [list(TITULOS_PLANTILLA)]
+    filas += [[None] * 14 for _ in range(MAX_FILAS_ITERADAS)]
+    filas.append(fila_plantilla(0))
+
+    error = motivo_de(lector, libro_en_bytes({"Registros": filas}))
+
+    assert error.motivo is MotivoPlantillaInvalida.DEMASIADO_GRANDE
+
+
+def test_leer_rows_up_to_iterated_limit_with_few_data_rows_is_accepted(
+    lector: LectorPlantillaOpenpyxl,
+) -> None:
+    filas: list[list[object]] = [list(TITULOS_PLANTILLA)]
+    filas += [[None] * 14 for _ in range(MAX_FILAS_ITERADAS - 1)]
+    filas.append(fila_plantilla(0))
+
+    plantilla = lector.leer(libro_en_bytes({"Registros": filas}))
+
+    assert len(plantilla.filas) == 1
+    assert plantilla.filas[0].fila == MAX_FILAS_ITERADAS + 1
+
+
+def test_valid_fixtures_are_far_below_compression_limits() -> None:
+    for ruta in PLANTILLAS.glob("*.xlsx"):
+        with zipfile.ZipFile(ruta) as archivo:
+            infos = archivo.infolist()
+        descomprimido = sum(i.file_size for i in infos)
+        comprimido = sum(i.compress_size for i in infos)
+        assert descomprimido / comprimido < lector_plantilla.MAX_RELACION_COMPRESION / 5
+
+
+# ------------------------------------- T6-OBS-1 (R-013): avisos de openpyxl sin datos de celdas
+
+SERIAL_FUERA_DE_RANGO = 10**10
+
+
+def _plantilla_con_fecha_fuera_de_rango() -> bytes:
+    """Plantilla con una fecha (columna G) cuyo serial no es una fecha valida."""
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = "Registros"
+    hoja.append(list(TITULOS_PLANTILLA))
+    hoja.append(list(fila_plantilla(0)[:14]))
+    celda = hoja.cell(row=2, column=7, value=SERIAL_FUERA_DE_RANGO)
+    celda.number_format = "yyyy-mm-dd"
+    buffer = io.BytesIO()
+    libro.save(buffer)
+    return buffer.getvalue()
+
+
+def test_leer_date_outside_limits_emits_no_openpyxl_warning_with_cell_data(
+    lector: LectorPlantillaOpenpyxl,
+) -> None:
+    contenido = _plantilla_con_fecha_fuera_de_rango()
+
+    with warnings.catch_warnings(record=True) as avisos:
+        warnings.simplefilter("always")
+        plantilla = lector.leer(contenido)
+
+    assert [str(a.message) for a in avisos] == []
+    assert [f.fila for f in plantilla.filas] == [2]
+
+
+def test_warning_filter_is_scoped_to_the_read(lector: LectorPlantillaOpenpyxl) -> None:
+    contenido = _plantilla_con_fecha_fuera_de_rango()
+
+    with warnings.catch_warnings(record=True) as avisos:
+        warnings.simplefilter("always")
+        lector.leer(contenido)
+        warnings.warn("aviso posterior a la lectura", UserWarning, stacklevel=1)
+
+    assert [str(a.message) for a in avisos] == ["aviso posterior a la lectura"]

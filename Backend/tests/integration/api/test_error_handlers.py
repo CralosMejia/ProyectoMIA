@@ -114,10 +114,33 @@ def test_unhandled_exception_returns_500_generic_message_and_logs_it(
     text = response.text
     for leaked in ("Traceback", "RuntimeError", "SELECT", "secret_table", "/srv/", ".py"):
         assert leaked not in text
-    assert any(
-        record.exc_info is not None and isinstance(record.exc_info[1], RuntimeError)
-        for record in caplog.records
-    ), "el error 500 debe quedar registrado en el log con su excepcion"
+    # S6 (R-013): se registra el tipo de la excepcion, sin mensaje ni traza (DETAIL de SQL).
+    assert any("RuntimeError" in record.getMessage() for record in caplog.records), (
+        "el error 500 debe quedar registrado en el log con el tipo de la excepcion"
+    )
+
+
+def test_unhandled_exception_log_has_no_message_nor_traceback(
+    client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.DEBUG):
+        client.get(BOOM_PATH)
+
+    assert caplog.records
+    for record in caplog.records:
+        assert record.exc_info is None
+        assert record.exc_text is None
+        assert "secret_table" not in record.getMessage()
+        assert "SELECT" not in record.getMessage()
+
+
+def test_unhandled_exception_does_not_propagate_to_the_server(app: FastAPI) -> None:
+    """El servidor (uvicorn) registraria la traza completa si la excepcion se re-lanzara."""
+    with TestClient(app, client=("127.0.0.1", 50000), raise_server_exceptions=True) as cliente:
+        response = cliente.get(BOOM_PATH)
+
+    assert response.status_code == 500
+    _assert_error_shape(response.json(), "internal_error")
 
 
 def test_domain_error_returns_422_with_unique_error_format(client: TestClient) -> None:
@@ -179,7 +202,7 @@ def test_unhandled_exception_log_record_is_error_level_with_request_path(
     with caplog.at_level(logging.ERROR):
         client.get(BOOM_PATH)
 
-    records = [r for r in caplog.records if r.exc_info is not None]
+    records = [r for r in caplog.records if "RuntimeError" in r.getMessage()]
     assert records
     assert all(r.levelno >= logging.ERROR for r in records)
     assert any(BOOM_PATH in r.getMessage() for r in records)

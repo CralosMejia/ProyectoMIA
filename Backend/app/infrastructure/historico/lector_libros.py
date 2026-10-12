@@ -7,11 +7,14 @@ celda: ``NaN``/``NaT`` -> ``None``, ``Timestamp`` -> ``datetime``, numeros tal c
 conversion a ``date``/``Decimal`` es del dominio. Se lee con ``header=None`` y
 ``dtype=object`` para que pandas no infiera tipos (una cedula nunca llega como ``float``).
 
-No escribe en disco ni en logs; los errores solo nombran el libro y la hoja (RN-03.5).
+No escribe en disco ni en logs; los errores solo nombran el libro y la hoja (RN-03.5). Los
+``UserWarning`` de ``openpyxl`` citan coordenada y valor de celda: se silencian solo durante la
+lectura de cada libro (T6-OBS-1).
 """
 
 import math
 import re
+import warnings
 from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 from pathlib import Path
@@ -99,6 +102,11 @@ class LectorLibrosExcel:
         return LibrosLeidos(filas=tuple(filas), libros=tuple(libros))
 
     def _leer_libro(self, ruta: Path) -> tuple[LibroLeido, list[FilaCruda]]:
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
+            return self._leer_libro_sin_avisos(ruta)
+
+    def _leer_libro_sin_avisos(self, ruta: Path) -> tuple[LibroLeido, list[FilaCruda]]:
         anio = anio_del_libro(ruta)
         incluidas: list[str] = []
         omitidas: list[str] = []

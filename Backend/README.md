@@ -105,7 +105,7 @@ Guía para quien instala y mantiene la aplicación. Todos los comandos se ejecut
    cp .env.example .env
    ```
 
-   La contraseña de la base debe ser URL-safe (p. ej. hexadecimal), porque se repite dentro de `DATABASE_URL` y `TEST_DATABASE_URL`. El `.env` no se versiona ni se comparte.
+   La contraseña de la base debe ser URL-safe (p. ej. hexadecimal), porque se repite dentro de `DATABASE_URL` y `TEST_DATABASE_URL`. El `.env` no se versiona ni se comparte. En una instalación nueva active además el rol de la aplicación sin superusuario (§3.1).
 3. Construya y arranque:
 
    ```bash
@@ -131,6 +131,7 @@ Todas son opcionales; sin ellas rigen los valores por defecto (de `compose.yaml`
 | Variable | Por defecto | Para qué |
 |---|---|---|
 | `IPS_PERMITIDAS` | `127.0.0.1,::1,<FRONTEND_IP>` | IPs o rangos CIDR, separados por coma, a los que responde el backend (CU-00). Vacío o `*` es un error: nunca se abre a todos. |
+| `HOSTS_PERMITIDOS` | `localhost,127.0.0.1` | Nombres aceptados en la cabecera `Host` (sin puerto ni comodines, separados por coma). Otro `Host` → `400` (protección contra DNS rebinding, [ADR-013](../Documentation/adr/ADR-013-proteccion-host-y-origin.md)). Si se entra por otro nombre, añádalo aquí. |
 | `RED_INTERNA_SUBNET` | `172.30.0.0/24` | Subred fija de la red interna de compose. |
 | `FRONTEND_IP` | `172.30.0.10` | IP fija del contenedor del frontend (nginx) dentro de esa subred. |
 | `REENTRENAMIENTO_AUTOMATICO` | `true` | Activa el planificador del reentrenamiento dentro del backend (§4). |
@@ -142,7 +143,23 @@ Todas son opcionales; sin ellas rigen los valores por defecto (de `compose.yaml`
 Notas:
 
 - `RED_INTERNA_SUBNET` y `FRONTEND_IP` se definen **juntas** (la IP dentro de la subred). El stack e2e usa por defecto otra subred (tercer octeto distinto) para que no choque con la principal.
-- `compose.yaml` pasa al contenedor `IPS_PERMITIDAS`, `REENTRENAMIENTO_AUTOMATICO` y los cuatro `REENTRENAR_*`, así que todas son configurables desde el `.env`; si no se definen, rigen los valores por defecto de la tabla.
+- `compose.yaml` pasa al contenedor `IPS_PERMITIDAS`, `HOSTS_PERMITIDOS`, `REENTRENAMIENTO_AUTOMATICO` y los cuatro `REENTRENAR_*`, así que todas son configurables desde el `.env`; si no se definen, rigen los valores por defecto de la tabla.
+- `CORS_ORIGINS` es también la lista de orígenes aceptados en peticiones que modifican datos: una petición distinta de `GET`/`HEAD`/`OPTIONS` con un `Origin` que no es el propio ni está en esa lista (o sin `Origin` y con `Sec-Fetch-Site: cross-site`) recibe `403` (CSRF). En operación debe contener **solo** el origen del frontend (`http://localhost:8080`).
+
+#### 3.1 Rol de la aplicación sin superusuario (S23)
+
+La aplicación se conecta con un rol propio sin superusuario, sin `CREATE` en el esquema y sin `DELETE` ni `TRUNCATE`; las migraciones siguen con el rol propietario ([ADR-012](../Documentation/adr/ADR-012-rol-de-aplicacion-sin-superusuario.md)). El servicio `db-roles` crea o actualiza ese rol en cada `docker compose up` (idempotente).
+
+| Variable | Valor |
+|---|---|
+| `APP_DB_USER` | Nombre del rol (por defecto `mtabolic_app`; distinto de `POSTGRES_USER`). |
+| `APP_DB_PASSWORD` | Contraseña URL-safe (p. ej. hexadecimal) distinta de `POSTGRES_PASSWORD`. |
+| `MIGRATE_DATABASE_URL` | URL con el rol **propietario** (`POSTGRES_USER`): la usa `migrate`. |
+| `DATABASE_URL` | URL con el **rol de la aplicación**: la usa el backend. |
+
+Para activarlo en un stack existente: (1) haga un respaldo (§5); (2) defina las cuatro variables en el `.env` (sin mostrar la contraseña en pantalla ni en capturas); (3) `docker compose up -d --build` **sin `-v`**; (4) compruebe que `db-roles` y `migrate` terminaron en `0` y que Inicio muestra `LISTO`. Reversión no destructiva: volver a la `DATABASE_URL` del propietario y `docker compose up -d`.
+
+Transición: si `APP_DB_PASSWORD` falta o está vacía, `db-roles` solo avisa y todo sigue con el rol propietario (comportamiento anterior a R-013). `TEST_DATABASE_URL` sigue siempre con el propietario (las pruebas necesitan DDL). Residual: el propietario sigue siendo superusuario del clúster (imagen oficial de PostgreSQL).
 
 #### Acceso por IP: por qué se entra por el puerto 8080
 
@@ -194,32 +211,25 @@ Si resulta `ENTRENADO`, las listas que se generen desde ese momento usan el mode
 
 ### 5. Respaldo y restauración de la base
 
-Los comandos usan las variables `POSTGRES_USER` y `POSTGRES_DB` que ya existen **dentro** del contenedor `db` (por eso van entre comillas simples: las expande el contenedor, no su terminal). No hace falta escribir ninguna contraseña. Guarde los respaldos en una carpeta `respaldos/` fuera de cualquier carpeta compartida: contienen datos personales de socios y no se versionan.
+Use los scripts de la raíz (detalle, opciones y códigos de salida en [`Documentation/comandos/respaldo-y-restauracion.md`](../Documentation/comandos/respaldo-y-restauracion.md)). Las credenciales se expanden **dentro** del contenedor `db`: no hace falta escribir ninguna contraseña y no se imprime nada del `.env`. Los respaldos quedan en `respaldos/` (git-ignorada): contienen datos personales de socios; guárdelos fuera de cualquier carpeta compartida.
 
-**Hacer un respaldo** (formato comprimido `-Fc`; se genera dentro del contenedor y se copia al PC, lo que evita que PowerShell altere el archivo binario):
-
-```bash
-docker compose exec db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc -f /tmp/respaldo.dump'
-docker compose cp db:/tmp/respaldo.dump ./respaldos/mtabolic-AAAA-MM-DD.dump
-docker compose exec db rm /tmp/respaldo.dump
-```
-
-**Restaurar en una base nueva** (no toca la base en uso):
+**Hacer un respaldo** (solo lectura; `pg_dump -Fc` dentro del contenedor y copia al PC, lo que evita que PowerShell altere el binario). Genera `respaldos/<proyecto>-AAAAMMDD-HHMMSS.dump` y su `.conteos` (9 tablas); si la base cambia durante el volcado, lo descarta:
 
 ```bash
-docker compose cp ./respaldos/mtabolic-AAAA-MM-DD.dump db:/tmp/respaldo.dump
-docker compose exec db sh -c 'createdb -U "$POSTGRES_USER" app_db_restaurada'
-docker compose exec db sh -c 'pg_restore -U "$POSTGRES_USER" -d app_db_restaurada --no-owner /tmp/respaldo.dump'
-docker compose exec db rm /tmp/respaldo.dump
+scripts/respaldar-base.sh                          # bash; stack principal
+powershell -ExecutionPolicy Bypass -File scripts\respaldar-base.ps1   # Windows
 ```
 
-**Verificar los conteos**: ejecute la consulta en la base original y en la restaurada (cambiando `"$POSTGRES_DB"` por `app_db_restaurada`) y compare; deben coincidir:
+**Restaurar en una base nueva** (no toca la base en uso; nunca renombra, sobrescribe ni borra). Crea `app_db_restaurada_AAAAMMDDHHMMSS` (o `--base nombre` / `-Base nombre`), aplica los permisos del rol de la aplicación y compara los conteos con el `.conteos` del respaldo (`Conteos iguales` → código 0):
 
 ```bash
-docker compose exec db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT (SELECT count(*) FROM socios) AS socios, (SELECT count(*) FROM membresias) AS membresias, (SELECT count(*) FROM cargas) AS cargas, (SELECT count(*) FROM modelos) AS modelos, (SELECT count(*) FROM intentos_reentrenamiento) AS intentos, (SELECT count(*) FROM listas_priorizadas) AS listas, (SELECT count(*) FROM predicciones) AS predicciones, (SELECT count(*) FROM campanias) AS campanias, (SELECT count(*) FROM gestiones_retencion) AS gestiones"'
+scripts/restaurar-base.sh respaldos/<archivo>.dump [--base app_db_restaurada]
+powershell -ExecutionPolicy Bypass -File scripts\restaurar-base.ps1 respaldos\<archivo>.dump [-Base app_db_restaurada]
 ```
 
-**Poner en uso la base restaurada** (solo si se perdió o dañó la actual). No borra nada: la base actual se renombra a `app_db_anterior` y se conserva. Detenga antes la aplicación para que no haya conexiones abiertas:
+Ambos aceptan `-p mtabolic-e2e` o `-p mtabolic-limpia` (lista blanca; otro nombre sale con código 1 sin tocar Docker).
+
+**Poner en uso la base restaurada** (solo si se perdió o dañó la actual; los comandos suponen que se restauró con `--base app_db_restaurada`, si no cambie el nombre). No borra nada: la base actual se renombra a `app_db_anterior` y se conserva. Detenga antes la aplicación para que no haya conexiones abiertas:
 
 ```bash
 docker compose stop frontend backend
@@ -231,4 +241,8 @@ Compruebe en http://localhost:8080 que el sistema está `LISTO` y los datos son 
 
 ### 6. Reiniciar la base a solo datos históricos
 
-Para dejar la base como recién instalada (solo histórico y modelo `v1`), use el procedimiento con confirmación explícita de [`Documentation/comandos/reiniciar-base-historica.md`](../Documentation/comandos/reiniciar-base-historica.md). **Borra definitivamente** cargas, listas, campañas y gestiones del stack principal: haga antes un respaldo (§5).
+Para dejar la base como recién instalada (solo histórico y modelo `v1`), use el procedimiento con confirmación explícita de [`Documentation/comandos/reiniciar-base-historica.md`](../Documentation/comandos/reiniciar-base-historica.md). **Borra definitivamente** cargas, listas, campañas y gestiones del stack principal: haga antes un respaldo (§5). Desde R-013 el script espera `LISTO` por el puerto del frontend (`FRONTEND_PORT`, por defecto 8080), porque el backend por 8000 responde `403`.
+
+### 7. Ensayo de la demostración (stack aislado)
+
+Para ensayar alertas y la fecha de reentrenamiento perdida sin esperar días reales, en el stack `mtabolic-e2e` (único aceptado): `scripts/ensayo-demo-e2e.sh adelantar-seguimientos <1..60>` y `scripts/ensayo-demo-e2e.sh perder-fecha-reentrenamiento` (o los `.ps1`). Guion en [`Documentation/comandos/ensayo-demo-e2e.md`](../Documentation/comandos/ensayo-demo-e2e.md).

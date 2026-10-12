@@ -160,7 +160,7 @@ def test_get_dashboard_sin_modelo_vigente_devuelve_estado_modelo_nulo(
     assert cuerpo["por_campania"] == []
 
 
-@pytest.mark.parametrize("mes", ["2026-13", "sep"])
+@pytest.mark.parametrize("mes", ["2026-13", "sep", "0000-01", "9999-12", "1899-12", "3000-01"])
 def test_get_dashboard_mes_invalido_devuelve_400(
     base: Engine, client: TestClient, mes: str
 ) -> None:

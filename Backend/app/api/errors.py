@@ -4,6 +4,7 @@ El detalle tecnico se registra en el servidor; al cliente solo llega un mensaje 
 sin tracebacks, SQL ni rutas del sistema.
 """
 
+import json
 import logging
 from http import HTTPStatus
 from typing import cast
@@ -12,6 +13,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.domain.common.exceptions import DomainError
 
@@ -86,17 +88,62 @@ async def domain_exception_handler(request: Request, exc: Exception) -> JSONResp
     )
 
 
+def _registrar_no_controlado(metodo: str, ruta: str, exc: BaseException) -> None:
+    # S6 (R-013): solo el tipo; el mensaje y la traza pueden llevar SQL con el DETAIL de
+    # PostgreSQL (valores de socios) o rutas del sistema.
+    logger.error("error no controlado en %s %s (%s)", metodo, ruta, type(exc).__name__)
+
+
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    logger.error(
-        "error no controlado en %s %s",
-        request.method,
-        request.url.path,
-        exc_info=(type(exc), exc, exc.__traceback__),
-    )
+    _registrar_no_controlado(request.method, request.url.path, exc)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content=error_body("internal_error", INTERNAL_ERROR_MESSAGE),
     )
+
+
+_CUERPO_500 = json.dumps(error_body("internal_error", INTERNAL_ERROR_MESSAGE)).encode("utf-8")
+
+
+class CapturaErroresNoControlados:
+    """Middleware ASGI: convierte una excepcion no controlada en ``500`` sin re-lanzarla.
+
+    El manejador de ``Exception`` de Starlette re-lanza la excepcion tras responder y el
+    servidor (uvicorn) la registra con la traza completa; este middleware la detiene antes.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self._app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+        iniciada = False
+
+        async def enviar(mensaje: Message) -> None:
+            nonlocal iniciada
+            if mensaje["type"] == "http.response.start":
+                iniciada = True
+            await send(mensaje)
+
+        try:
+            await self._app(scope, receive, enviar)
+        except Exception as exc:
+            _registrar_no_controlado(scope.get("method", ""), scope.get("path", ""), exc)
+            if iniciada:
+                return  # la respuesta ya empezo: solo queda cerrar la conexion
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    "headers": [
+                        (b"content-type", b"application/json"),
+                        (b"content-length", str(len(_CUERPO_500)).encode("ascii")),
+                    ],
+                }
+            )
+            await send({"type": "http.response.body", "body": _CUERPO_500})
 
 
 def register_exception_handlers(app: FastAPI) -> None:

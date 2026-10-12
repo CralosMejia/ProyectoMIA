@@ -5,6 +5,8 @@ Abre el libro en memoria con ``read_only=True`` y ``data_only=True``, comprueba 
 A..N de cada fila con algun dato (fechas como ``date``/``datetime``, numeros tal cual); la
 validacion por fila es del dominio. Las columnas O y P (formulas de apoyo) no se leen ni se
 validan. Las filas vacias intermedias se saltan conservando el numero de fila real.
+Los ``UserWarning`` de ``openpyxl`` (p. ej. "Cell G2 ... outside the limits for dates") citan
+coordenada y valor de celda: se silencian solo durante la lectura (T6-OBS-1).
 
 Sin hoja ``Registros`` y con alguna hoja cuyo nombre es un mes -> formato antiguo de hojas
 mensuales. Los errores nunca incluyen valores de celdas y el lector no escribe en disco ni
@@ -13,6 +15,7 @@ en logs.
 
 import io
 import unicodedata
+import warnings
 import zipfile
 from collections.abc import Iterable, Iterator, Sequence
 from typing import Protocol, cast
@@ -30,6 +33,11 @@ from app.domain.cargas.fila import COLUMNAS, PRIMERA_FILA_DATOS, FilaPlantilla, 
 from app.infrastructure.historico.alias_columnas import MESES
 
 MAX_FILAS_PLANTILLA = 500
+# S3 (R-013): limites contra libros "bomba" (zip muy comprimido o hojas con miles de filas
+# vacias). Se comprueban con ``zipfile`` antes de abrir el libro con ``openpyxl``.
+MAX_BYTES_DESCOMPRIMIDOS = 50 * 1024 * 1024
+MAX_RELACION_COMPRESION = 100
+MAX_FILAS_ITERADAS = 5000
 HOJA_REGISTROS = "Registros"
 TITULOS_PLANTILLA: tuple[str, ...] = (
     "ESTADO DEL REGISTRO",
@@ -82,10 +90,31 @@ def _es_hoja_mensual(nombre: str) -> bool:
     return nombre.strip().upper() in MESES
 
 
+def _comprobar_tamano_descomprimido(contenido: bytes) -> None:
+    """Rechaza el zip si declara > 50 MB descomprimidos o una relacion de compresion > 100."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(contenido)) as archivo:
+            infos = archivo.infolist()
+    except _ERRORES_DE_ARCHIVO as error:
+        raise PlantillaInvalidaError(MotivoPlantillaInvalida.DANADO) from error
+    descomprimido = sum(info.file_size for info in infos)
+    comprimido = max(sum(info.compress_size for info in infos), 1)
+    if (
+        descomprimido > MAX_BYTES_DESCOMPRIMIDOS
+        or descomprimido / comprimido > MAX_RELACION_COMPRESION
+    ):
+        raise PlantillaInvalidaError(MotivoPlantillaInvalida.DEMASIADO_GRANDE)
+
+
 class LectorPlantillaOpenpyxl:
     """Implementa ``LectorPlantilla``."""
 
     def leer(self, contenido: bytes) -> PlantillaLeida:
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
+            return self._leer(contenido)
+
+    def _leer(self, contenido: bytes) -> PlantillaLeida:
         libro = self._abrir(contenido)
         try:
             hoja = self._hoja_registros(libro)
@@ -101,6 +130,7 @@ class LectorPlantillaOpenpyxl:
 
     @staticmethod
     def _abrir(contenido: bytes) -> Workbook:
+        _comprobar_tamano_descomprimido(contenido)
         try:
             libro: Workbook = load_workbook(io.BytesIO(contenido), read_only=True, data_only=True)
         except _ERRORES_DE_ARCHIVO as error:
@@ -128,6 +158,8 @@ class LectorPlantillaOpenpyxl:
 
         resultado: list[FilaPlantilla] = []
         for numero, valores in enumerate(iterador, start=PRIMERA_FILA_DATOS):
+            if numero - PRIMERA_FILA_DATOS >= MAX_FILAS_ITERADAS:
+                raise PlantillaInvalidaError(MotivoPlantillaInvalida.DEMASIADO_GRANDE)
             crudos = tuple(valores[:_NUMERO_COLUMNAS])
             if all(_vacia(v) for v in crudos):
                 continue

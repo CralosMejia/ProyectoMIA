@@ -28,6 +28,7 @@ from app.infrastructure.exportacion.excel_lista import (
     HOJA_RESUMEN,
     SIN_FACTORES,
     ExcelListaOpenpyxl,
+    neutralizar,
 )
 
 pytestmark = pytest.mark.unit
@@ -272,7 +273,7 @@ def test_generar_cedula_is_text_with_leading_zero_and_none_is_empty() -> None:
     assert hoja["C3"].value is None
 
 
-@pytest.mark.parametrize("peligroso", ['=HYPERLINK("x")', "+5+5", "-2+3", "@SUM(A1)"])
+@pytest.mark.parametrize("peligroso", ['=HYPERLINK("x")', "+5+5", "-2+3", "@SUM(A1)", "\t=1+1"])
 def test_generar_neutralizes_formulas_with_quote_prefix(peligroso: str) -> None:
     items = (item(1, socio_nombre=peligroso, cedula=peligroso, factores_principales=[peligroso]),)
     contenido = ExcelListaOpenpyxl().generar(lista(items, nombre=peligroso))
@@ -289,6 +290,11 @@ def test_generar_neutralizes_formulas_with_quote_prefix(peligroso: str) -> None:
             if nombre.startswith("xl/worksheets/"):
                 assert b"<f>" not in archivo.read(nombre)
                 assert b"<f " not in archivo.read(nombre)
+
+
+@pytest.mark.parametrize("peligroso", ["\t=1+1", "\r=1+1", "\r@SUM(A1)"])
+def test_neutralizar_tab_or_carriage_return_prefix_gets_quote(peligroso: str) -> None:
+    assert neutralizar(peligroso) == "'" + peligroso
 
 
 def test_generar_summary_has_friendly_labels_and_values() -> None:

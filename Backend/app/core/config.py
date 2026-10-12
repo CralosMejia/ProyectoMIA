@@ -1,5 +1,6 @@
 """Configuracion de la aplicacion, cargada y validada desde variables de entorno."""
 
+import re
 from decimal import Decimal
 from ipaddress import IPv4Network, IPv6Network, ip_network
 from pathlib import Path
@@ -22,6 +23,10 @@ IPS_PERMITIDAS_POR_DEFECTO: tuple[RedPermitida, ...] = (
     ip_network("127.0.0.1"),
     ip_network("::1"),
 )
+# S1 (R-013): nombres de host aceptados en la cabecera ``Host`` (sin puerto). Por defecto el
+# propio equipo: nginx reenvia el Host del navegador y el healthcheck de Docker usa 127.0.0.1.
+HOSTS_PERMITIDOS_POR_DEFECTO: tuple[str, ...] = ("localhost", "127.0.0.1")
+_HOST_VALIDO = re.compile(r"^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$")
 
 
 def _redes_permitidas(valor: str) -> tuple[RedPermitida, ...]:
@@ -38,6 +43,18 @@ def _redes_permitidas(valor: str) -> tuple[RedPermitida, ...]:
                 "cada elemento debe ser una IP o un rango CIDR valido, separados por coma"
             ) from None
     return tuple(redes)
+
+
+def _hosts_permitidos(valor: str) -> tuple[str, ...]:
+    """``"host, host"`` -> nombres en minusculas; sin comodines ni puertos (no repite el valor)."""
+    hosts = tuple(h.strip().lower() for h in valor.split(",") if h.strip())
+    if not hosts:
+        raise ValueError("debe contener al menos un nombre de host")
+    if not all(_HOST_VALIDO.match(h) for h in hosts):
+        raise ValueError(
+            "cada host debe ser un nombre o IPv4 sin comodines ni puerto, separados por coma"
+        )
+    return hosts
 
 
 def _is_valid_origin(origin: str) -> bool:
@@ -83,6 +100,8 @@ class Settings(BaseSettings):
     # CU-00: IPs o rangos CIDR autorizados, separados por coma (la IP sale de la conexion).
     IPS_PERMITIDAS: Annotated[tuple[RedPermitida, ...], NoDecode] = IPS_PERMITIDAS_POR_DEFECTO
     # CU-02: planificador del reentrenamiento dentro del backend (false en pruebas).
+    # S1 (R-013): hosts aceptados en ``Host`` (DNS rebinding); separados por coma.
+    HOSTS_PERMITIDOS: Annotated[tuple[str, ...], NoDecode] = HOSTS_PERMITIDOS_POR_DEFECTO
     REENTRENAMIENTO_AUTOMATICO: bool = True
     REENTRENAR_MIN_CICLOS_NUEVOS: int = Field(default=150, ge=0)
     REENTRENAR_MIN_COBERTURA_VENCIMIENTO: Decimal = Field(default=Decimal("0.60"), ge=0, le=1)
@@ -95,6 +114,14 @@ class Settings(BaseSettings):
         """Texto de la variable -> redes; vacio o invalido falla (nunca se abre a todos)."""
         if isinstance(value, str):
             return _redes_permitidas(value)
+        return value
+
+    @field_validator("HOSTS_PERMITIDOS", mode="before")
+    @classmethod
+    def _parse_hosts_permitidos(cls, value: object) -> object:
+        """Texto de la variable -> nombres de host; vacio o con comodin falla."""
+        if isinstance(value, str):
+            return _hosts_permitidos(value)
         return value
 
     @field_validator("CORS_ORIGINS", mode="before")

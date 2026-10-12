@@ -15,6 +15,7 @@ class MotivoPlantillaInvalida(StrEnum):
     TITULOS = "TITULOS"
     FORMATO_ANTIGUO = "FORMATO_ANTIGUO"
     DEMASIADAS_FILAS = "DEMASIADAS_FILAS"
+    DEMASIADO_GRANDE = "DEMASIADO_GRANDE"
 
 
 MENSAJES: dict[MotivoPlantillaInvalida, str] = {
@@ -28,6 +29,10 @@ MENSAJES: dict[MotivoPlantillaInvalida, str] = {
     ),
     MotivoPlantillaInvalida.DEMASIADAS_FILAS: (
         "El archivo tiene más de 500 filas con datos; divídalo en varios archivos."
+    ),
+    MotivoPlantillaInvalida.DEMASIADO_GRANDE: (
+        "El contenido del archivo es demasiado grande para una plantilla de carga; "
+        "use la plantilla oficial."
     ),
 }
 
