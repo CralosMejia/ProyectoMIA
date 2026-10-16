@@ -127,6 +127,20 @@ describe('AyudaLista', () => {
     expect(texto).not.toMatch(/20 %|30 %|el resto/)
   })
 
+  it('seccion "Motivos": hasta 3 datos que mas suben el riesgo, sin mes, sin causa y listas anteriores (M03)', async () => {
+    const texto = await textoDeLaSeccion('Motivos')
+
+    expect(texto).toMatch(/hasta 3 motivos/)
+    expect(texto).toMatch(/los datos del socio que más suben su probabilidad de no renovar/)
+    expect(texto).toMatch(/comparado con un socio promedio/)
+    expect(texto).toMatch(/El mes en que vence la membresía no se muestra como motivo/)
+    expect(texto).toMatch(/no son la causa de que el socio deje de venir/)
+    expect(texto).toMatch(/Las listas que ya habías guardado conservan los motivos que tenían/)
+    expect(texto).toMatch(/Se muestran sin números, en pantalla y en el Excel/)
+    expect(texto).toMatch(/Sin factores de riesgo destacados/)
+    expect(texto).not.toMatch(/shap|valor base|one-hot|valor típico|referencia/i)
+  })
+
   it('seccion "Campañas": donde se administran, que se puede hacer y para que sirve cada dato', async () => {
     const texto = await textoDeLaSeccion('Campañas')
 

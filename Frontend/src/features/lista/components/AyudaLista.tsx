@@ -3,7 +3,8 @@ import { BotonAyuda, SeccionAyuda } from '../../../shared/ui/Ayuda'
 /**
  * Resumen estatico de `Documentation/06-como-funciona-la-lista.md` §1–§4 (decision (m) de R-007;
  * R-008 retira "Qué datos se muestran" y "Casos frecuentes") y, desde R-010, de su §7: campañas y
- * gestion de un socio (decision (i)).
+ * gestion de un socio (decision (i)). Desde R-017 (M03), "Motivos" explica en lenguaje sencillo los
+ * hasta 3 datos que mas suben el riesgo frente al socio promedio, sin numeros (ADR-007).
  * El texto vive en el componente: no se carga el `.md` en tiempo de ejecucion.
  * Lenguaje para el personal del gimnasio, sin terminos tecnicos. Desde R-012 usa la ayuda
  * compartida de `shared/ui/Ayuda` (boton, `Modal` y devolucion de foco).
@@ -38,10 +39,17 @@ function Contenido() {
 
       <SeccionAyuda titulo="Motivos">
         <p>
-          Junto a cada socio se muestran los motivos principales de su riesgo, por ejemplo el plan
-          que tiene o cuántas membresías ha tenido antes. Sirven para orientar la conversación. Si
-          no hay motivos destacados, se indica «Sin factores de riesgo destacados».
+          Junto a cada socio se muestran hasta 3 motivos: los datos del socio que más suben su
+          probabilidad de no renovar, comparado con un socio promedio. Por ejemplo, el plan que
+          tiene o cuántas membresías ha tenido antes. El mes en que vence la membresía no se
+          muestra como motivo.
         </p>
+        <p>
+          Se muestran sin números, en pantalla y en el Excel. Sirven para orientar la conversación
+          con el socio, pero no son la causa de que el socio deje de venir. Si no hay motivos
+          destacados, se indica «Sin factores de riesgo destacados».
+        </p>
+        <p>Las listas que ya habías guardado conservan los motivos que tenían.</p>
       </SeccionAyuda>
 
       <SeccionAyuda titulo="Campañas">
