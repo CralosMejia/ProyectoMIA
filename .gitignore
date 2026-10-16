@@ -46,4 +46,10 @@ respaldos/
 plantillas/Control Gym*.xlsx
 
 
-Documetation/claude/
+Documentation/claude/
+
+# Salidas del notebook (listas, modelos y tablas derivadas de los libros con datos personales)
+/salidas/
+
+# Copia local del notebook de antes de M01 (codigos de socio sin sal): no versionar
+Notebookes/MVP_antes_M01.ipynb
