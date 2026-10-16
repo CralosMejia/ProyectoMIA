@@ -13,12 +13,19 @@ import app.domain.modelo as paquete
 from app.domain.common.enums import EstadoCiclo, FormaPago, Plan
 from app.domain.historico.ciclos import MotivoCiclo, clasificar
 from app.domain.modelo.variables import (
+    CONJUNTO_COMPLETO,
+    CONJUNTO_MODELO,
+    CONJUNTO_SIN_FORMA_PAGO_NI_INICIO,
     DIAS_ANTES_PREDICCION,
     DURACION_ESTANDAR,
     PERIODO_REFERENCIA_FACTORES,
     VARIABLES_CATEGORICAS,
+    VARIABLES_CATEGORICAS_MODELO,
+    VARIABLES_EXCLUIBLES_M01,
     VARIABLES_NUMERICAS,
+    VARIABLES_NUMERICAS_MODELO,
     CicloModelo,
+    ConjuntoVariables,
     MedianasMonto,
     PeriodoReferencia,
     calcular_medianas,
@@ -85,6 +92,48 @@ def test_parametros_del_notebook() -> None:
         Plan.ANUAL: 365,
         Plan.OTRO: 30,
     } == DURACION_ESTANDAR
+
+
+def test_conjunto_modelo_es_la_variante_elegida_por_el_notebook() -> None:
+    # R-015 T11: el notebook (12.11, regla (d)) adopta la variante sin forma_pago ni
+    # inicio_aproximado; la app entrena exactamente con esas variables y en ese orden.
+    assert ConjuntoVariables(VARIABLES_NUMERICAS, VARIABLES_CATEGORICAS) == CONJUNTO_COMPLETO
+    assert (
+        CONJUNTO_MODELO.numericas,
+        CONJUNTO_MODELO.categoricas,
+    ) == (VARIABLES_NUMERICAS_MODELO, VARIABLES_CATEGORICAS_MODELO)
+    assert CONJUNTO_MODELO == CONJUNTO_SIN_FORMA_PAGO_NI_INICIO
+    assert VARIABLES_NUMERICAS_MODELO == (
+        "ciclos_previos",
+        "antiguedad_dias",
+        "duracion_modelo",
+        "monto_actual",
+        "monto_historico",
+        "dias_desde_ultima_membresia",
+    )
+    assert VARIABLES_CATEGORICAS_MODELO == ("plan", "mes_vencimiento")
+
+
+def test_conjunto_sin_forma_pago_ni_inicio_quita_solo_esas_dos() -> None:
+    assert VARIABLES_EXCLUIBLES_M01 == ("forma_pago", "inicio_aproximado")
+    assert CONJUNTO_SIN_FORMA_PAGO_NI_INICIO.numericas == VARIABLES_NUMERICAS
+    assert CONJUNTO_SIN_FORMA_PAGO_NI_INICIO.categoricas == ("plan", "mes_vencimiento")
+
+
+@pytest.mark.parametrize(
+    ("numericas", "categoricas"),
+    [
+        ((), ()),
+        (("ciclos_previos", "desconocida"), ("plan",)),
+        (("ciclos_previos",), ("plan", "plan")),
+        (("plan",), ()),
+    ],
+)
+def test_conjunto_variables_invalido_lanza_error(
+    numericas: tuple[str, ...], categoricas: tuple[str, ...]
+) -> None:
+    with pytest.raises(ValueError, match="variables"):
+        ConjuntoVariables(numericas, categoricas)
 
 
 def test_ciclo_modelo_es_inmutable() -> None:
@@ -188,6 +237,94 @@ def test_construir_variables_ciclo_posterior_no_cuenta() -> None:
     assert variables["dias_desde_ultima_membresia"] is None
 
 
+# ---------------------------------------------------------------- corte T-30 (M01, anti-fuga)
+
+
+def _historial_base_para_ciclo_corto() -> tuple[CicloModelo, list[CicloModelo]]:
+    """Ciclo de 20 dias: T = 2025-04-09, T-30 = 2025-03-10, actividad 2025-03-20.
+
+    El historial mezcla previos con actividad <= T-30 (conocidos en T-30) y registros del
+    socio con actividad > T-30 (el previo del 2025-03-15 es anterior al ciclo, pero posterior
+    a T-30: con la logica sin corte contaba).
+    """
+    actual = ciclo(date(2025, 3, 20), date(2025, 4, 9), ref=10, duracion=20)
+    conocidos = [
+        ciclo(date(2025, 1, 10), date(2025, 2, 9), ref=1, monto=Decimal("30")),
+        ciclo(date(2025, 2, 8), date(2025, 3, 10), ref=2, monto=Decimal("32.50")),
+        ciclo(date(2025, 1, 5), date(2025, 2, 4), ref=3, clave=OTRO_SOCIO, monto=Decimal("50")),
+    ]
+    posteriores = [
+        ciclo(date(2025, 3, 15), date(2025, 4, 14), ref=4, monto=Decimal("31")),
+        ciclo(date(2025, 4, 1), date(2025, 5, 1), ref=5, monto=Decimal("33")),
+    ]
+    return actual, [*conocidos, *posteriores, actual]
+
+
+def test_construir_variables_datos_posteriores_a_t30_alterados_no_cambian_variables() -> None:
+    actual, historial = _historial_base_para_ciclo_corto()
+    t30 = date(2025, 3, 10)
+    conocidos = [c for c in historial if c is actual or c.fecha_actividad <= t30]
+    base = construir_variables(actual, historial, MEDIANAS)
+
+    alterados = [
+        # Se quitan todos los registros con actividad > T-30.
+        conocidos,
+        # Se alteran montos, planes, formas de pago y fechas (siempre > T-30).
+        [
+            *conocidos,
+            ciclo(
+                date(2025, 3, 11),
+                date(2025, 6, 9),
+                ref=4,
+                plan=Plan.TRIMESTRAL,
+                forma_pago=FormaPago.TARJETA_DATAFAST,
+                duracion=90,
+                monto=Decimal("999"),
+            ),
+            ciclo(date(2025, 3, 19), date(2025, 4, 18), ref=5, monto=None),
+        ],
+        # Se anaden ciclos nuevos y duplicados del socio posteriores a T-30.
+        [
+            *historial,
+            ciclo(date(2025, 3, 11), date(2025, 4, 10), ref=6, monto=Decimal("1")),
+            ciclo(date(2025, 3, 15), date(2025, 4, 14), ref=7, monto=Decimal("31")),
+            ciclo(date(2025, 5, 1), date(2025, 6, 1), ref=8, monto=Decimal("2")),
+        ],
+        # Los registros de otros socios no influyen en ningun caso.
+        [*conocidos, ciclo(date(2025, 3, 1), date(2025, 3, 31), ref=9, clave=OTRO_SOCIO)],
+    ]
+    for variante in alterados:
+        assert construir_variables(actual, variante, MEDIANAS) == base
+
+    assert tuple(base) == VARIABLES_NUMERICAS + VARIABLES_CATEGORICAS
+
+
+def test_construir_variables_previo_en_t30_cuenta_y_en_t29_no() -> None:
+    actual = ciclo(date(2025, 3, 20), date(2025, 4, 9), ref=10, duracion=20)
+    en_t30 = ciclo(date(2025, 3, 10), date(2025, 4, 9), ref=1, monto=Decimal("30"))
+    en_t29 = ciclo(date(2025, 3, 11), date(2025, 4, 10), ref=2, monto=Decimal("40"))
+
+    con_t30 = construir_variables(actual, [en_t30, actual], MEDIANAS)
+    con_t29 = construir_variables(actual, [en_t29, actual], MEDIANAS)
+
+    assert con_t30["ciclos_previos"] == 1
+    assert con_t30["monto_historico"] == Decimal("30")
+    assert con_t30["dias_desde_ultima_membresia"] == 10
+    assert con_t29["ciclos_previos"] == 0
+    assert con_t29["monto_historico"] == Decimal("0")
+    assert con_t29["dias_desde_ultima_membresia"] is None
+
+
+def test_construir_variables_antiguedad_solo_con_previos_hasta_t30() -> None:
+    actual = ciclo(date(2025, 3, 20), date(2025, 4, 9), ref=10, duracion=20)
+    posterior_a_t30 = ciclo(date(2025, 3, 12), date(2025, 4, 11), ref=1)
+
+    variables = construir_variables(actual, [posterior_a_t30, actual], MEDIANAS)
+
+    # Sin previos conocidos en T-30: primera = actividad del propio ciclo (> T-30) -> 0.
+    assert variables["antiguedad_dias"] == 0
+
+
 def test_construir_variables_sin_vencimiento_lanza_error() -> None:
     with pytest.raises(ValueError, match="vencimiento"):
         construir_variables(ciclo(date(2025, 3, 10), None), [], MEDIANAS)
@@ -244,6 +381,29 @@ def test_calcular_medianas_sin_montos_general_es_none() -> None:
 
     assert medianas.por_plan == {}
     assert medianas.general is None
+
+
+def test_calcular_medianas_solo_de_entrenamiento_no_cambia_con_montos_ajenos() -> None:
+    # M01 (b): las medianas salen solo de los ciclos de entrenamiento que se le pasan; los
+    # montos de validacion/prediccion (aunque esten en el historial) no las mueven.
+    entrenamiento = [
+        ciclo(date(2025, 1, 1), date(2025, 1, 31), ref=1, monto=Decimal("20")),
+        ciclo(date(2025, 2, 1), date(2025, 3, 3), ref=2, monto=Decimal("40")),
+    ]
+    otros = [ciclo(date(2026, 1, 1), date(2026, 1, 31), ref=3, monto=Decimal("1000"))]
+    otros_alterados = [ciclo(date(2026, 1, 1), date(2026, 1, 31), ref=3, monto=Decimal("1"))]
+    medianas = calcular_medianas(entrenamiento)
+    a_predecir = ciclo(date(2026, 2, 1), date(2026, 3, 3), ref=4, monto=None)
+
+    con_otros = construir_variables(a_predecir, [*entrenamiento, *otros, a_predecir], medianas)
+    con_alterados = construir_variables(
+        a_predecir, [*entrenamiento, *otros_alterados, a_predecir], medianas
+    )
+
+    assert medianas.por_plan == {Plan.MENSUAL: Decimal("30")}
+    assert medianas.general == Decimal("30")
+    assert con_otros["monto_actual"] == con_alterados["monto_actual"] == Decimal("30")
+    assert medianas == calcular_medianas(entrenamiento)
 
 
 def test_monto_actual_usa_el_monto_si_existe() -> None:
@@ -382,12 +542,15 @@ def test_dominio_del_modelo_solo_usa_libreria_estandar() -> None:
 # ---------------------------------------------------------------- periodo de referencia de factores
 
 
-def test_periodo_referencia_por_defecto_son_los_vencimientos_de_2025() -> None:
-    assert PeriodoReferencia(date(2025, 1, 1), date(2026, 1, 1)) == PERIODO_REFERENCIA_FACTORES
+def test_periodo_referencia_por_defecto_es_x_train_con_margen_de_30_dias() -> None:
+    # M01 (g): X_train del notebook = particion de entrenamiento = vencimiento < 2025-12-02
+    # (2026-01-01 - 30 d), sin limite inferior (asignar_particion de la seccion 7.3).
+    assert PeriodoReferencia(date.min, date(2025, 12, 2)) == PERIODO_REFERENCIA_FACTORES
     assert PERIODO_REFERENCIA_FACTORES.contiene(ciclo(date(2024, 12, 2), date(2025, 1, 1)))
-    assert PERIODO_REFERENCIA_FACTORES.contiene(ciclo(date(2025, 12, 1), date(2025, 12, 31)))
-    assert not PERIODO_REFERENCIA_FACTORES.contiene(ciclo(date(2025, 12, 2), date(2026, 1, 1)))
-    assert not PERIODO_REFERENCIA_FACTORES.contiene(ciclo(date(2024, 12, 1), date(2024, 12, 31)))
+    assert PERIODO_REFERENCIA_FACTORES.contiene(ciclo(date(2025, 11, 1), date(2025, 12, 1)))
+    assert not PERIODO_REFERENCIA_FACTORES.contiene(ciclo(date(2025, 11, 2), date(2025, 12, 2)))
+    assert not PERIODO_REFERENCIA_FACTORES.contiene(ciclo(date(2025, 12, 1), date(2025, 12, 31)))
+    assert PERIODO_REFERENCIA_FACTORES.contiene(ciclo(date(2024, 12, 1), date(2024, 12, 31)))
     assert not PERIODO_REFERENCIA_FACTORES.contiene(ciclo(date(2025, 3, 1), None))
 
 

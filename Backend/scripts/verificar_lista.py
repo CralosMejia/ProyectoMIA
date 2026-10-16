@@ -1,39 +1,57 @@
-"""Verificacion local de la lista de septiembre con los libros reales (T19, D3-BE-05).
+"""Verificacion local de la lista de septiembre frente al notebook M01 (R-015 T11).
 
 Fuera de la suite. Uso (desde ``Backend/``, con el entorno virtual activo)::
 
     python scripts/verificar_lista.py <carpeta con los libros Control Gym>
-        [--fecha 2026-08-31] [--horizonte 30] [--top-k 25]
+        [--referencia ../salidas] [--fecha 2026-08-31] [--horizonte 30] [--top-k 25]
 
 Compone **en memoria y sin base de datos** el mismo camino que la app: ``LectorLibrosExcel``
-+ ``ProcesarHistorico`` -> ``EntrenarModeloInicial`` (``RandomForestPredictor``) -> las
-membresias como las guarda la migracion -> ``GenerarLista`` sobre una unidad de trabajo en
-memoria. Compara con la lista de septiembre del notebook ``Notebookes/MVP.ipynb`` (13.8):
++ ``ProcesarHistorico`` -> ``EntrenarModeloInicial`` (``RandomForestPredictor``, conjunto
+``CONJUNTO_MODELO``) -> las membresias como las guarda la migracion -> ``GenerarLista`` sobre
+una unidad de trabajo en memoria. Lo compara con las salidas del notebook
+``Notebookes/MVP.ipynb`` (13.8), que se leen en tiempo de ejecucion de la carpeta git-ignorada
+``salidas/`` (nunca se copian a un archivo versionado):
 
-- conteos (cartera, ya renovaron, a priorizar, socios, ciclos de entrenamiento);
-- la probabilidad de cada codigo del top K a 3 decimales;
-- el orden, con los empates (misma probabilidad a 3 decimales) comparados como conjunto;
-- los factores (porcentaje de coincidencia, informativo: decision (a) de R-004) y los
-  niveles (informativos: el notebook usa umbrales fijos 0,70/0,50 y la app percentiles).
+- ``m01/despues/parametros_modelo_operativo.json``: conteos de la cartera, ciclos de
+  entrenamiento, variables del modelo, medianas de monto y referencia de los factores;
+- ``mvp/lista_operativa_2026-09.xlsx`` (hoja ``cartera_completa``): la lista completa con la
+  probabilidad sin redondear, el nivel y los factores de cada socio.
 
-Sale con 0 si conteos, probabilidades y orden coinciden; 1 si no; 2 si no hay libros. Solo
-imprime codigos ``MTB-`` (``sha256`` de la identidad), conteos y cifras: nunca nombres,
-cedulas, celulares, correos ni rutas (RN-03.5, RT-13). No escribe archivos.
+Se comparan **todas** las filas de la lista: probabilidad a 8 decimales (la precision que
+guarda la app), nivel (cortes fijos 0,70 / 0,50 en ambos), factores (texto exacto) y orden.
+Los socios con la misma probabilidad forman un grupo de empate: el notebook los ordena con un
+``sort_values`` no estable (orden arbitrario) y la app por vencimiento y ``membresia_id``, asi
+que el orden se compara por grupo (mismo conjunto de socios en las mismas posiciones).
+
+Los codigos de socio (``MTB-`` + 8 hex) son un HMAC-SHA256 con una sal secreta, igual que en
+el notebook: se lee de la variable de entorno ``MTABOLIC_SAL_CODIGOS`` o, si no existe, del
+archivo ``.sal_codigos`` de la carpeta de salidas (lo crea el notebook). La sal nunca se imprime.
+
+Sale con 0 si no hay ninguna diferencia, 1 si hay alguna y 2 si faltan los libros, las
+salidas del notebook o la sal, o ante un error no controlado (del que solo se imprime el tipo,
+nunca el mensaje ni el traceback, que podrian citar datos de los libros). Solo imprime
+conteos, cifras agregadas y la posicion de cada diferencia: nunca nombres, cedulas, celulares,
+correos, codigos de socio, la sal ni rutas (RN-03.5, RT-13). No escribe archivos.
 """
 
 import argparse
 import hashlib
+import hmac
+import json
+import math
+import os
 import sys
 import warnings
-from collections import Counter, defaultdict
-from collections.abc import Iterator, Sequence
+from collections import defaultdict
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_EVEN, Decimal
 from pathlib import Path
 from typing import TextIO
 
+import openpyxl
 import sklearn
 
 from app.application.historial.ports import MembresiaParaPrediccion, NuevaMembresia
@@ -61,27 +79,42 @@ from app.infrastructure.ml.random_forest import RandomForestPredictor
 FECHA_GENERACION = date(2026, 8, 31)
 HORIZONTE_DIAS = 30
 TOP_K = 25
-_TRES_DECIMALES = Decimal("0.001")
+CARPETA_SALIDAS = Path(__file__).resolve().parents[2] / "salidas"
+ARCHIVO_PARAMETROS = Path("m01") / "despues" / "parametros_modelo_operativo.json"
+ARCHIVO_LISTA = Path("mvp") / "lista_operativa_2026-09.xlsx"
+HOJA_LISTA = "cartera_completa"
+# Sal secreta de los codigos de socio: variable de entorno y, en su defecto, archivo en
+# ``salidas/`` (git-ignorada) que genera el notebook la primera vez.
+VARIABLE_SAL = "MTABOLIC_SAL_CODIGOS"
+ARCHIVO_SAL = Path(".sal_codigos")
+SEPARADOR_FACTORES = "; "
+SIN_FACTORES = "Sin factores de riesgo destacados"
+_OCHO_DECIMALES = Decimal("0.00000001")
 
-# Las salidas guardadas del notebook se reproducen exactamente con scikit-learn 1.8.0; con
-# la version fijada en la app (1.9.1) el propio notebook da las mismas cifras que la app,
-# pero sus probabilidades se mueven hasta 0,016 respecto a las guardadas (ver T19).
+# Las salidas del notebook M01 se generaron con scikit-learn 1.8.0 (la version fijada en la
+# app); con otra version el bosque cambia y las probabilidades no coinciden.
 SKLEARN_NOTEBOOK = "1.8.0"
 
-# Notebook 13.8 (salidas guardadas): cartera y lista operativa de septiembre de 2026.
-REFERENCIA_CONTEOS: dict[str, int] = {
-    "cartera": 59,
-    "ya_renovaron": 2,
-    "a_priorizar": 57,
-    "socios": 57,
-    "ciclos_entrenamiento": 1564,
+# Claves de ``cartera_septiembre`` en el JSON del notebook (texto de la tabla 13.8).
+_CLAVES_CARTERA: Mapping[str, str] = {
+    "cartera": "Ciclos que vencen entre el 01-09-2026 y el 30-09-2026",
+    "ya_renovaron": "ya registraron una membresía posterior (renovación anticipada)",
+    "a_priorizar": "Ciclos a priorizar",
+    "socios": "Socios distintos a priorizar",
 }
+
+
+class ReferenciaNoDisponibleError(Exception):
+    """Faltan las salidas del notebook o no tienen la forma esperada."""
+
+
+class SalNoDisponibleError(Exception):
+    """No hay sal para los codigos de socio (ni variable de entorno ni archivo)."""
 
 
 @dataclass(frozen=True, slots=True)
 class FilaReferencia:
-    """Una fila del top K del notebook: codigo anonimo, probabilidad a 3 decimales, nivel
-    con los umbrales fijos del notebook y factores principales."""
+    """Una fila de la lista del notebook: codigo anonimo, probabilidad, nivel y factores."""
 
     codigo: str
     probabilidad: Decimal
@@ -89,113 +122,50 @@ class FilaReferencia:
     factores: tuple[str, ...]
 
 
-def _ref(codigo: str, prob: str, nivel: str, *factores: str) -> FilaReferencia:
-    return FilaReferencia(codigo, Decimal(prob), nivel, factores)
+@dataclass(frozen=True, slots=True)
+class Referencia:
+    """Salidas del notebook M01 con que se compara la app."""
+
+    conteos: Mapping[str, int]
+    variables: tuple[tuple[str, ...], tuple[str, ...]]
+    medianas: Mapping[str, Decimal]
+    referencia_factores: Mapping[str, float | str | None]
+    lista: tuple[FilaReferencia, ...]
 
 
-_DSD = "Días desde la membresía anterior: sin dato (+0,02)"
-_TRI_01 = "Plan: TRIMESTRAL (+0,01)"
-_DUR_123 = "Duración del plan (días): 123 (+0,01)"
-_DATAFAST = ("Forma de pago: TARJETA_DATAFAST (+0,05)", "Plan: TRIMESTRAL (+0,04)", _DSD)
-_OTRO_TRI = ("Forma de pago: OTRO (+0,05)", "Plan: TRIMESTRAL (+0,03)", _DSD)
-_ANUAL = (
-    "Duración del plan (días): 365 (+0,05)",
-    "Plan: ANUAL (+0,04)",
-    "Monto actual (USD): 225 (+0,04)",
-)
-_MENSUAL = (
-    "Monto actual (USD): 30 (+0,04)",
-    "Días desde la membresía anterior: sin dato (+0,04)",
-    "Forma de pago: SIN_DATO (+0,01)",
-)
+def codigo_anonimo(identidad: str, sal: bytes) -> str:
+    """``id_anonimo`` del notebook: ``MTB-`` + 8 primeros hex en mayusculas del HMAC-SHA256.
 
-REFERENCIA_TOP: tuple[FilaReferencia, ...] = (
-    _ref(
-        "MTB-7C5F302E",
-        "0.702",
-        "ALTO",
-        "Forma de pago: EFECTIVO (+0,07)",
-        "Plan: TRIMESTRAL (+0,04)",
-        _DSD,
-    ),
-    _ref(
-        "MTB-6381C1A6",
-        "0.701",
-        "ALTO",
-        "Plan: OTRO (+0,07)",
-        "Forma de pago: EFECTIVO (+0,06)",
-        _DSD,
-    ),
-    _ref(
-        "MTB-83546C29",
-        "0.687",
-        "MEDIO",
-        "Forma de pago: TARJETA_DATAFAST (+0,05)",
-        "Plan: TRIMESTRAL (+0,04)",
-        "Monto actual (USD): 99 (+0,02)",
-    ),
-    _ref("MTB-43E410CA", "0.684", "MEDIO", *_DATAFAST),
-    _ref("MTB-FE5AB968", "0.684", "MEDIO", *_DATAFAST),
-    _ref("MTB-15BCA8EE", "0.684", "MEDIO", *_DATAFAST),
-    _ref("MTB-F42F3203", "0.677", "MEDIO", *_OTRO_TRI),
-    _ref("MTB-61C72731", "0.677", "MEDIO", *_OTRO_TRI),
-    _ref("MTB-1E601477", "0.676", "MEDIO", *_ANUAL),
-    _ref("MTB-82145874", "0.676", "MEDIO", *_ANUAL),
-    _ref(
-        "MTB-8BDB2331", "0.674", "MEDIO", "Plan: OTRO (+0,06)", "Forma de pago: OTRO (+0,03)", _DSD
-    ),
-    _ref(
-        "MTB-6728CA79",
-        "0.672",
-        "MEDIO",
-        "Fecha de inicio aproximada: sí (+0,03)",
-        "Plan: ANUAL (+0,03)",
-        "Duración del plan (días): 365 (+0,02)",
-    ),
-    _ref(
-        "MTB-211C4E06",
-        "0.667",
-        "MEDIO",
-        "Forma de pago: SIN_DATO (+0,04)",
-        "Plan: TRIMESTRAL (+0,03)",
-        _DSD,
-    ),
-    _ref(
-        "MTB-174990BA",
-        "0.660",
-        "MEDIO",
-        "Plan: OTRO (+0,06)",
-        "Monto actual (USD): 70 (+0,03)",
-        _DSD,
-    ),
-    _ref(
-        "MTB-1471163D",
-        "0.645",
-        "MEDIO",
-        "Plan: OTRO (+0,06)",
-        _DSD,
-        "Duración del plan (días): 62 (+0,01)",
-    ),
-    _ref("MTB-9FD6D81D", "0.631", "MEDIO", _DSD, _TRI_01, _DUR_123),
-    _ref("MTB-64E86617", "0.631", "MEDIO", _DSD, _TRI_01, _DUR_123),
-    _ref("MTB-F53DFDB0", "0.631", "MEDIO", _DSD, _TRI_01, _DUR_123),
-    _ref("MTB-401DB2F2", "0.631", "MEDIO", _DSD, _TRI_01, _DUR_123),
-    _ref("MTB-56E191F9", "0.631", "MEDIO", _DSD, _TRI_01, _DUR_123),
-    _ref("MTB-645EE448", "0.631", "MEDIO", _DSD, _TRI_01, _DUR_123),
-    _ref("MTB-56236E6D", "0.631", "MEDIO", _DSD, _TRI_01, _DUR_123),
-    _ref("MTB-DC18D489", "0.610", "MEDIO", *_MENSUAL),
-    _ref("MTB-78227D28", "0.610", "MEDIO", *_MENSUAL),
-    _ref("MTB-043DE3C6", "0.605", "MEDIO", _DSD, _TRI_01),
-)
+    Sin la sal el codigo no se puede recalcular a partir de la cedula o el nombre.
+    """
+    huella = hmac.new(sal, identidad.encode("utf-8"), hashlib.sha256).hexdigest()
+    return "MTB-" + huella[:8].upper()
 
 
-def codigo_anonimo(identidad: str) -> str:
-    """``id_anonimo`` del notebook: ``MTB-`` + 8 primeros hex en mayusculas de ``sha256``."""
-    return "MTB-" + hashlib.sha256(identidad.encode("utf-8")).hexdigest()[:8].upper()
+def cargar_sal(carpeta: Path) -> bytes:
+    """Sal de los codigos: ``MTABOLIC_SAL_CODIGOS`` o, si no existe, ``carpeta/.sal_codigos``."""
+    valor = os.environ.get(VARIABLE_SAL, "").strip()
+    if not valor:
+        ruta = carpeta / ARCHIVO_SAL
+        valor = ruta.read_text(encoding="utf-8").strip() if ruta.is_file() else ""
+    if not valor:
+        raise SalNoDisponibleError(
+            f"No se encontro la sal de los codigos ({VARIABLE_SAL} o el archivo "
+            f"{ARCHIVO_SAL} de las salidas del notebook)."
+        )
+    return valor.encode("utf-8")
 
 
-def a_tres_decimales(score: Decimal) -> Decimal:
-    return score.quantize(_TRES_DECIMALES, rounding=ROUND_HALF_EVEN)
+def a_ocho_decimales(probabilidad: float | Decimal) -> Decimal:
+    """Probabilidad con la precision que guarda la app (``NUMERIC(10,8)``)."""
+    return Decimal(probabilidad).quantize(_OCHO_DECIMALES, rounding=ROUND_HALF_EVEN)
+
+
+def separar_factores(texto: str) -> tuple[str, ...]:
+    """Factores del notebook (unidos con ``"; "``) como la tupla que guarda la app."""
+    if not texto or texto == SIN_FACTORES:
+        return ()
+    return tuple(texto.split(SEPARADOR_FACTORES))
 
 
 def localizar_libros(carpeta: Path) -> list[Path]:
@@ -206,6 +176,71 @@ def localizar_libros(carpeta: Path) -> list[Path]:
         if not ruta.name.startswith("~$")
         and "CONTROL" in ruta.name.upper()
         and "GYM" in ruta.name.upper()
+    )
+
+
+# ---------------------------------------------------------------- salidas del notebook
+
+
+def _leer_lista(ruta: Path) -> tuple[FilaReferencia, ...]:
+    libro = openpyxl.load_workbook(ruta, read_only=True, data_only=True)
+    try:
+        if HOJA_LISTA not in libro.sheetnames:
+            raise ReferenciaNoDisponibleError("La lista del notebook no tiene la hoja esperada.")
+        filas = libro[HOJA_LISTA].iter_rows(values_only=True)
+        cabecera = [str(c) for c in next(filas)]
+        try:
+            i_codigo, i_prob, i_nivel, i_factores = (
+                cabecera.index(c)
+                for c in ("socio_anonimo", "probabilidad", "nivel_riesgo", "factores principales")
+            )
+        except ValueError as exc:
+            raise ReferenciaNoDisponibleError(
+                "La lista del notebook no tiene las columnas."
+            ) from exc
+        return tuple(
+            FilaReferencia(
+                codigo=str(fila[i_codigo]),
+                probabilidad=a_ocho_decimales(float(str(fila[i_prob]))),
+                nivel=str(fila[i_nivel]),
+                factores=separar_factores(str(fila[i_factores] or "")),
+            )
+            for fila in filas
+            if fila[i_codigo] is not None
+        )
+    finally:
+        libro.close()
+
+
+def cargar_referencia(carpeta: Path) -> Referencia:
+    """Lee las salidas del notebook de ``carpeta`` (``salidas/``)."""
+    parametros_ruta = carpeta / ARCHIVO_PARAMETROS
+    lista_ruta = carpeta / ARCHIVO_LISTA
+    if not parametros_ruta.is_file() or not lista_ruta.is_file():
+        raise ReferenciaNoDisponibleError("No se encontraron las salidas del notebook M01.")
+    parametros = json.loads(parametros_ruta.read_text(encoding="utf-8"))
+    try:
+        cartera = parametros["cartera_septiembre"]
+        conteos = {nombre: int(cartera[clave]) for nombre, clave in _CLAVES_CARTERA.items()}
+        conteos["ciclos_entrenamiento"] = int(parametros["ciclos_entrenamiento_operativo"])
+        medianas_json = parametros["medianas_monto_operativo"]
+        medianas = {plan: Decimal(str(v)) for plan, v in medianas_json["por_plan"].items()}
+        medianas["general"] = Decimal(str(medianas_json["general"]))
+        variables = (
+            tuple(parametros["variables_numericas"]),
+            tuple(parametros["variables_categoricas"]),
+        )
+        referencia_factores = dict(parametros["referencia_factores"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ReferenciaNoDisponibleError(
+            "Los parametros del notebook no tienen la forma."
+        ) from exc
+    return Referencia(
+        conteos=conteos,
+        variables=variables,
+        medianas=medianas,
+        referencia_factores=referencia_factores,
+        lista=_leer_lista(lista_ruta),
     )
 
 
@@ -380,6 +415,9 @@ class ResultadoApp:
     filas: tuple[FilaApp, ...]
     umbral_alto: Decimal
     umbral_medio: Decimal
+    variables: tuple[tuple[str, ...], tuple[str, ...]] = ((), ())
+    medianas: Mapping[str, Decimal] = field(default_factory=dict)
+    referencia_factores: Mapping[str, float | str | None] = field(default_factory=dict)
 
 
 def _membresias(registros: Sequence[RegistroHistorico]) -> list[MembresiaParaPrediccion]:
@@ -415,8 +453,13 @@ def _conteo_cartera(ciclos: Sequence[CicloModelo], fecha: date, horizonte: int) 
     return len(cartera), sum(ya_renovo(c, por_socio[c.clave_socio]) for c in cartera)
 
 
+def _texto_json(metadata: Mapping[str, object], clave: str) -> object:
+    valor = metadata.get(clave)
+    return json.loads(valor) if isinstance(valor, str) else valor
+
+
 def ejecutar_en_memoria(
-    rutas: Sequence[Path], fecha: date, horizonte: int, top_k: int
+    rutas: Sequence[Path], fecha: date, horizonte: int, top_k: int, sal: bytes
 ) -> ResultadoApp:
     """Historico -> modelo v1 -> lista de ``fecha``, todo en memoria y sin base de datos."""
     # openpyxl avisa de celdas con formato de fecha y serial invalido citando el valor de la
@@ -468,7 +511,7 @@ def ejecutar_en_memoria(
     filas = tuple(
         FilaApp(
             prioridad=p.prioridad,
-            codigo=codigo_anonimo(registros[p.membresia_id - 1].identidad),
+            codigo=codigo_anonimo(registros[p.membresia_id - 1].identidad, sal),
             score=p.score,
             nivel=p.nivel_riesgo.value,
             factores=p.factores_principales,
@@ -476,6 +519,15 @@ def ejecutar_en_memoria(
         )
         for p in sorted(predicciones, key=lambda p: p.prioridad)
     )
+    medianas: dict[str, Decimal] = {
+        plan.value: valor for plan, valor in entrenado.medianas.por_plan.items()
+    }
+    if entrenado.medianas.general is not None:
+        medianas["general"] = entrenado.medianas.general
+    metadata = entrenado.metadata_tecnica
+    numericas = _texto_json(metadata, "variables_numericas")
+    categoricas = _texto_json(metadata, "variables_categoricas")
+    referencia = _texto_json(metadata, "referencia_factores")
     return ResultadoApp(
         conteos={
             "cartera": en_cartera,
@@ -487,146 +539,242 @@ def ejecutar_en_memoria(
         filas=filas,
         umbral_alto=modelo.umbral_alto,
         umbral_medio=modelo.umbral_medio,
+        variables=(
+            tuple(numericas) if isinstance(numericas, list) else (),
+            tuple(categoricas) if isinstance(categoricas, list) else (),
+        ),
+        medianas=medianas,
+        referencia_factores=dict(referencia) if isinstance(referencia, dict) else {},
     )
 
 
 # ---------------------------------------------------------------- conciliacion
 
 
-def _tabla_conteos(obtenidos: dict[str, int], referencia: dict[str, int]) -> tuple[list[str], int]:
-    lineas = [f"{'conteo':<22}  {'notebook':>8}  {'app':>8}  resultado"]
-    diferencias = 0
+@dataclass
+class Conciliacion:
+    """Lineas a imprimir y numero de diferencias por apartado."""
+
+    lineas: list[str] = field(default_factory=list)
+    diferencias: dict[str, int] = field(default_factory=dict)
+
+    def contar(self, apartado: str, distintas: int) -> None:
+        self.diferencias[apartado] = self.diferencias.get(apartado, 0) + distintas
+
+    @property
+    def total(self) -> int:
+        return sum(self.diferencias.values())
+
+
+def _conciliar_conteos(
+    obtenidos: Mapping[str, int], referencia: Mapping[str, int], c: Conciliacion
+) -> None:
+    c.lineas.append(f"{'conteo':<22}  {'notebook':>8}  {'app':>8}  resultado")
+    distintos = 0
     for nombre, esperado in referencia.items():
         obtenido = obtenidos.get(nombre)
         resultado = "ok" if obtenido == esperado else "DIFIERE"
-        diferencias += resultado == "DIFIERE"
-        lineas.append(f"{nombre:<22}  {esperado:>8}  {obtenido!s:>8}  {resultado}")
-    return lineas, diferencias
+        distintos += resultado == "DIFIERE"
+        c.lineas.append(f"{nombre:<22}  {esperado:>8}  {obtenido!s:>8}  {resultado}")
+    c.contar("conteos", distintos)
 
 
-def _orden_ok(posicion: int, fila_app: FilaApp | None, top: Sequence[FilaReferencia]) -> bool:
-    """La fila de la app en ``posicion`` pertenece al grupo de empate del notebook en ella.
-
-    Grupo de empate: los codigos del notebook con la misma probabilidad a 3 decimales. Si
-    el grupo llega al final del top, un codigo que el notebook no muestra tambien vale si
-    empata a 3 decimales (el corte del notebook no fija un orden entre empates).
-    """
-    if fila_app is None:
-        return False
-    esperada = top[posicion]
-    grupo = [r for r in top if r.probabilidad == esperada.probabilidad]
-    if fila_app.codigo in {r.codigo for r in grupo}:
-        return True
-    llega_al_final = grupo[-1] is top[-1]
-    en_top = fila_app.codigo in {r.codigo for r in top}
-    return (
-        llega_al_final and not en_top and a_tres_decimales(fila_app.score) == esperada.probabilidad
+def _conciliar_modelo(app: ResultadoApp, ref: Referencia, c: Conciliacion) -> None:
+    variables_ok = app.variables == ref.variables
+    c.contar("variables", 0 if variables_ok else 1)
+    c.lineas.append(
+        f"variables del modelo ({len(ref.variables[0])} numericas, "
+        f"{len(ref.variables[1])} categoricas): {'ok' if variables_ok else 'DIFIERE'}"
+    )
+    medianas_distintas = sorted(
+        clave
+        for clave in set(ref.medianas) | set(app.medianas)
+        if ref.medianas.get(clave) != app.medianas.get(clave)
+    )
+    c.contar("medianas", len(medianas_distintas))
+    c.lineas.append(
+        f"medianas de monto ({len(ref.medianas)}): "
+        + ("ok" if not medianas_distintas else "DIFIEREN " + ", ".join(medianas_distintas))
+    )
+    referencia_distinta = sorted(
+        v
+        for v in set(ref.referencia_factores) | set(app.referencia_factores)
+        if not _mismo_valor(ref.referencia_factores.get(v), app.referencia_factores.get(v))
+    )
+    c.contar("referencia_factores", len(referencia_distinta))
+    c.lineas.append(
+        f"referencia de los factores ({len(ref.referencia_factores)} variables): "
+        + ("ok" if not referencia_distinta else "DIFIERE " + ", ".join(referencia_distinta))
     )
 
 
-def _tabla_top(
-    filas: Sequence[FilaApp], top: Sequence[FilaReferencia]
-) -> tuple[list[str], int, int, int, int]:
-    """Lineas, diferencias de probabilidad, de orden, factores iguales y niveles iguales."""
+def _mismo_valor(a: object, b: object) -> bool:
+    if isinstance(a, int | float) and isinstance(b, int | float):
+        return math.isclose(float(a), float(b), rel_tol=0, abs_tol=1e-9)
+    return a == b
+
+
+def _grupos(lista: Sequence[FilaReferencia]) -> list[tuple[int, int]]:
+    """Rangos ``[inicio, fin)`` de posiciones consecutivas con la misma probabilidad."""
+    grupos: list[tuple[int, int]] = []
+    inicio = 0
+    for i in range(1, len(lista) + 1):
+        if i == len(lista) or lista[i].probabilidad != lista[inicio].probabilidad:
+            grupos.append((inicio, i))
+            inicio = i
+    return grupos
+
+
+def _conciliar_lista(
+    filas: Sequence[FilaApp], lista: Sequence[FilaReferencia], top_k: int, c: Conciliacion
+) -> None:
     por_codigo = {f.codigo: f for f in filas}
-    lineas = [
-        f"{'pos':>3}  {'notebook':<12}  {'prob':>5}  {'app':<12}  {'prob':>5}  "
-        "prob_codigo  orden    factores  nivel_nb  nivel_app"
-    ]
-    dif_prob = dif_orden = factores_iguales = niveles_iguales = 0
-    for i, ref in enumerate(top):
-        en_posicion = filas[i] if i < len(filas) else None
-        del_codigo = por_codigo.get(ref.codigo)
-        if del_codigo is None:
-            prob = "AUSENTE"
-        elif a_tres_decimales(del_codigo.score) == ref.probabilidad:
-            prob = "ok"
-        else:
-            prob = f"DIFIERE({a_tres_decimales(del_codigo.score)})"
-        dif_prob += prob != "ok"
-        orden = "ok" if _orden_ok(i, en_posicion, top) else "DIFIERE"
-        dif_orden += orden == "DIFIERE"
-        factores = "igual" if del_codigo and del_codigo.factores == ref.factores else "distinto"
-        factores_iguales += factores == "igual"
-        nivel_app = del_codigo.nivel if del_codigo else "-"
-        niveles_iguales += nivel_app == ref.nivel
-        codigo_app = en_posicion.codigo if en_posicion else "-"
-        prob_app = f"{a_tres_decimales(en_posicion.score)}" if en_posicion else "-"
-        lineas.append(
-            f"{i + 1:>3}  {ref.codigo:<12}  {ref.probabilidad:>5}  {codigo_app:<12}  "
-            f"{prob_app:>5}  {prob:<11}  {orden:<7}  {factores:<8}  {ref.nivel:<8}  {nivel_app}"
-        )
-    return lineas, dif_prob, dif_orden, factores_iguales, niveles_iguales
+    prob = nivel = factores = ausentes = 0
+    detalle: list[str] = []
+    for posicion, ref in enumerate(lista, 1):
+        app = por_codigo.get(ref.codigo)
+        if app is None:
+            ausentes += 1
+            detalle.append(f"posicion {posicion}: el socio del notebook no esta en la lista")
+            continue
+        if app.score != ref.probabilidad:
+            prob += 1
+            detalle.append(
+                f"posicion {posicion}: probabilidad notebook {ref.probabilidad} / app {app.score}"
+            )
+        if app.nivel != ref.nivel:
+            nivel += 1
+            detalle.append(f"posicion {posicion}: nivel notebook {ref.nivel} / app {app.nivel}")
+        if app.factores != ref.factores:
+            factores += 1
+            detalle.append(
+                f"posicion {posicion}: factores notebook {list(ref.factores)} / "
+                f"app {list(app.factores)}"
+            )
+    sobrantes = len({f.codigo for f in filas} - {r.codigo for r in lista})
+
+    orden = 0
+    grupos = _grupos(lista)
+    for inicio, fin in grupos:
+        esperados = {r.codigo for r in lista[inicio:fin]}
+        obtenidos = {f.codigo for f in filas[inicio:fin]}
+        if esperados != obtenidos:
+            orden += fin - inicio
+            detalle.append(f"posiciones {inicio + 1}-{fin}: otro conjunto de socios en ese tramo")
+    empates = [(i, f) for i, f in grupos if f - i > 1]
+    en_el_corte = [(i, f) for i, f in empates if i < top_k < f]
+    # Informativo: con un empate en el corte, cual de los empatados entra es arbitrario en el
+    # notebook; fuera de ese caso una diferencia aqui ya la cuenta el orden.
+    top_igual = {f.codigo for f in filas[:top_k]} == {r.codigo for r in lista[:top_k]}
+
+    c.contar("filas", ausentes + sobrantes)
+    c.contar("probabilidades", prob)
+    c.contar("niveles", nivel)
+    c.contar("factores", factores)
+    c.contar("orden", orden)
+    c.lineas.append(
+        f"lista: notebook {len(lista)} filas | app {len(filas)} filas | ausentes {ausentes} | "
+        f"sobrantes {sobrantes}"
+    )
+    c.lineas.append(
+        f"probabilidades distintas (8 decimales): {prob} | niveles distintos: {nivel} | "
+        f"factores distintos: {factores} | posiciones fuera de orden: {orden}"
+    )
+    c.lineas.append(
+        f"grupos de empate (misma probabilidad): {len(empates)}, con "
+        f"{sum(f - i for i, f in empates)} socios; cruzan el corte del top {top_k}: "
+        f"{len(en_el_corte)} (el top {top_k} se elige dentro del empate)"
+    )
+    c.lineas.append(
+        f"socios dentro del top {top_k}: "
+        + ("los mismos que en el notebook" if top_igual else "distintos (informativo)")
+    )
+    c.lineas.extend(detalle)
 
 
-def _porcentaje(parte: int, total: int) -> str:
-    return f"{(100 * parte / total) if total else 0:.1f} %"
+def _niveles(filas: Sequence[FilaApp]) -> str:
+    return ", ".join(f"{n} {sum(f.nivel == n for f in filas)}" for n in ("ALTO", "MEDIO", "BAJO"))
 
 
 def main(
     argv: Sequence[str] | None = None,
     *,
-    conteos: dict[str, int] = REFERENCIA_CONTEOS,
-    top: Sequence[FilaReferencia] = REFERENCIA_TOP,
+    referencia: Referencia | None = None,
+    sal: bytes | None = None,
     salida: TextIO = sys.stdout,
 ) -> int:
-    parser = argparse.ArgumentParser(description="Verifica la lista frente al notebook.")
+    try:
+        return _verificar(argv, referencia, sal, salida)
+    except Exception as exc:  # ultima barrera: ni mensaje ni traceback
+        # El mensaje o el traceback podrian citar valores de los libros (cedulas, nombres) o
+        # rutas locales: solo se imprime el tipo del error.
+        print(f"error no controlado: {type(exc).__name__}", file=salida)
+        return 2
+
+
+def _verificar(
+    argv: Sequence[str] | None,
+    referencia: Referencia | None,
+    sal: bytes | None,
+    salida: TextIO,
+) -> int:
+    parser = argparse.ArgumentParser(description="Verifica la lista frente al notebook M01.")
     parser.add_argument("carpeta", type=Path, help="carpeta con los libros Control Gym")
+    parser.add_argument("--referencia", type=Path, default=CARPETA_SALIDAS)
     parser.add_argument("--fecha", type=date.fromisoformat, default=FECHA_GENERACION)
     parser.add_argument("--horizonte", type=int, default=HORIZONTE_DIAS)
     parser.add_argument("--top-k", type=int, default=TOP_K)
     argumentos = parser.parse_args(argv)
 
-    rutas = localizar_libros(argumentos.carpeta)
-    if not rutas:
-        print("No se encontraron libros Control Gym en la carpeta indicada.", file=salida)
-        return 2
-
-    resultado = ejecutar_en_memoria(rutas, argumentos.fecha, argumentos.horizonte, argumentos.top_k)
-    lineas_conteos, dif_conteos = _tabla_conteos(resultado.conteos, conteos)
-    lineas_top, dif_prob, dif_orden, factores_iguales, niveles_iguales = _tabla_top(
-        resultado.filas, top
-    )
-    niveles_app = Counter(f.nivel for f in resultado.filas)
-
     def imprimir(texto: str = "") -> None:
         print(texto, file=salida)
+
+    rutas = localizar_libros(argumentos.carpeta)
+    if not rutas:
+        imprimir("No se encontraron libros Control Gym en la carpeta indicada.")
+        return 2
+    if referencia is None:
+        try:
+            referencia = cargar_referencia(argumentos.referencia)
+        except ReferenciaNoDisponibleError as exc:
+            imprimir(str(exc))
+            return 2
+    if sal is None:
+        try:
+            sal = cargar_sal(argumentos.referencia)
+        except SalNoDisponibleError as exc:
+            imprimir(str(exc))
+            return 2
+
+    resultado = ejecutar_en_memoria(
+        rutas, argumentos.fecha, argumentos.horizonte, argumentos.top_k, sal
+    )
+    conciliacion = Conciliacion()
+    _conciliar_conteos(resultado.conteos, referencia.conteos, conciliacion)
+    _conciliar_modelo(resultado, referencia, conciliacion)
+    _conciliar_lista(resultado.filas, referencia.lista, argumentos.top_k, conciliacion)
 
     imprimir(
         f"lista de {argumentos.fecha.isoformat()} | horizonte {argumentos.horizonte} dias | "
         f"top {argumentos.top_k} | libros: {len(rutas)}"
     )
-    for linea in lineas_conteos:
+    for linea in conciliacion.lineas:
         imprimir(linea)
-    imprimir()
-    imprimir(f"top {len(top)} del notebook frente a la app (probabilidad a 3 decimales):")
-    for linea in lineas_top:
-        imprimir(linea)
-    imprimir()
     imprimir(
-        f"umbrales de la app (P80/P50): alto {a_tres_decimales(resultado.umbral_alto)} | "
-        f"medio {a_tres_decimales(resultado.umbral_medio)}; niveles en toda la lista: "
-        + ", ".join(f"{n} {niveles_app.get(n, 0)}" for n in ("ALTO", "MEDIO", "BAJO"))
+        f"umbrales de la app: alto {resultado.umbral_alto} | medio {resultado.umbral_medio} "
+        f"(fijos del notebook); niveles en la lista: {_niveles(resultado.filas)}"
     )
     imprimir(
-        f"factores iguales: {factores_iguales} de {len(top)} "
-        f"({_porcentaje(factores_iguales, len(top))}, informativo, decision (a))"
-    )
-    imprimir(
-        f"niveles iguales: {niveles_iguales} de {len(top)} "
-        f"({_porcentaje(niveles_iguales, len(top))}, informativo: umbrales fijos 0,70/0,50 "
-        "del notebook frente a percentiles 20/30/50 de la app)"
-    )
-    imprimir(
-        f"conteos distintos: {dif_conteos} | probabilidades distintas: {dif_prob} | "
-        f"posiciones fuera de orden: {dif_orden}"
+        "diferencias: "
+        + ", ".join(f"{k} {v}" for k, v in conciliacion.diferencias.items())
+        + f" | total {conciliacion.total}"
     )
     if sklearn.__version__ != SKLEARN_NOTEBOOK:
         imprimir(
-            f"aviso: scikit-learn {sklearn.__version__} instalado; las salidas guardadas del "
-            f"notebook se generaron con {SKLEARN_NOTEBOOK} (el bosque cambia entre versiones)"
+            f"aviso: scikit-learn {sklearn.__version__} instalado; las salidas del notebook se "
+            f"generaron con {SKLEARN_NOTEBOOK} (el bosque cambia entre versiones)"
         )
-    return 0 if dif_conteos == dif_prob == dif_orden == 0 else 1
+    return 0 if conciliacion.total == 0 else 1
 
 
 if __name__ == "__main__":

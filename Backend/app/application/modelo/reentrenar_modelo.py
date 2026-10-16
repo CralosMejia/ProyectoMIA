@@ -9,8 +9,16 @@ Dos disparadores con los mismos criterios:
 - ``ejecutar_manual`` (comando): reentrena sin mirar la fecha programada y solo la mueve si
   entrena una version nueva.
 
-Reentrenar: ciclos de todas las membresias etiquetados al corte de hoy; criterios 1 a 4; un
-candidato entrenado sin los evaluables de los meses de comparacion; PR-AUC del candidato y
+Reentrenar: ciclos de todas las membresias etiquetados al **corte de los datos** (R-015 T11,
+el mismo criterio que ``adoptar-modelo`` y el notebook): ``corte_de_datos(hoy, corte del
+vigente, dia de la ultima carga por plantilla)``. Asi no se marca como "no renovo" un ciclo
+cuya renovacion aun no se ha cargado. Los ciclos nuevos (criterios 1 y 3) se miden a ese corte
+y el modelo entrenado guarda ese corte como ``fecha_corte``; la cobertura (criterio 2) mira las
+membresias registradas despues del ultimo entrenamiento, que ya estan dentro del corte. La
+proxima fecha programada sigue contando desde hoy (calendario). Criterios 1 a 4; un
+candidato entrenado sin los evaluables de los meses de comparacion ni los que vencen en los 30
+dias previos al primer vencimiento de la comparacion (M01, ``ciclos_para_candidato``; esos
+ciclos quedan en el historial como pendientes, con sus medianas propias); PR-AUC del candidato y
 del vigente sobre ese conjunto; si el candidato no es peor, modelo final con todo el
 historial evaluable. El modelo nuevo, su intento y la proxima fecha se guardan en **una**
 transaccion. Si algo falla, nada de eso se guarda y un intento ``FALLIDO`` se registra en una
@@ -24,6 +32,7 @@ excepcion ajena (solo su tipo).
 import logging
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -52,6 +61,8 @@ from app.domain.modelo.reentrenamiento import (
     AccionProgramada,
     CriteriosReentrenamiento,
     accion_programada,
+    ciclos_para_candidato,
+    corte_de_datos,
     es_ciclo_nuevo,
     etiquetar_ciclos,
     evaluar_criterios,
@@ -82,7 +93,7 @@ def _por_socio(ciclos: Sequence[CicloModelo]) -> dict[str, list[CicloModelo]]:
     return grupos
 
 
-def _corte_de(vigente: ModeloGuardado) -> date:
+def corte_de_modelo(vigente: ModeloGuardado) -> date:
     """``fecha_corte`` del vigente; sin ella, la fecha de negocio de su entrenamiento."""
     valor = vigente.metadata_tecnica.get(CLAVE_FECHA_CORTE)
     if isinstance(valor, str) and valor:
@@ -252,14 +263,20 @@ class ReentrenarModelo:
     ) -> ResultadoReentrenamientoDTO:
         with self._uow() as uow:
             membresias = uow.membresias.listar_para_entrenamiento()
+            ultima_carga = uow.cargas.ultima_carga_plantilla_hasta(ahora)
 
-        ciclos = etiquetar_ciclos([ciclo_de_membresia(m) for m in membresias], hoy)
-        corte_vigente = _corte_de(vigente)
+        corte_vigente = corte_de_modelo(vigente)
+        corte = corte_de_datos(
+            hoy,
+            corte_vigente,
+            None if ultima_carga is None else hoy_en_negocio(ultima_carga),
+        )
+        ciclos = etiquetar_ciclos([ciclo_de_membresia(m) for m in membresias], corte)
         nuevos = [c for c in ciclos if es_ciclo_nuevo(c, corte_vigente)]
         evaluables = [c for c in ciclos if _es_evaluable(c)]
         historial = _por_socio(ciclos)
 
-        medianas = calcular_medianas(ciclos)
+        medianas = calcular_medianas(evaluables)
         motivos = evaluar_criterios(
             nuevos,
             _vencimientos_nuevas(membresias, vigente.fecha_entrenamiento),
@@ -286,11 +303,8 @@ class ReentrenarModelo:
             )
 
         comparacion = meses_recientes_con_resultado(evaluables, self._criterios.meses_comparacion)
-        en_comparacion = {id(c) for c in comparacion}
         entrenador = EntrenarModeloInicial(self._predictor)
-        candidato = entrenador.ejecutar_ciclos(
-            [c for c in ciclos if id(c) not in en_comparacion], hoy
-        )
+        candidato = entrenador.ejecutar_ciclos(_ciclos_del_candidato(ciclos, comparacion), corte)
         etiquetas = [int(bool(c.no_renovo)) for c in comparacion]
         pr_candidato = self._pr_auc(
             candidato.artefacto, comparacion, historial, candidato.medianas, etiquetas
@@ -325,7 +339,7 @@ class ReentrenarModelo:
                 resultado=ResultadoReentrenamiento.NO_SUPERA_VIGENTE, motivo=motivo
             )
 
-        final = entrenador.ejecutar_ciclos(ciclos, hoy)
+        final = entrenador.ejecutar_ciclos(ciclos, corte)
         version = vigente.version + 1
         metadata: dict[str, object] = dict(final.metadata_tecnica)
         metadata["pr_auc_candidato"] = str(pr_candidato)
@@ -391,6 +405,22 @@ class ReentrenarModelo:
             if proxima is not None:
                 uow.estado.fijar_proxima_fecha(proxima)
             uow.commit()
+
+
+def _ciclos_del_candidato(
+    ciclos: Sequence[CicloModelo], comparacion: Sequence[CicloModelo]
+) -> list[CicloModelo]:
+    """Todos los ciclos; los evaluables que el candidato no puede ver pasan a pendientes.
+
+    Siguen en el historial (el corte T-30 decide si cuentan como previos), pero no se entrena
+    con ellos ni entran en sus medianas.
+    """
+    evaluables = [c for c in ciclos if _es_evaluable(c)]
+    visibles = {id(c) for c in ciclos_para_candidato(evaluables, comparacion)}
+    return [
+        c if not _es_evaluable(c) or id(c) in visibles else replace(c, no_renovo=None)
+        for c in ciclos
+    ]
 
 
 def _vencimientos_nuevas(

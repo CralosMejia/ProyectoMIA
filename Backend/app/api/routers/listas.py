@@ -40,8 +40,8 @@ LISTA_PRIORIZADA_EXAMPLE = {
     "creada_en": "2026-09-28T15:20:00Z",
     "horizonte_dias": 30,
     "top_k": 25,
-    "umbral_alto": "0.62000000",
-    "umbral_medio": "0.35000000",
+    "umbral_alto": "0.70000000",
+    "umbral_medio": "0.50000000",
     "advertencia_datos_antiguos": False,
     "items": [
         {
@@ -57,9 +57,9 @@ LISTA_PRIORIZADA_EXAMPLE = {
             "score": "0.81234567",
             "nivel_riesgo": "ALTO",
             "factores_principales": [
-                "Ciclos previos: 0 (+0,08)",
+                "Membresías previas: 0 (+0,08)",
                 "Plan: MENSUAL (+0,05)",
-                "Forma de pago: EFECTIVO (+0,02)",
+                "Días desde la membresía anterior: 45 (+0,02)",
             ],
             "dentro_top_k": True,
             "gestion_id": None,
@@ -76,7 +76,7 @@ LISTA_PRIORIZADA_EXAMPLE = {
             "fecha_vencimiento": "2026-09-14",
             "dias_para_vencer": 14,
             "monto_cobrado": None,
-            "score": "0.47000000",
+            "score": "0.56000000",
             "nivel_riesgo": "MEDIO",
             "factores_principales": [],
             "dentro_top_k": True,

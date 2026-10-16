@@ -32,6 +32,7 @@ from app.application.health.queries import GetHealthQueryHandler
 from app.application.listas.consultar_listas import ConsultarListas
 from app.application.listas.generar_lista import GenerarLista
 from app.application.listas.ports import ExportadorLista, UnidadDeTrabajoListas
+from app.application.modelo.adoptar_modelo import AdoptarModelo
 from app.application.modelo.reentrenar_modelo import ReentrenarModelo
 from app.application.sistema.consultar_estado import ConsultarEstadoSistema
 from app.application.sistema.migrar_historico import MigrarHistorico
@@ -320,4 +321,19 @@ def crear_reentrenamiento(
         predictor=predictor if predictor is not None else RandomForestPredictor(),
         clock=reloj,
         criterios=criterios_reentrenamiento(settings),
+    )
+
+
+def crear_adopcion(
+    engine: Engine,
+    predictor: PredictorModel | None = None,
+    clock: Clock | None = None,
+) -> AdoptarModelo:
+    """Compone ``AdoptarModelo`` (comando ``python -m app.cli adoptar-modelo``, R-015)."""
+    reloj = clock if clock is not None else SystemClock()
+    return AdoptarModelo(
+        unidad_de_trabajo=SqlAlchemyUnidadDeTrabajoReentrenamiento(engine, reloj),
+        abrir_bloqueo=AbridorBloqueoReentrenamiento(engine),
+        predictor=predictor if predictor is not None else RandomForestPredictor(),
+        clock=reloj,
     )

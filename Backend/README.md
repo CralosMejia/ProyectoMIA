@@ -78,7 +78,7 @@ Imprime solo conteos "notebook vs obtenido" (nunca nombres, cédulas, contactos 
 python scripts/verificar_lista.py <carpeta con los libros Control Gym>
 ```
 
-Compone en memoria, sin base de datos, lectura + limpieza + entrenamiento del v1 + lista al 2026-08-31 (horizonte 30, top 25) y la compara con la lista de septiembre del notebook (§13.8): cartera, ya renovados, orden, probabilidades y factores del top 25 (el empate en el corte se compara como conjunto). Sale con `0` si coincide y `1` si no. Resultado de R-004 con scikit-learn 1.8.0: `0` (cartera 59, ya renovaron 2, a priorizar 57, 1.564 ciclos de entrenamiento, 25/25 iguales). Detalle: `../Documentation/docs/backend/12-modelo-y-listas.md`.
+Compone en memoria, sin base de datos, lectura + limpieza + entrenamiento + lista al 2026-08-31 (horizonte 30, top 25) y la compara con la lista de septiembre del notebook M01 (§13.8), cuyas salidas lee de `../salidas` (git-ignorada; otra carpeta con `--referencia`): **todas** las filas, con probabilidad a 8 decimales, nivel (0,70/0,50), factores y orden (los empates se comparan por grupo). Necesita la sal de los códigos anónimos en `MTABOLIC_SAL_CODIGOS` o en `salidas/.sal_codigos` (nunca se imprime). Sale con `0` sin diferencias, `1` con alguna y `2` si faltan libros, salidas o sal; ante un error solo imprime su tipo. Resultado de R-015 con scikit-learn 1.8.0: `0`, 0 diferencias en 57 filas (ALTO 2, MEDIO 39, BAJO 16). Detalle: `../Documentation/docs/backend/12-modelo-y-listas.md`.
 
 ## Docker
 
@@ -208,6 +208,27 @@ Imprime una línea con el resultado y el motivo (sin datos de socios). Códigos 
 | `2` | Ya hay un reentrenamiento en curso (o se llamó sin subcomando). |
 
 Si resulta `ENTRENADO`, las listas que se generen desde ese momento usan el modelo nuevo (las ya generadas no cambian). Para probarlo sin afectar el modelo real, use el stack e2e: `docker compose -p mtabolic-e2e --env-file .env.e2e exec backend python -m app.cli reentrenar`.
+
+Desde R-015 los ciclos se etiquetan al **corte de los datos** (el más reciente entre el corte del modelo vigente y el día de la última carga por plantilla, sin pasar de hoy), y el candidato se entrena sin los ciclos que vencen en los 30 días previos al periodo de comparación.
+
+#### Adoptar un modelo nuevo sin criterios (`adoptar-modelo`, R-015)
+
+Pone en uso un modelo entrenado **ahora** con todos los ciclos evaluables, sin los criterios ni la comparación de CU-02. Se usó una vez, el 2026-10-15, para adoptar el modelo de la mejora M01 (v2). **No es idempotente:** cada ejecución crea una versión nueva; no lo repita sin motivo.
+
+```bash
+# 1) respaldo previo (sección 5)  2) adoptar
+docker compose exec backend python -m app.cli adoptar-modelo
+```
+
+Guarda en una sola transacción la versión vigente + 1 como vigente y un intento `MANUAL`/`ENTRENADO` "Adopción del modelo M01"; la versión anterior se conserva y las listas ya generadas no cambian. No mueve la próxima fecha de reentrenamiento. Si el entrenamiento falla no guarda nada.
+
+| Código | Cuándo |
+|---|---|
+| `0` | Versión nueva en uso (imprime "vN en uso"). |
+| `1` | Sistema no listo o sin modelo vigente, fallo del entrenamiento, base inaccesible o configuración inválida. |
+| `2` | Ya hay un reentrenamiento en curso. |
+
+Para ensayarlo primero: `docker compose -p mtabolic-e2e --env-file .env.e2e exec backend python -m app.cli adoptar-modelo`. Vuelta atrás: restaurar el respaldo. Decisión: `../Documentation/adr/ADR-014-modelo-m01-adopcion-y-cortes-de-riesgo.md`.
 
 ### 5. Respaldo y restauración de la base
 

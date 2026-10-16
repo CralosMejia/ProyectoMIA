@@ -2,12 +2,17 @@
 
 Replica fiel del notebook, solo con la libreria estandar:
 
-- Historial previo: ciclos **no excluidos** del mismo socio con ``fecha_actividad``
-  estrictamente menor que la del ciclo actual (el propio ciclo nunca cuenta).
+- Historial previo (corte T-30, mejora M01): ciclos **no excluidos** del mismo socio con
+  ``fecha_actividad`` estrictamente menor que la del ciclo actual **y** menor o igual que
+  ``T-30`` (el propio ciclo nunca cuenta). Ningun registro con actividad posterior a T-30
+  cambia una variable. Los campos del propio ciclo (plan, forma de pago, monto, duracion,
+  vencimiento e ``inicio_aproximado``) son el objeto de la prediccion y se admiten.
 - ``monto_historico``: suma de los montos previos, con ``None`` como 0.
 - ``dias_desde_ultima_membresia``: ``None`` si no hay previos.
 - ``antiguedad_dias``: ``max(0, (vencimiento - 30) - primera_actividad)``.
-- ``monto_actual``: monto; si falta, la mediana del plan y despues la mediana general.
+- ``monto_actual``: monto; si falta, la mediana del plan y despues la mediana general. Las
+  medianas las provee quien entrena (solo con sus ciclos de entrenamiento) y se aplican tal
+  cual a validacion, comparacion y prediccion.
 - ``duracion_modelo``: duracion; si falta, ``DURACION_ESTANDAR`` del plan.
 - Categoricas como ``str``: ``mes_vencimiento`` = ``"AAAA-MM"``, ``inicio_aproximado`` =
   ``"True"``/``"False"``, ``plan`` y ``forma_pago`` por su ``.value``.
@@ -41,6 +46,51 @@ VARIABLES_CATEGORICAS: tuple[str, ...] = (
     "mes_vencimiento",
     "inicio_aproximado",
 )
+
+
+@dataclass(frozen=True, slots=True)
+class ConjuntoVariables:
+    """Variables con que se entrena un modelo: subconjunto de las que ``construir_variables``
+    devuelve siempre (el artefacto guarda las suyas y selecciona sus columnas al predecir).
+    """
+
+    numericas: tuple[str, ...]
+    categoricas: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not self.numericas and not self.categoricas:
+            raise ValueError("El conjunto de variables del modelo no puede estar vacio.")
+        if not set(self.numericas) <= set(VARIABLES_NUMERICAS) or not set(self.categoricas) <= set(
+            VARIABLES_CATEGORICAS
+        ):
+            raise ValueError("El conjunto de variables del modelo tiene variables desconocidas.")
+        if len(set(self.numericas)) != len(self.numericas) or len(set(self.categoricas)) != len(
+            self.categoricas
+        ):
+            raise ValueError("El conjunto de variables del modelo repite variables.")
+
+    def sin(self, *variables: str) -> "ConjuntoVariables":
+        """El mismo conjunto sin ``variables`` (conserva el orden)."""
+        return ConjuntoVariables(
+            numericas=tuple(v for v in self.numericas if v not in variables),
+            categoricas=tuple(v for v in self.categoricas if v not in variables),
+        )
+
+
+VARIABLES_EXCLUIBLES_M01: tuple[str, ...] = ("forma_pago", "inicio_aproximado")
+"""Variables que la variante de M01 (decision (d) del plan R-015) deja fuera."""
+
+CONJUNTO_COMPLETO = ConjuntoVariables(VARIABLES_NUMERICAS, VARIABLES_CATEGORICAS)
+CONJUNTO_SIN_FORMA_PAGO_NI_INICIO = CONJUNTO_COMPLETO.sin(*VARIABLES_EXCLUIBLES_M01)
+
+CONJUNTO_MODELO: ConjuntoVariables = CONJUNTO_SIN_FORMA_PAGO_NI_INICIO
+"""Conjunto con que la app entrena (CU-03, CU-02 y ``adoptar-modelo``).
+
+El que eligio el notebook M01 (seccion 12.11, regla (d) de R-015): la variante sin
+``forma_pago`` ni ``inicio_aproximado`` (``salidas/m01/despues/decision_variante.json``).
+"""
+VARIABLES_NUMERICAS_MODELO: tuple[str, ...] = CONJUNTO_MODELO.numericas
+VARIABLES_CATEGORICAS_MODELO: tuple[str, ...] = CONJUNTO_MODELO.categoricas
 
 DURACION_ESTANDAR: Mapping[Plan, int] = {
     Plan.MENSUAL: 30,
@@ -87,9 +137,10 @@ class MedianasMonto:
 class PeriodoReferencia:
     """Periodo de vencimientos ``[desde, hasta)`` que sirve de referencia a los factores.
 
-    El notebook (13.3) toma como socio "tipico" las medianas y modas de los ciclos de
-    entrenamiento con vencimiento anterior a 2026-01-01 (los de 2025). Es un parametro para
-    que un reentrenamiento futuro pueda moverlo.
+    El notebook (13.3) toma como socio "tipico" las medianas y modas de ``X_train``: con los
+    margenes de M01, la particion de entrenamiento = vencimiento ``< 2026-01-01 - 30 d``
+    (hasta el 2025-12-01 inclusive) y sin limite inferior (``asignar_particion``, 7.3). Es un
+    parametro para que un reentrenamiento futuro pueda moverlo.
     """
 
     desde: date
@@ -104,11 +155,15 @@ class PeriodoReferencia:
         return vence is not None and self.desde <= vence < self.hasta
 
 
-PERIODO_REFERENCIA_FACTORES = PeriodoReferencia(desde=date(2025, 1, 1), hasta=date(2026, 1, 1))
+PERIODO_REFERENCIA_FACTORES = PeriodoReferencia(desde=date.min, hasta=date(2025, 12, 2))
 
 
 def calcular_medianas(ciclos: Iterable[CicloModelo]) -> MedianasMonto:
-    """Mediana por plan y general de los montos conocidos de los ciclos no excluidos."""
+    """Mediana por plan y general de los montos conocidos de los ciclos no excluidos.
+
+    Solo con los ciclos de entrenamiento (decision (b) de M01): quien llama pasa exactamente
+    esos ciclos y las medianas resultantes se aplican sin recalcular al resto.
+    """
     por_plan: defaultdict[Plan, list[Decimal]] = defaultdict(list)
     todos: list[Decimal] = []
     for ciclo in ciclos:
@@ -133,12 +188,14 @@ def construir_variables(
 ) -> dict[str, ValorVariable]:
     """Variables del ciclo en T-30, en el orden ``VARIABLES_NUMERICAS + VARIABLES_CATEGORICAS``.
 
-    ``historial`` puede contener ciclos de otros socios, excluidos o el propio ciclo: aqui se
-    filtran con las reglas del notebook.
+    ``historial`` puede contener ciclos de otros socios, excluidos, posteriores a T-30 o el
+    propio ciclo: aqui se filtran con las reglas del notebook y el corte T-30. Devuelve
+    siempre las 10 variables; cada modelo usa las de su ``ConjuntoVariables``.
     """
     vence = ciclo.fecha_vencimiento
     if vence is None:
         raise ValueError("El ciclo necesita fecha de vencimiento para construir variables.")
+    fecha_prediccion = vence - timedelta(days=DIAS_ANTES_PREDICCION)
 
     previos = [
         otro
@@ -147,6 +204,7 @@ def construir_variables(
         and otro.clave_socio == ciclo.clave_socio
         and not otro.excluido
         and otro.fecha_actividad < ciclo.fecha_actividad
+        and otro.fecha_actividad <= fecha_prediccion
     ]
     monto_historico = sum(
         (p.monto_cobrado for p in previos if p.monto_cobrado is not None), Decimal(0)
@@ -158,7 +216,6 @@ def construir_variables(
     else:
         dias_desde_ultima = None
         primera = ciclo.fecha_actividad
-    fecha_prediccion = vence - timedelta(days=DIAS_ANTES_PREDICCION)
     duracion = (
         ciclo.duracion_dias
         if ciclo.duracion_dias is not None

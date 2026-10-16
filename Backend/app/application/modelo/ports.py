@@ -205,6 +205,15 @@ class LectorMembresiasEntrenamiento(Protocol):
         ...
 
 
+@runtime_checkable
+class FechasCargaPlantilla(Protocol):
+    """Fecha de la ultima carga por plantilla (CU-01), dentro de la transaccion de quien llama."""
+
+    def ultima_carga_plantilla_hasta(self, instante: datetime) -> datetime | None:
+        """``fecha_carga`` mas reciente de una carga ``PLANTILLA`` no borrada ``<= instante``."""
+        ...
+
+
 class ContextoReentrenamiento(Protocol):
     """Repositorios que comparten una sola transaccion (unidad de trabajo de CU-02).
 
@@ -222,6 +231,9 @@ class ContextoReentrenamiento(Protocol):
 
     @property
     def estado(self) -> EstadoSistemaRepository: ...
+
+    @property
+    def cargas(self) -> FechasCargaPlantilla: ...
 
     def commit(self) -> None:
         """Confirma la transaccion."""

@@ -111,13 +111,13 @@ def _proxima_fecha(engine: Engine) -> date:
     return valor
 
 
-def _campania(cliente: TestClient, nombre: str, prioridad: int) -> dict[str, Any]:
+def _campania(cliente: TestClient, nombre: str, prioridad: int, nivel: str) -> dict[str, Any]:
     respuesta = cliente.post(
         f"{API}/campanias",
         json={
             "nombre": nombre,
             "descripcion": "Campana sintetica de la demostracion.",
-            "niveles_riesgo": ["ALTO"],
+            "niveles_riesgo": [nivel],
             "planes": PLANES,
             "prioridad": prioridad,
         },
@@ -183,8 +183,11 @@ def test_escenario_demostracion_de_punta_a_punta_con_reloj_simulado(
     lista = respuesta.json()
     assert lista["fecha_generacion"] == HOY.isoformat()
     assert lista["modelo_version"] == "v1"
-    altos = [i for i in lista["items"] if i["nivel_riesgo"] == "ALTO"]
-    assert altos, "la lista de hoy deberia tener al menos un socio ALTO"
+    # R-015 T11: niveles con cortes fijos (0,70 / 0,50). Con los 15 ciclos sinteticos ningun
+    # score llega a 0,70, asi que la demostracion usa al socio de mayor prioridad y su nivel.
+    assert lista["items"], "la lista de hoy deberia tener socios"
+    alto = lista["items"][0]
+    assert alto["prioridad"] == 1
 
     # 5. Excel (CU-12).
     excel = cliente.get(f"{API}/listas/{lista['id']}/excel")
@@ -192,11 +195,11 @@ def test_escenario_demostracion_de_punta_a_punta_con_reloj_simulado(
     assert excel.headers["content-type"].startswith(XLSX)
     assert excel.content[:2] == b"PK"
 
-    # 6. Dos campanas (CU-06), sugerencias de un socio ALTO (CU-07) y gestion con
+    # 6. Dos campanas (CU-06), sugerencias del socio prioritario (CU-07) y gestion con
     #    seguimiento hoy + 2 (CU-08).
-    primera = _campania(cliente, "Demostracion renovacion anticipada", 1)
-    segunda = _campania(cliente, "Demostracion clase de cortesia", 2)
-    alto = altos[0]
+    nivel = alto["nivel_riesgo"]
+    primera = _campania(cliente, "Demostracion renovacion anticipada", 1, nivel)
+    segunda = _campania(cliente, "Demostracion clase de cortesia", 2, nivel)
     sugeridas = cliente.get(f"{API}/predicciones/{alto['prediccion_id']}/campanias-sugeridas")
     assert sugeridas.status_code == 200, sugeridas.text
     assert {primera["id"], segunda["id"]} <= {c["id"] for c in sugeridas.json()}

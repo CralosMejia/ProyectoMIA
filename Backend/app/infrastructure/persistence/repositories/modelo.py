@@ -11,12 +11,15 @@ bloqueo no depende de ninguna transaccion y dura hasta ``liberar()`` o hasta que
 conexion fisica se cierre. Quien llama debe llamar a ``liberar()`` antes de devolver la
 conexion al pool. ``PgBloqueoReentrenamiento`` hace lo mismo con otra clave (CU-02): un
 reentrenamiento en curso no bloquea la migracion ni al reves.
+
+``SqlAlchemyFechasCargaPlantilla`` lee la fecha de la ultima carga por plantilla (corte de los
+datos de ``adoptar-modelo``, R-015 T11).
 """
 
 from collections.abc import Mapping
 from datetime import date, datetime
 
-from sqlalchemy import Connection, insert, select, text, update
+from sqlalchemy import Connection, func, insert, select, text, update
 from sqlalchemy.orm import Session
 
 from app.application.modelo.ports import (
@@ -26,7 +29,8 @@ from app.application.modelo.ports import (
     NuevoModelo,
 )
 from app.domain.common.clock import Clock
-from app.domain.common.enums import EstadoMigracion
+from app.domain.common.enums import EstadoMigracion, TipoCarga
+from app.infrastructure.persistence.models.historial import Carga
 from app.infrastructure.persistence.models.modelo import EstadoSistema as EstadoSistemaOrm
 from app.infrastructure.persistence.models.modelo import IntentoReentrenamiento, Modelo
 
@@ -161,6 +165,22 @@ class SqlAlchemyEstadoSistemaRepository:
             update(EstadoSistemaOrm)
             .where(EstadoSistemaOrm.id == ESTADO_SISTEMA_ID)
             .values(**valores, updated_at=self._clock.now())
+        )
+
+
+class SqlAlchemyFechasCargaPlantilla:
+    """Implementa ``FechasCargaPlantilla`` (una consulta parametrizada, solo lectura)."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def ultima_carga_plantilla_hasta(self, instante: datetime) -> datetime | None:
+        return self._session.scalar(
+            select(func.max(Carga.fecha_carga)).where(
+                Carga.tipo == TipoCarga.PLANTILLA.value,
+                Carga.deleted_at.is_(None),
+                Carga.fecha_carga <= instante,
+            )
         )
 
 

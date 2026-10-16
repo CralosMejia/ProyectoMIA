@@ -21,6 +21,7 @@ from app.infrastructure.persistence.repositories.historial import SqlAlchemyMemb
 from app.infrastructure.persistence.repositories.modelo import (
     PgBloqueoReentrenamiento,
     SqlAlchemyEstadoSistemaRepository,
+    SqlAlchemyFechasCargaPlantilla,
     SqlAlchemyIntentoRepository,
     SqlAlchemyModeloRepository,
 )
@@ -33,6 +34,7 @@ class _ContextoSqlAlchemy:
         self.modelos = SqlAlchemyModeloRepository(session, clock)
         self.intentos = SqlAlchemyIntentoRepository(session, clock)
         self.estado = SqlAlchemyEstadoSistemaRepository(session, clock)
+        self.cargas = SqlAlchemyFechasCargaPlantilla(session)
 
     def commit(self) -> None:
         self._session.commit()

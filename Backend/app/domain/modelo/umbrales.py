@@ -1,11 +1,13 @@
-"""Umbrales de riesgo por percentiles y nivel de riesgo (CU-05, decision (d) de R-004).
+"""Umbrales de riesgo fijos del notebook y nivel de riesgo (CU-05, R-015 T11).
 
-- Los umbrales salen de los scores del modelo nuevo sobre los evaluables de los ultimos
-  ``n`` meses de vencimiento con resultado conocido.
-- Percentil lineal (interpolacion entre vecinos), calculado en ``Decimal``: con los
-  porcentajes (ALTO, MEDIO, BAJO) = (20, 30, 50), ``alto`` = P80 y ``medio`` = P50.
-- ALTO si ``score >= alto``; MEDIO si ``score >= medio``; si no, BAJO.
-- Los umbrales se cuantizan a 8 decimales (``NUMERIC(10,8)``).
+- Cortes fijos del notebook MVP (seccion 13.2), decision del usuario en R-015: ALTO si
+  ``score >= 0,70``; MEDIO si ``score >= 0,50``; si no, BAJO. Sustituyen a los percentiles
+  20/30/50 sobre los 3 meses recientes (decision (d) de R-004), que dejan de calcularse.
+- ``porcentajes`` es informativo: el porcentaje (entero, redondeo bancario) de los scores
+  recibidos (los evaluables de los 3 meses de vencimiento mas recientes) que cae en cada
+  nivel con esos cortes. Se guarda en ``modelos.porcentajes_umbral`` (misma forma que antes:
+  ``{"ALTO": n, "MEDIO": n, "BAJO": n}``).
+- Un score igual a un umbral queda en el nivel superior.
 """
 
 from collections.abc import Mapping, Sequence
@@ -16,9 +18,9 @@ from app.domain.common.enums import NivelRiesgo
 from app.domain.common.exceptions import DomainError
 from app.domain.modelo.variables import CicloModelo
 
-PORCENTAJES_POR_DEFECTO: tuple[int, int, int] = (20, 30, 50)
+UMBRAL_ALTO = Decimal("0.70")
+UMBRAL_MEDIO = Decimal("0.50")
 MESES_RECIENTES = 3
-_OCHO_DECIMALES = Decimal("0.00000001")
 
 
 class SinScoresError(DomainError, ValueError):
@@ -60,33 +62,23 @@ def meses_recientes_con_resultado(
     return [c for c in evaluables if _mes(c) in recientes]
 
 
-def _percentil(ordenados: Sequence[Decimal], q: int) -> Decimal:
-    """Percentil lineal: ``h = (N - 1) * q / 100`` e interpolacion entre vecinos."""
-    h = Decimal(len(ordenados) - 1) * q / 100
-    inferior = int(h)
-    superior = min(inferior + 1, len(ordenados) - 1)
-    fraccion = h - inferior
-    valor = ordenados[inferior] + (ordenados[superior] - ordenados[inferior]) * fraccion
-    return valor.quantize(_OCHO_DECIMALES, rounding=ROUND_HALF_EVEN)
-
-
-def calcular_umbrales(
-    scores: Sequence[Decimal], porcentajes: tuple[int, int, int] = PORCENTAJES_POR_DEFECTO
-) -> Umbrales:
-    """``alto`` = percentil ``100 - p_alto``; ``medio`` = percentil ``p_bajo``."""
-    p_alto, p_medio, p_bajo = porcentajes
-    if min(porcentajes) < 0 or p_alto + p_medio + p_bajo != 100:
-        raise ValueError("Los porcentajes deben ser no negativos y sumar 100.")
+def umbrales_fijos(scores: Sequence[Decimal]) -> Umbrales:
+    """Cortes fijos del notebook con la reparticion observada de ``scores`` por nivel."""
     if not scores:
         raise SinScoresError("No hay scores para calcular los umbrales.")
-    ordenados = sorted(scores)
+    umbrales = Umbrales(alto=UMBRAL_ALTO, medio=UMBRAL_MEDIO, porcentajes={})
+    conteo = dict.fromkeys(NivelRiesgo, 0)
+    for score in scores:
+        conteo[nivel_de(score, umbrales)] += 1
+    total = Decimal(len(scores))
     return Umbrales(
-        alto=_percentil(ordenados, 100 - p_alto),
-        medio=_percentil(ordenados, p_bajo),
+        alto=UMBRAL_ALTO,
+        medio=UMBRAL_MEDIO,
         porcentajes={
-            NivelRiesgo.ALTO.value: p_alto,
-            NivelRiesgo.MEDIO.value: p_medio,
-            NivelRiesgo.BAJO.value: p_bajo,
+            nivel.value: int(
+                (Decimal(conteo[nivel]) * 100 / total).quantize(Decimal(1), ROUND_HALF_EVEN)
+            )
+            for nivel in (NivelRiesgo.ALTO, NivelRiesgo.MEDIO, NivelRiesgo.BAJO)
         },
     )
 

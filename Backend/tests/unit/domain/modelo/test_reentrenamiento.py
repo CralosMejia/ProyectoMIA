@@ -13,10 +13,13 @@ from app.domain.common.enums import EstadoCiclo, FormaPago, Plan
 from app.domain.historico.ciclos import etiquetar
 from app.domain.historico.registro import RegistroHistorico
 from app.domain.modelo.reentrenamiento import (
+    DIAS_MARGEN_CANDIDATO,
     INTERVALO_MESES,
     AccionProgramada,
     CriteriosReentrenamiento,
     accion_programada,
+    ciclos_para_candidato,
+    corte_de_datos,
     es_ciclo_nuevo,
     etiquetar_ciclos,
     evaluar_criterios,
@@ -396,3 +399,66 @@ def test_fechas_perdidas_terminan_justo_antes_de_la_proxima() -> None:
     programada = date(2025, 3, 31)
     perdidas = fechas_perdidas(programada, HOY)
     assert perdidas[-1] < HOY <= proxima_tras_omitido(programada, HOY)
+
+
+# ---------------------------------------------------------------- ciclos_para_candidato (M01 f)
+
+
+def test_ciclos_para_candidato_excluye_comparacion_y_margen_de_30_dias() -> None:
+    assert DIAS_MARGEN_CANDIDATO == 30
+    comparacion = [
+        _ciclo("A", 1, date(2026, 5, 6), date(2026, 6, 5), no_renovo=True),
+        _ciclo("B", 2, date(2026, 6, 10), date(2026, 7, 10), no_renovo=False),
+    ]
+    a_31_dias = _ciclo("C", 3, date(2026, 4, 5), date(2026, 5, 5), no_renovo=True)
+    a_30_dias = _ciclo("D", 4, date(2026, 4, 6), date(2026, 5, 6), no_renovo=False)
+    dentro_del_margen = _ciclo("E", 5, date(2026, 5, 1), date(2026, 5, 31), no_renovo=True)
+    antiguo = _ciclo("F", 6, date(2025, 1, 1), date(2025, 1, 31), no_renovo=False)
+    evaluables = [antiguo, a_31_dias, a_30_dias, dentro_del_margen, *comparacion]
+
+    candidato = ciclos_para_candidato(evaluables, comparacion)
+
+    # vencimiento + 30 >= 2026-06-05 queda fuera: 2026-05-06 (30 d) fuera, 2026-05-05 (31 d) dentro.
+    assert [c.ref for c in candidato] == [6, 3]
+
+
+def test_ciclos_para_candidato_compara_por_identidad_y_conserva_el_orden() -> None:
+    comparacion = [_ciclo("A", 1, date(2026, 5, 6), date(2026, 6, 5), no_renovo=True)]
+    # Igual en valor pero otro ciclo (p. ej. un duplicado en el historial): no se descarta
+    # por ser de la comparacion, sino solo si cae en el margen.
+    gemelo_antiguo = replace(comparacion[0], fecha_vencimiento=date(2026, 1, 5))
+    otro = _ciclo("B", 2, date(2026, 1, 1), date(2026, 1, 31), no_renovo=False)
+    previo = _ciclo("C", 3, date(2025, 12, 1), date(2025, 12, 31), no_renovo=True)
+
+    candidato = ciclos_para_candidato([otro, comparacion[0], gemelo_antiguo, previo], comparacion)
+
+    assert [c for c in candidato] == [otro, gemelo_antiguo, previo]
+    assert all(c is not comparacion[0] for c in candidato)
+
+
+def test_ciclos_para_candidato_sin_comparacion_devuelve_todos() -> None:
+    evaluables = [_ciclo("A", 1, date(2026, 1, 1), date(2026, 1, 31), no_renovo=True)]
+
+    assert ciclos_para_candidato(evaluables, []) == evaluables
+
+
+# ---------------------------------------------------------------- corte de los datos (R-015 T11)
+
+
+@pytest.mark.parametrize(
+    ("hoy", "corte_vigente", "ultima_carga", "esperado"),
+    [
+        # Sin cargas de plantilla: los datos llegan hasta el corte con que se entreno el vigente.
+        (date(2026, 10, 15), date(2026, 8, 31), None, date(2026, 8, 31)),
+        # Una carga posterior amplia los datos hasta el dia de la carga.
+        (date(2026, 10, 15), date(2026, 8, 31), date(2026, 10, 1), date(2026, 10, 1)),
+        # Una carga anterior al corte del vigente no lo retrasa.
+        (date(2026, 10, 15), date(2026, 8, 31), date(2026, 7, 1), date(2026, 8, 31)),
+        # Nunca despues de hoy.
+        (date(2026, 8, 1), date(2026, 8, 31), date(2026, 9, 1), date(2026, 8, 1)),
+    ],
+)
+def test_corte_de_datos_es_el_ultimo_dia_con_datos_sin_pasar_de_hoy(
+    hoy: date, corte_vigente: date, ultima_carga: date | None, esperado: date
+) -> None:
+    assert corte_de_datos(hoy, corte_vigente, ultima_carga) == esperado

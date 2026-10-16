@@ -21,8 +21,14 @@ from app.domain.common.exceptions import DomainError
 from app.domain.common.predictor import FeatureRow, Prediction, PredictorModel, TrainedModel
 from app.domain.historico.ciclos import CicloEtiquetado, MotivoCiclo
 from app.domain.historico.registro import RegistroHistorico
-from app.domain.modelo.umbrales import calcular_umbrales
-from app.domain.modelo.variables import VARIABLES_CATEGORICAS, VARIABLES_NUMERICAS
+from app.domain.modelo.umbrales import UMBRAL_ALTO, UMBRAL_MEDIO, umbrales_fijos
+from app.domain.modelo.variables import (
+    CONJUNTO_SIN_FORMA_PAGO_NI_INICIO,
+    VARIABLES_CATEGORICAS,
+    VARIABLES_CATEGORICAS_MODELO,
+    VARIABLES_NUMERICAS,
+    VARIABLES_NUMERICAS_MODELO,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -156,8 +162,8 @@ def test_ejecutar_entrena_solo_evaluables_en_orden_del_notebook() -> None:
         "2026-07",
     ]
     assert llamada["labels"] == [1, 0, 1, 0, 1, 1]
-    assert llamada["numericas"] == VARIABLES_NUMERICAS
-    assert llamada["categoricas"] == VARIABLES_CATEGORICAS
+    assert llamada["numericas"] == VARIABLES_NUMERICAS_MODELO
+    assert llamada["categoricas"] == VARIABLES_CATEGORICAS_MODELO
 
 
 def test_ejecutar_historial_usa_no_excluidos_incluidos_pendientes() -> None:
@@ -197,7 +203,7 @@ def test_ejecutar_referencia_son_evaluables_con_vencimiento_en_2025() -> None:
     assert resultado.metadata_tecnica["ciclos_referencia_factores"] == 3
 
 
-def test_ejecutar_umbrales_con_scores_de_los_tres_meses_recientes() -> None:
+def test_ejecutar_umbrales_fijos_y_reparticion_de_los_tres_meses_recientes() -> None:
     doble, resultado = entrenar(seis_evaluables())
 
     # Meses con resultado: 2025-02, 2025-03, 2025-12, 2026-05, 2026-07 -> recientes 12, 05, 07.
@@ -209,9 +215,37 @@ def test_ejecutar_umbrales_con_scores_de_los_tres_meses_recientes() -> None:
         "2026-07",
     ]
     scores = [Decimal(str(f["ciclos_previos"])) / 10 + Decimal("0.05") for f in filas]
-    esperado = calcular_umbrales(scores)
-    assert resultado.umbrales == esperado
-    assert dict(resultado.porcentajes_umbral) == {"ALTO": 20, "MEDIO": 30, "BAJO": 50}
+    # R-015 T11: cortes fijos del notebook (0,70 / 0,50); los porcentajes son la reparticion
+    # observada de esos scores (todos < 0,50 -> BAJO).
+    assert (resultado.umbrales.alto, resultado.umbrales.medio) == (UMBRAL_ALTO, UMBRAL_MEDIO)
+    assert resultado.umbrales == umbrales_fijos(scores)
+    assert dict(resultado.porcentajes_umbral) == {"ALTO": 0, "MEDIO": 0, "BAJO": 100}
+
+
+def test_ejecutar_referencia_completa_montos_con_las_medianas_de_la_referencia() -> None:
+    # Notebook 13.3: X_train lleva monto_actual completado con las medianas de la particion de
+    # entrenamiento, no con las del modelo operativo (todos los evaluables).
+    ciclos = [
+        ciclo(1, socio="A", actividad=date(2025, 1, 5), monto=Decimal("30"), no_renovo=True),
+        ciclo(2, socio="B", actividad=date(2025, 3, 1), monto=None, no_renovo=False),
+        ciclo(3, socio="C", actividad=date(2026, 5, 1), monto=Decimal("100"), no_renovo=True),
+        ciclo(4, socio="D", actividad=date(2026, 6, 1), monto=Decimal("100"), no_renovo=False),
+        ciclo(5, socio="E", actividad=date(2026, 6, 5), monto=Decimal("100"), no_renovo=True),
+    ]
+    doble, resultado = entrenar(ciclos)
+
+    llamada = doble.train_llamadas[0]
+    features = llamada["features"]
+    referencia = llamada["referencia"]
+    assert isinstance(features, list) and isinstance(referencia, list)
+    entrenamiento_b = next(f for f in features if f["mes_vencimiento"] == "2025-03")
+    referencia_b = next(f for f in referencia if f["mes_vencimiento"] == "2025-03")
+    assert entrenamiento_b["monto_actual"] == Decimal("100")  # mediana operativa (30,100,100,100)
+    assert referencia_b["monto_actual"] == Decimal("30")  # mediana de la referencia (30)
+    assert resultado.metadata_tecnica["medianas_monto"] == {
+        "por_plan": {"MENSUAL": "100"},
+        "general": "100",
+    }
 
 
 def test_ejecutar_guarda_medianas_como_texto_decimal() -> None:
@@ -282,3 +316,82 @@ def test_ejecutar_ciclos_produce_el_mismo_modelo_que_ejecutar() -> None:
 
     assert por_ciclos == por_historico
     assert por_ciclos.metadata_tecnica["fecha_corte"] == "2026-08-31"
+
+
+# ---------------------------------------------------------------- M01: medianas y conjunto
+
+
+def test_ejecutar_medianas_solo_de_evaluables_pendientes_con_monto_no_las_cambian() -> None:
+    base = seis_evaluables()
+    con_pendientes = [
+        *base,
+        ciclo(
+            13,
+            socio="I",
+            actividad=date(2026, 7, 1),
+            estado=EstadoCiclo.PENDIENTE,
+            monto=Decimal("900"),
+        ),
+        ciclo(
+            14,
+            socio="J",
+            actividad=date(2026, 7, 5),
+            estado=EstadoCiclo.PENDIENTE,
+            plan=Plan.TRIMESTRAL,
+            vence=date(2026, 10, 3),
+            monto=Decimal("500"),
+        ),
+    ]
+
+    _, sin = entrenar(base)
+    _, con = entrenar(con_pendientes)
+
+    assert con.medianas == sin.medianas
+    assert con.metadata_tecnica["medianas_monto"] == {
+        "por_plan": {"MENSUAL": "30"},
+        "general": "30",
+    }
+
+
+def test_ejecutar_medianas_se_aplican_a_evaluables_sin_monto() -> None:
+    ciclos = [
+        *seis_evaluables(),
+        ciclo(15, socio="K", actividad=date(2025, 7, 1), monto=None, no_renovo=False),
+        ciclo(
+            16,
+            socio="L",
+            actividad=date(2026, 7, 10),
+            estado=EstadoCiclo.PENDIENTE,
+            monto=Decimal("999"),
+        ),
+    ]
+    doble, _ = entrenar(ciclos)
+
+    features = doble.train_llamadas[0]["features"]
+    assert isinstance(features, list)
+    sin_monto = [f for f in features if f["mes_vencimiento"] == "2025-07"]
+    assert [f["monto_actual"] for f in sin_monto] == [Decimal("30")]
+
+
+def test_ejecutar_entrena_con_el_conjunto_del_modelo_por_defecto() -> None:
+    doble, _ = entrenar(seis_evaluables())
+
+    llamada = doble.train_llamadas[0]
+    assert llamada["numericas"] == VARIABLES_NUMERICAS_MODELO
+    assert llamada["categoricas"] == VARIABLES_CATEGORICAS_MODELO
+
+
+def test_ejecutar_con_conjunto_sin_forma_pago_ni_inicio_entrena_solo_con_esas() -> None:
+    doble = PredictorDoble()
+
+    EntrenarModeloInicial(doble, variables=CONJUNTO_SIN_FORMA_PAGO_NI_INICIO).ejecutar(
+        seis_evaluables(), CORTE
+    )
+
+    llamada = doble.train_llamadas[0]
+    assert llamada["numericas"] == VARIABLES_NUMERICAS
+    assert llamada["categoricas"] == ("plan", "mes_vencimiento")
+    # Las filas siguen con las 10 columnas: el artefacto selecciona las suyas.
+    features = llamada["features"]
+    assert isinstance(features, list)
+    assert all(set(f) == set(VARIABLES_NUMERICAS + VARIABLES_CATEGORICAS) for f in features)

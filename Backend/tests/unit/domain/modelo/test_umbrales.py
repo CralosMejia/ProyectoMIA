@@ -1,4 +1,4 @@
-"""Umbrales por percentiles y nivel de riesgo (CU-05, decision (d)). Datos inventados."""
+"""Umbrales fijos del notebook y nivel de riesgo (CU-05, R-015 T11). Datos inventados."""
 
 from datetime import date
 from decimal import Decimal
@@ -8,11 +8,12 @@ import pytest
 from app.domain.common.enums import FormaPago, NivelRiesgo, Plan
 from app.domain.common.exceptions import DomainError
 from app.domain.modelo.umbrales import (
-    PORCENTAJES_POR_DEFECTO,
+    UMBRAL_ALTO,
+    UMBRAL_MEDIO,
     Umbrales,
-    calcular_umbrales,
     meses_recientes_con_resultado,
     nivel_de,
+    umbrales_fijos,
 )
 from app.domain.modelo.variables import CicloModelo
 
@@ -21,30 +22,53 @@ pytestmark = pytest.mark.unit
 DIEZ = [Decimal(i) / 10 for i in range(1, 11)]  # 0.1 ... 1.0
 
 
-def test_calcular_umbrales_percentil_lineal() -> None:
-    umbrales = calcular_umbrales(DIEZ)
-
-    assert umbrales.alto == Decimal("0.82")
-    assert umbrales.medio == Decimal("0.55")
+def test_umbrales_fijos_son_los_cortes_del_notebook() -> None:
+    # Notebook 13.2: ALTO si p >= 0,70; MEDIO si p >= 0,50; si no, BAJO.
+    assert (Decimal("0.70"), Decimal("0.50")) == (UMBRAL_ALTO, UMBRAL_MEDIO)
+    umbrales = umbrales_fijos(DIEZ)
+    assert (umbrales.alto, umbrales.medio) == (Decimal("0.70"), Decimal("0.50"))
     assert isinstance(umbrales.alto, Decimal)
 
 
-def test_calcular_umbrales_no_depende_del_orden_de_entrada() -> None:
-    assert calcular_umbrales(list(reversed(DIEZ))) == calcular_umbrales(DIEZ)
+def test_umbrales_fijos_no_dependen_de_los_scores() -> None:
+    bajos = umbrales_fijos([Decimal("0.1"), Decimal("0.2")])
+    altos = umbrales_fijos([Decimal("0.9"), Decimal("0.95")])
+
+    assert (bajos.alto, bajos.medio) == (altos.alto, altos.medio) == (UMBRAL_ALTO, UMBRAL_MEDIO)
 
 
-def test_porcentajes_por_defecto() -> None:
-    assert PORCENTAJES_POR_DEFECTO == (20, 30, 50)
-    assert calcular_umbrales(DIEZ).porcentajes == {"ALTO": 20, "MEDIO": 30, "BAJO": 50}
+def test_umbrales_fijos_porcentajes_son_la_reparticion_observada_de_los_scores() -> None:
+    # DIEZ: 0.7, 0.8, 0.9, 1.0 -> ALTO (40 %); 0.5, 0.6 -> MEDIO (20 %); 0.1..0.4 -> BAJO (40 %).
+    assert umbrales_fijos(DIEZ).porcentajes == {"ALTO": 40, "MEDIO": 20, "BAJO": 40}
 
 
-def test_niveles_con_diez_scores() -> None:
-    umbrales = calcular_umbrales(DIEZ)
-    niveles = [nivel_de(s, umbrales) for s in DIEZ]
+def test_umbrales_fijos_porcentajes_redondeo_bancario_a_entero() -> None:
+    # 1 de 8 = 12,5 % -> 12; 3 de 8 = 37,5 % -> 38; 4 de 8 = 50 %.
+    scores = [Decimal("0.75")] + [Decimal("0.55")] * 3 + [Decimal("0.2")] * 4
 
-    assert niveles.count(NivelRiesgo.ALTO) == 2
-    assert niveles.count(NivelRiesgo.MEDIO) == 3
-    assert niveles.count(NivelRiesgo.BAJO) == 5
+    assert umbrales_fijos(scores).porcentajes == {"ALTO": 12, "MEDIO": 38, "BAJO": 50}
+
+
+def test_umbrales_fijos_sin_scores_lanza_error() -> None:
+    with pytest.raises(DomainError):
+        umbrales_fijos([])
+
+
+@pytest.mark.parametrize(
+    ("score", "nivel"),
+    [
+        ("0.71019972", NivelRiesgo.ALTO),
+        ("0.70000000", NivelRiesgo.ALTO),
+        ("0.69999999", NivelRiesgo.MEDIO),
+        ("0.69706115", NivelRiesgo.MEDIO),
+        ("0.50000000", NivelRiesgo.MEDIO),
+        ("0.49999999", NivelRiesgo.BAJO),
+        ("0", NivelRiesgo.BAJO),
+        ("1", NivelRiesgo.ALTO),
+    ],
+)
+def test_nivel_de_con_los_umbrales_fijos(score: str, nivel: NivelRiesgo) -> None:
+    assert nivel_de(Decimal(score), umbrales_fijos([Decimal(score)])) is nivel
 
 
 def test_nivel_de_igual_al_umbral_queda_en_el_nivel_superior() -> None:
@@ -53,58 +77,6 @@ def test_nivel_de_igual_al_umbral_queda_en_el_nivel_superior() -> None:
     assert nivel_de(Decimal("0.6"), umbrales) is NivelRiesgo.ALTO
     assert nivel_de(Decimal("0.4"), umbrales) is NivelRiesgo.MEDIO
     assert nivel_de(Decimal("0.39999999"), umbrales) is NivelRiesgo.BAJO
-
-
-def test_niveles_con_mil_scores() -> None:
-    scores = [Decimal(i) / 1000 for i in range(1, 1001)]
-    umbrales = calcular_umbrales(scores)
-    niveles = [nivel_de(s, umbrales) for s in scores]
-
-    assert abs(niveles.count(NivelRiesgo.ALTO) - 200) <= 1
-    assert abs(niveles.count(NivelRiesgo.MEDIO) - 300) <= 1
-    assert abs(niveles.count(NivelRiesgo.BAJO) - 500) <= 1
-
-
-def test_umbrales_cuantizados_a_ocho_decimales() -> None:
-    scores = [Decimal("0.12345678"), Decimal("0.87654321"), Decimal("0.5")]
-
-    umbrales = calcular_umbrales(scores)
-
-    assert umbrales.alto == umbrales.alto.quantize(Decimal("0.00000001"))
-    assert umbrales.medio == Decimal("0.5")
-
-
-@pytest.mark.parametrize(
-    ("maximo", "medio"),
-    [("0.00000005", Decimal("0.00000002")), ("0.00000007", Decimal("0.00000004"))],
-)
-def test_calcular_umbrales_redondeo_bancario_a_ocho_decimales(maximo: str, medio: Decimal) -> None:
-    # P50 de [0, x] = x/2, que cae justo en la mitad del octavo decimal: ROUND_HALF_EVEN.
-    umbrales = calcular_umbrales([Decimal(0), Decimal(maximo)])
-
-    assert umbrales.medio == medio
-
-
-def test_calcular_umbrales_con_un_solo_score() -> None:
-    umbrales = calcular_umbrales([Decimal("0.4")])
-
-    assert umbrales.alto == umbrales.medio == Decimal("0.4")
-    assert nivel_de(Decimal("0.4"), umbrales) is NivelRiesgo.ALTO
-
-
-def test_porcentajes_que_no_suman_cien_lanzan_error() -> None:
-    with pytest.raises(ValueError, match="100"):
-        calcular_umbrales(DIEZ, (20, 30, 40))
-
-
-def test_porcentajes_negativos_lanzan_error() -> None:
-    with pytest.raises(ValueError):
-        calcular_umbrales(DIEZ, (-10, 60, 50))
-
-
-def test_sin_scores_lanza_error() -> None:
-    with pytest.raises(DomainError):
-        calcular_umbrales([])
 
 
 # ---------------------------------------------------------------- meses recientes

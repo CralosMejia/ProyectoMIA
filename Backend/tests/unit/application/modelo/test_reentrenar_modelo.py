@@ -1,8 +1,9 @@
 """CU-02: servicio ``ReentrenarModelo`` con dobles en memoria (sin BD ni scikit-learn).
 
 Reloj simulado: hoy = 2026-09-30 en Ecuador. El modelo vigente v1 se entreno el 2026-03-01
-con corte 2026-02-28; las membresias se registraron despues. Datos 100 % sinteticos: los
-socios son ids, sin nombres ni cedulas.
+con corte 2026-02-28; las membresias se registraron despues. Salvo que la prueba diga otra
+cosa, la ultima carga por plantilla es de hoy (R-015 T11: el corte de los datos es hoy).
+Datos 100 % sinteticos: los socios son ids, sin nombres ni cedulas.
 """
 
 import ast
@@ -17,6 +18,7 @@ import pytest
 
 from app.application.cargas import procesar_carga
 from app.application.modelo.dtos import ResultadoReentrenamientoDTO
+from app.application.modelo.mapeo import ciclo_de_membresia
 from app.application.modelo.ports import (
     EstadoSistema,
     MembresiaParaEntrenamiento,
@@ -37,7 +39,12 @@ from app.domain.common.enums import (
     ResultadoReentrenamiento,
 )
 from app.domain.common.predictor import FeatureRow, Prediction, TrainedModel
-from app.domain.modelo.reentrenamiento import CriteriosReentrenamiento
+from app.domain.modelo.reentrenamiento import (
+    CriteriosReentrenamiento,
+    ciclos_para_candidato,
+    etiquetar_ciclos,
+)
+from app.domain.modelo.umbrales import meses_recientes_con_resultado
 
 pytestmark = pytest.mark.unit
 
@@ -124,6 +131,7 @@ class Almacen:
     intentos: list[NuevoIntento] = field(default_factory=list)
     commits: int = 0
     aperturas: int = 0
+    ultima_carga_plantilla: datetime | None = None
 
     @property
     def vigente(self) -> ModeloGuardado | None:
@@ -154,8 +162,16 @@ class _Contexto:
     def estado(self) -> "_Estado":
         return _Estado(self)
 
+    @property
+    def cargas(self) -> "_Contexto":
+        return self
+
     def listar_para_entrenamiento(self) -> list[MembresiaParaEntrenamiento]:
         return list(self._almacen.membresias)
+
+    def ultima_carga_plantilla_hasta(self, instante: datetime) -> datetime | None:
+        ultima = self._almacen.ultima_carga_plantilla
+        return ultima if ultima is not None and ultima <= instante else None
 
     def crear(self, modelo: NuevoModelo) -> int:
         nuevo_id = len(self._modelos) + 1
@@ -258,6 +274,7 @@ class PredictorDoble:
     candidato_acierta: bool = True
     fallar: bool = False
     entrenamientos: list[int] = field(default_factory=list)
+    filas_entrenadas: list[list[FeatureRow]] = field(default_factory=list)
 
     def train(
         self,
@@ -270,6 +287,7 @@ class PredictorDoble:
         if self.fallar:
             raise RuntimeError("fallo del entrenamiento")
         self.entrenamientos.append(len(features))
+        self.filas_entrenadas.append(list(features))
         return TrainedModel(
             artefacto=f"entrenado-{len(self.entrenamientos)}".encode(),
             metadata_tecnica={"algoritmo": "doble"},
@@ -312,6 +330,7 @@ def escenario(
     predictor: PredictorDoble | None = None,
     ocupado: bool = False,
     reloj: RelojFijo | None = None,
+    ultima_carga: datetime | None = AHORA,
 ) -> tuple[ReentrenarModelo, Almacen, BloqueoDoble, PredictorDoble]:
     vigente = modelo_vigente()
     almacen = Almacen(
@@ -321,6 +340,7 @@ def escenario(
         membresias=membresias(100, 100) if datos is None else datos,
         modelos=[vigente] if con_vigente else [],
         vigente_id=vigente.id if con_vigente else None,
+        ultima_carga_plantilla=ultima_carga,
     )
     bloqueo = BloqueoDoble(ocupado=ocupado)
     doble = predictor or PredictorDoble()
@@ -377,6 +397,85 @@ def test_revisar_programado_entrenado_guarda_metadatos_y_ciclos_de_todo_el_histo
     candidato, final = doble.entrenamientos
     assert candidato < final == 200
     assert nuevo.ciclos_entrenamiento == 200
+
+
+def test_revisar_programado_candidato_sin_comparacion_ni_margen_de_30_dias() -> None:
+    # M01 (f). Comparacion = vencimientos de 2026-06 a 2026-08 (el primero, 2026-06-05):
+    # el candidato no ve ciclos que vencen desde el 2026-05-06 (vencimiento + 30 >= 06-05).
+    datos = membresias(100, 100)
+    servicio, _, _, doble = escenario(datos=datos)
+
+    servicio.revisar_programado()
+
+    ciclos = etiquetar_ciclos([ciclo_de_membresia(m) for m in datos], HOY)
+    evaluables = [c for c in ciclos if not c.excluido and c.no_renovo is not None]
+    comparacion = meses_recientes_con_resultado(evaluables, 3)
+    esperados = ciclos_para_candidato(evaluables, comparacion)
+    vencimientos = sorted(c.fecha_vencimiento for c in esperados if c.fecha_vencimiento)
+    assert vencimientos[-1] == date(2026, 5, 5)
+    assert min(c.fecha_vencimiento for c in comparacion if c.fecha_vencimiento) == date(2026, 6, 5)
+    candidato, final = doble.filas_entrenadas
+    assert len(candidato) == len(esperados) < len(evaluables) - len(comparacion)
+    assert sorted(str(f["mes_vencimiento"]) for f in candidato) == sorted(
+        f"{v.year:04d}-{v.month:02d}" for v in vencimientos
+    )
+    # El modelo final sigue entrenandose con todos los evaluables.
+    assert len(final) == len(evaluables) == 200
+
+
+# ---------------------------------------------------------------- (1b) corte de los datos
+
+
+CARGA_JULIO = datetime(2026, 7, 15, 15, 0, tzinfo=UTC)
+CORTE_JULIO = date(2026, 7, 15)
+
+
+def _evaluables_al(datos: list[MembresiaParaEntrenamiento], corte: date) -> int:
+    ciclos = etiquetar_ciclos([ciclo_de_membresia(m) for m in datos], corte)
+    return sum(1 for c in ciclos if not c.excluido and c.no_renovo is not None)
+
+
+@pytest.mark.parametrize("metodo", ["revisar_programado", "ejecutar_manual"])
+def test_etiqueta_al_corte_de_los_datos_no_a_hoy(metodo: str) -> None:
+    # R-015 T11: con la ultima carga el 2026-07-15 los datos terminan ese dia; los ciclos que
+    # vencen despues del 2026-06-15 aun no tienen su renovacion cargada: quedan pendientes, no
+    # se cuentan como nuevos ni se entrena con ellos como "no renovo".
+    datos = membresias(150, 150)
+    servicio, almacen, _, doble = escenario(datos=datos, ultima_carga=CARGA_JULIO)
+
+    resultado: ResultadoReentrenamientoDTO = getattr(servicio, metodo)()
+
+    assert resultado.resultado is ResultadoReentrenamiento.ENTRENADO
+    esperados = _evaluables_al(datos, CORTE_JULIO)
+    assert 150 <= esperados < _evaluables_al(datos, HOY)
+    (intento,) = almacen.intentos
+    assert intento.ciclos_nuevos == esperados
+    nuevo = almacen.vigente
+    assert nuevo is not None
+    assert nuevo.metadata_tecnica["fecha_corte"] == "2026-07-15"
+    assert nuevo.ciclos_entrenamiento == esperados
+    _, final = doble.filas_entrenadas
+    assert max(str(f["mes_vencimiento"]) for f in final) == "2026-06"
+    # La proxima fecha programada sigue contando desde hoy, no desde el corte de los datos.
+    assert almacen.estado.proxima_fecha_reentrenamiento == SEIS_MESES_DESPUES
+
+
+@pytest.mark.parametrize("metodo", ["revisar_programado", "ejecutar_manual"])
+def test_sin_cargas_posteriores_el_corte_es_el_del_vigente_y_no_hay_ciclos_nuevos(
+    metodo: str,
+) -> None:
+    # Sin cargas por plantilla los datos terminan en el corte del vigente (2026-02-28): ningun
+    # ciclo es nuevo aunque hoy sea 2026-09-30.
+    servicio, almacen, _, doble = escenario(ultima_carga=None)
+
+    resultado: ResultadoReentrenamientoDTO = getattr(servicio, metodo)()
+
+    assert resultado.resultado is ResultadoReentrenamiento.CRITERIOS_NO_CUMPLIDOS
+    assert "Hay 0 ciclos nuevos" in resultado.motivo
+    (intento,) = almacen.intentos
+    assert intento.ciclos_nuevos == 0
+    assert doble.entrenamientos == []
+    assert [m.version for m in almacen.modelos] == [1]
 
 
 # ---------------------------------------------------------------- (2) fecha perdida

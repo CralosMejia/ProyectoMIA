@@ -3,10 +3,16 @@
 - ``etiquetar_ciclos``: la misma regla que ``historico.ciclos.etiquetar`` sobre ``CicloModelo``
   (clasificacion del notebook y renovacion = otra membresia no ``DIARIO`` del mismo socio con
   actividad en ``[T, T+30]``; solo se excluye el propio ciclo por posicion).
-- Ciclo nuevo evaluable: evaluable al corte de hoy y con ``vencimiento + 30 > corte`` del
+- Ciclo nuevo evaluable: evaluable al corte de los datos y con ``vencimiento + 30 > corte`` del
   modelo vigente, es decir, el modelo vigente aun no conocia su resultado.
 - Criterios 1 a 4 de CU-02, con umbrales configurables.
+- Ciclos del candidato (M01, decision (f)): sin los de comparacion ni los que vencen en los
+  30 dias previos al primer vencimiento de la comparacion (su etiqueta no se conoceria antes).
 - Fecha programada: igual a hoy -> ejecutar; pasada -> omitir (no se recupera); si no, esperar.
+- Corte de los datos (R-015 T11, ``adoptar-modelo``): ultimo dia con datos = el mas reciente
+  entre el corte del modelo vigente y el dia de la ultima carga por plantilla, sin pasar de
+  hoy. Etiquetar a "hoy" con datos que terminan antes marcaria como "no renovo" a ciclos cuya
+  renovacion aun no se ha cargado; el notebook etiqueta a la fecha de corte de los datos.
 """
 
 from collections import defaultdict
@@ -27,6 +33,9 @@ from app.domain.modelo.variables import VARIABLES_CATEGORICAS, VARIABLES_NUMERIC
 
 INTERVALO_MESES = 6
 """RN-02.1: meses de calendario entre dos reentrenamientos programados."""
+
+DIAS_MARGEN_CANDIDATO = DIAS_OBSERVACION
+"""M01 (f): dias entre el ultimo vencimiento del candidato y el primero de la comparacion."""
 
 _COLUMNAS_REQUERIDAS: frozenset[str] = frozenset(VARIABLES_NUMERICAS + VARIABLES_CATEGORICAS)
 _DOS_DECIMALES = Decimal("0.01")
@@ -85,12 +94,41 @@ def etiquetar_ciclos(ciclos: Sequence[CicloModelo], corte: date) -> list[CicloMo
     return resultado
 
 
+def corte_de_datos(hoy: date, corte_vigente: date, ultima_carga: date | None) -> date:
+    """Ultimo dia con datos: ``min(hoy, max(corte_vigente, ultima_carga))``."""
+    corte = corte_vigente if ultima_carga is None else max(corte_vigente, ultima_carga)
+    return min(hoy, corte)
+
+
 def es_ciclo_nuevo(ciclo: CicloModelo, corte_vigente: date) -> bool:
-    """Evaluable (ya etiquetado al corte de hoy) cuyo resultado no conocia el modelo vigente."""
+    """Evaluable (etiquetado al corte de los datos) cuyo resultado no conocia el vigente."""
     vence = ciclo.fecha_vencimiento
     if ciclo.excluido or ciclo.no_renovo is None or vence is None:
         return False
     return vence + timedelta(days=DIAS_OBSERVACION) > corte_vigente
+
+
+def ciclos_para_candidato(
+    evaluables: Sequence[CicloModelo], comparacion: Sequence[CicloModelo]
+) -> list[CicloModelo]:
+    """Evaluables con que se entrena el candidato de CU-02; conserva el orden.
+
+    Fuera: los ciclos de ``comparacion`` (por identidad) y los que tienen
+    ``vencimiento + 30 >= min(vencimiento de la comparacion)``.
+    """
+    en_comparacion = {id(c) for c in comparacion}
+    vencimientos = [c.fecha_vencimiento for c in comparacion if c.fecha_vencimiento is not None]
+    limite = min(vencimientos) if vencimientos else None
+    margen = timedelta(days=DIAS_MARGEN_CANDIDATO)
+    return [
+        c
+        for c in evaluables
+        if id(c) not in en_comparacion
+        and (
+            limite is None
+            or (c.fecha_vencimiento is not None and c.fecha_vencimiento + margen < limite)
+        )
+    ]
 
 
 def _porcentaje(fraccion: Decimal) -> str:
