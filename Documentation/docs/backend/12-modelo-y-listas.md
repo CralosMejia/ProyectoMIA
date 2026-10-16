@@ -6,11 +6,12 @@ R-004 (día 3). CU-03 completo, CU-04, CU-05 y CU-12. Réplica del notebook `Not
 
 | Capa | Módulo | Responsabilidad |
 |---|---|---|
-| domain | `modelo/variables.py` | Variables en T−30 (§7.2–7.4): `mes_vencimiento` `"AAAA-MM"`, `inicio_aproximado` como texto, historial previo = ciclos no excluidos del socio con `fecha_actividad` estrictamente menor, `monto_historico` (`None` = 0), `dias_desde_ultima_membresia`, `antiguedad_dias`, imputación de `monto_actual` (mediana del plan → general) y `duracion_modelo` (`DURACION_ESTANDAR`). Orden de entrenamiento (`identidad`, `fecha_actividad`, `fecha_vencimiento`, orden de lectura). `PERIODO_REFERENCIA_FACTORES`. |
+| domain | `modelo/variables.py` | Variables en T−30 (§7.2–7.4): `mes_vencimiento` `"AAAA-MM"`, `inicio_aproximado` como texto, historial previo = ciclos no excluidos del socio con `fecha_actividad` estrictamente menor **y ≤ T−30** (M01: un previo con actividad = T−30 cuenta, con T−29 no), `monto_historico` (`None` = 0), `dias_desde_ultima_membresia`, `antiguedad_dias` (desde T−30), imputación de `monto_actual` (mediana del plan → general) y `duracion_modelo` (`DURACION_ESTANDAR`). `construir_variables` devuelve siempre las 10 columnas (el artefacto v1 sigue prediciendo). `calcular_medianas` solo recibe ciclos de entrenamiento. `ConjuntoVariables`, `CONJUNTO_COMPLETO`, `CONJUNTO_MODELO` (= variante sin `forma_pago` ni `inicio_aproximado`). Orden de entrenamiento (`identidad`, `fecha_actividad`, `fecha_vencimiento`, orden de lectura). `PERIODO_REFERENCIA_FACTORES`. |
 | domain | `modelo/cartera.py` | Cartera en `(fecha, fecha + horizonte]` sin `DIARIO` ni duración ≤ 21 o > 400; "ya renovó"; orden por score y top K (empates: vencimiento y `membresia_id` ascendentes). |
-| domain | `modelo/umbrales.py` | Umbrales por percentil lineal en `Decimal`, nivel de riesgo y próxima fecha de reentrenamiento. |
+| domain | `modelo/umbrales.py` | Cortes fijos `UMBRAL_ALTO = 0.70`, `UMBRAL_MEDIO = 0.50` (`umbrales_fijos`, reparto observado por nivel), `nivel_de` y `meses_recientes_con_resultado` (R-015; antes, percentil lineal). |
 | domain | `common/predictor.py`, `common/fechas.py` | Puerto `PredictorModel`: recibe `Decimal \| int \| str \| None`, devuelve `score: Decimal` cuantizado a 8 decimales (`NUMERIC(10,8)`). |
-| application | `modelo/{mapeo,entrenar_modelo}.py` | `EntrenarModeloInicial`: ciclos evaluables → variables → entrenamiento → referencia de factores → umbrales. |
+| application | `modelo/{mapeo,entrenar_modelo}.py` | `EntrenarModeloInicial(predictor, variables=CONJUNTO_MODELO)`: ciclos evaluables → medianas de esos evaluables (los pendientes no las cambian) → variables → entrenamiento con las columnas del conjunto → referencia de factores → umbrales. Medianas en `metadata_tecnica["medianas_monto"]`. |
+| application | `modelo/adoptar_modelo.py` | `AdoptarModelo` (R-015): comando `adoptar-modelo`, ver §Reentrenamiento. |
 | application | `sistema/{ports,migrar_historico,consultar_estado}.py` | `MigrarHistorico` (CU-03) y estado del sistema. |
 | application | `listas/{generar_lista,consultar_listas,ports,dtos}.py` | `GenerarLista` (CU-04) y consultas (CU-05). |
 | infrastructure | `ml/random_forest.py` | Único punto con scikit-learn y `Decimal ↔ float`. Pipeline §9.5, factores §13.3, artefacto joblib y `metadata_tecnica` con parámetros y versiones. |
@@ -23,8 +24,9 @@ R-004 (día 3). CU-03 completo, CU-04, CU-05 y CU-12. Réplica del notebook `Not
 - `SimpleImputer(median)` + `StandardScaler` para las numéricas; `SimpleImputer(most_frequent)` + `OneHotEncoder(handle_unknown="ignore")` para las categóricas; `RandomForestClassifier(n_estimators=300, max_depth=6, min_samples_leaf=20, class_weight="balanced", random_state=42)`, entrenado con **todos** los evaluables (1.564 con los libros reales).
 - **scikit-learn 1.8.0** (la del notebook): con 1.9.1 el bosque cambia (24/25 del top iguales, probabilidades ±0,001–0,016). Ver `Backend/README.md`.
 - El artefacto (joblib) se guarda en `modelos.artefacto` y **solo** se deserializa desde ahí (ADR-003). Serializar → deserializar da scores idénticos.
-- **Factores (§13.3):** hasta 3, aporte > 0,005, de mayor a menor, sin `mes_vencimiento`; formato `"Plan: TRIMESTRAL (+0,09)"`, numéricos con separador de miles `.`, `None` → `"sin dato"`. Referencia = medianas y modas de los evaluables con vencimiento en `PERIODO_REFERENCIA_FACTORES` = [2025-01-01, 2026-01-01), como `X_train` del notebook; parametrizable en `domain/modelo/variables.py`.
-- **Umbrales (CU-05):** `umbral_alto` = P80 y `umbral_medio` = P50 de los scores del v1 sobre los evaluables de los 3 meses de vencimiento más recientes; ALTO si `score ≥ umbral_alto`, MEDIO si `≥ umbral_medio`, si no BAJO; `porcentajes_umbral = {"ALTO":20,"MEDIO":30,"BAJO":50}`. **Difiere del notebook por diseño**, que usa umbrales fijos 0,70/0,50: el score y el orden coinciden, el nivel puede no coincidir.
+- **Factores (§13.3):** hasta 3, aporte > 0,005, de mayor a menor, sin `mes_vencimiento`; formato `"Plan: TRIMESTRAL (+0,09)"`, numéricos con separador de miles `.`, `None` → `"sin dato"`. Referencia = medianas y modas de los evaluables con vencimiento en `PERIODO_REFERENCIA_FACTORES` = vencimientos < 2025-12-02 (R-015: el `X_train` del notebook M01; antes [2025-01-01, 2026-01-01)); parametrizable en `domain/modelo/variables.py`. Solo se calculan sobre las variables del modelo: con M01 ya no aparecen "Forma de pago" ni "Inicio aproximado" como factor.
+- **Variables del modelo (M01):** numéricas `ciclos_previos`, `antiguedad_dias`, `duracion_modelo`, `monto_actual`, `monto_historico`, `dias_desde_ultima_membresia`; categóricas `plan`, `mes_vencimiento`. Elegidas por la regla (d) de R-015 ([ADR-014](../../adr/ADR-014-modelo-m01-adopcion-y-cortes-de-riesgo.md)).
+- **Umbrales (CU-05, R-015, decisión del usuario):** cortes fijos del notebook; ALTO si `score ≥ 0,70`, MEDIO si `≥ 0,50`, si no BAJO (igualdad → nivel superior). `porcentajes_umbral` = reparto observado (entero, redondeo bancario) de los scores sobre los evaluables de los 3 meses de vencimiento más recientes; informativo. App y notebook asignan ya el mismo nivel. ~~P80/P50 con `porcentajes_umbral = {"ALTO":20,"MEDIO":30,"BAJO":50}`~~ (R-004 (d), sustituido; el v1 del stack principal conserva esos umbrales y sus listas sus niveles).
 - La `version` la calcula el llamante (v1 en la migración).
 
 ## Migración al arrancar (CU-03, ADR-004)
@@ -49,11 +51,15 @@ Decisiones y motivos: [ADR-011](../../adr/ADR-011-reglas-del-reentrenamiento.md)
 | application | `modelo/mapeo.py` | Única conversión membresía → ciclo; la usan el modelo y las listas. `EntrenarModeloInicial.ejecutar_ciclos` entrena sobre ciclos ya etiquetados (mismos resultados que antes). |
 | infrastructure | `persistence/unit_of_work_reentrenamiento.py`, `repositories/{historial,modelo}.py` | Membresías para entrenamiento (con `created_at`, sin borradas), modelo e intento, próxima fecha; bloqueo consultivo propio (clave distinta de la migración). |
 | infrastructure | `planificador/reentrenamiento.py` | Hilo daemon: revisa al arrancar y cada hora; llama al servicio solo cuando cambia el día de negocio; si falla o el bloqueo está ocupado, reintenta en la vuelta siguiente. |
-| — | `app/cli.py` | `python -m app.cli reentrenar`: una línea con resultado y motivo; salida `0` intento registrado (`ENTRENADO`, `CRITERIOS_NO_CUMPLIDOS`, `NO_SUPERA_VIGENTE`), `1` `FALLIDO`/sistema no listo/configuración inválida, `2` reentrenamiento en curso o sin subcomando. |
+| — | `app/cli.py` | `python -m app.cli reentrenar`: una línea con resultado y motivo; salida `0` intento registrado (`ENTRENADO`, `CRITERIOS_NO_CUMPLIDOS`, `NO_SUPERA_VIGENTE`), `1` `FALLIDO`/sistema no listo/configuración inválida, `2` reentrenamiento en curso o sin subcomando. `python -m app.cli adoptar-modelo` (R-015): ver abajo. |
+
+- **Corte de los datos (R-015):** CU-02 y `adoptar-modelo` etiquetan los ciclos a `corte_de_datos(hoy, corte del vigente, día de la última carga por plantilla)` = `min(hoy, max(corte vigente, última carga))`, como el notebook (que etiqueta al 31-08-2026, fin de los libros). Etiquetar a "hoy" marcaría como "no renovó" a ciclos cuya renovación aún no se cargó.
+- **Margen del candidato (R-015, decisión (f)):** `ciclos_para_candidato` excluye la comparación y los ciclos con `vencimiento + 30 ≥ min(vencimiento de la comparación)`; esos ciclos quedan en el historial como pendientes. Medianas del candidato = las de sus ciclos. El modelo final se sigue entrenando con todos los evaluables.
+- **`adoptar-modelo` (R-015, ADR-014):** con migración `COMPLETADA` y modelo vigente, etiqueta al corte de los datos, entrena una vez con todos los evaluables y `CONJUNTO_MODELO` (sin candidato ni criterios), y en **una** transacción guarda la versión vigente + 1 como vigente (la anterior se conserva) y un intento `MANUAL`/`ENTRENADO` "Adopción del modelo M01" (`metadata_tecnica["adopcion"]`). No mueve la próxima fecha programada. Fallo del entrenamiento → nada guardado (ni `FALLIDO`). Comparte el bloqueo del reentrenamiento. Salidas: `0` "vN en uso"; `1` sistema no listo, fallo, base inaccesible o configuración inválida; `2` reentrenamiento en curso. **No es idempotente:** cada ejecución crea una versión; se ejecuta una sola vez. Ejecutado en el principal el 2026-10-15: v2 vigente (1.660 ciclos, `fecha_corte` 2026-09-30 por la carga mensual del 01-10-2026, reparto ALTO 15 / MEDIO 52 / BAJO 33 %); solo `modelos` +1 e `intentos_reentrenamiento` +1.
 
 - **Ciclo nuevo evaluable:** evaluable al corte de hoy y con `fecha_vencimiento + 30 > fecha_corte` del vigente (`metadata_tecnica["fecha_corte"]`; `>` estricto para no contar dos veces el borde). El dashboard usa la misma función (`ciclos_nuevos_evaluables`).
 - **Criterios** (configurables, `REENTRENAR_*`): ≥ 150 ciclos nuevos; ≥ 60 % de las membresías con `created_at` posterior al entrenamiento vigente con vencimiento (ninguna → no se cumple); ≥ 20 por clase entre los nuevos; todas las variables del pipeline presentes.
-- **Comparación:** evaluables de los 3 meses de vencimiento más recientes con resultado; el candidato se entrena sin ellos; `PR-AUC candidato < vigente` → `NO_SUPERA_VIGENTE` con ambas cifras. Si no es peor, el modelo final se entrena con **todos** los evaluables, versión = vigente + 1, con `fecha_corte` en `metadata_tecnica`.
+- **Comparación:** evaluables de los 3 meses de vencimiento más recientes con resultado; el candidato se entrena sin ellos ni los del margen de 30 días (arriba); `PR-AUC candidato < vigente` → `NO_SUPERA_VIGENTE` con ambas cifras. Si no es peor, el modelo final se entrena con **todos** los evaluables, versión = vigente + 1, con `fecha_corte` en `metadata_tecnica`.
 - **Transacciones:** modelo nuevo (desmarca el anterior, que se conserva), intento y próxima fecha en **una**; si algo falla, nada de eso se guarda y el intento `FALLIDO` va en una transacción aparte.
 - **Fechas:** programado → próxima = hoy + 6 meses tras `ENTRENADO`, `CRITERIOS_NO_CUMPLIDOS`, `NO_SUPERA_VIGENTE` o `FALLIDO`. Fecha pasada → un intento `OMITIDO` **por cada** fecha perdida, y la próxima = última fecha perdida + 6 meses (si cae hoy, reentrena a continuación). Manual → la fecha solo cambia si `ENTRENADO`.
 - Una carga por plantilla no dispara el reentrenamiento. Logs y motivos sin datos de socios (de una excepción, solo su tipo).
@@ -87,7 +93,9 @@ Decisiones y motivos: [ADR-011](../../adr/ADR-011-reglas-del-reentrenamiento.md)
 
 ## Conciliación con el notebook (T19)
 
-`python scripts/verificar_lista.py <carpeta>` (en memoria, sin BD) con scikit-learn 1.8.0: salida `0`. Cartera 59, ya renovaron 2, a priorizar 57 (57 socios), 1.564 ciclos de entrenamiento; top 25 con **probabilidades, orden y factores iguales** al notebook (§13.8). El empate en el corte (posición 25) se compara como conjunto.
+**Desde R-015 (M01):** `python scripts/verificar_lista.py <carpeta> [--referencia ../salidas]` (en memoria, sin BD, scikit-learn 1.8.0) lee las referencias **en tiempo de ejecución** de la carpeta git-ignorada `salidas/` del notebook (`m01/despues/parametros_modelo_operativo.json` y la hoja `cartera_completa` de `mvp/lista_operativa_2026-09.xlsx`; nunca se copian a archivos versionados) y compara **todas** las filas de la cartera: probabilidad a 8 decimales, nivel (0,70/0,50 en ambos), factores (texto exacto) y orden por grupo de empate. Los códigos de socio son HMAC-SHA256 con sal secreta (`MTABOLIC_SAL_CODIGOS` o `salidas/.sal_codigos`); la sal nunca se imprime. Ante un error no controlado solo imprime el tipo. Salidas: `0` sin diferencias, `1` alguna, `2` faltan libros, salidas o sal. Resultado: `0`, 0 diferencias en 57 filas (ALTO 2, MEDIO 39, BAJO 16), cartera 59, ya renovaron 2, 1.564 ciclos de entrenamiento.
+
+~~R-004: top 25 comparado contra cifras fijas en el script~~ (sustituido por lo anterior): salida `0`, 25/25 probabilidades, orden y factores iguales, empate en la posición 25 como conjunto.
 
 R-005 (decisión c): el script no pasa por la API ni por `GenerarLista` con la validación de fecha; construye su entrada con `model_construct` para mantener su ventana de 180 días y marca todas las membresías con `socio_con_cedula=True` para seguir comparando con el notebook. Sigue saliendo con `0`. Consecuencia: la lista de la app puede diferir del top 25 del notebook si en él hay socios sin cédula (por diseño).
 
@@ -98,7 +106,7 @@ R-005 (decisión c): el script no pasa por la API ni por `GenerarLista` con la v
 | (a) | Referencia de factores = evaluables con vencimiento en 2025 (`PERIODO_REFERENCIA_FACTORES`), como el notebook. Sustituye al criterio inicial del plan ("todo el entrenamiento"), con el que los factores no coincidían. |
 | (b) | Contrato: `GET /listas` nuevo; `fecha_generacion` pasa a `date`, se añaden `creada_en` y `monto_cobrado`; factores `[]` → "Sin factores de riesgo destacados". |
 | (c) | Fallo de migración → `PENDIENTE` + `FALTAN_DATOS_HISTORICOS`; reintento al reiniciar el backend. |
-| (d) | Umbrales por percentiles 20/30/50 (CU-05), no los fijos del notebook. |
+| (d) | ~~Umbrales por percentiles 20/30/50 (CU-05), no los fijos del notebook.~~ Sustituida en R-015: cortes fijos 0,70/0,50. |
 | (e) | Empates de score: vencimiento y `membresia_id` ascendentes. |
 | (f) | Datos del socio del registro más reciente en orden de lectura; `filas_duplicadas = 0`. |
 | — | scikit-learn fijado a 1.8.0; localizador solo `*Control*Gym*.xlsx`. |
@@ -112,6 +120,20 @@ R-005 (decisión c): el script no pasa por la API ni por `GenerarLista` con la v
 | (c) | `verificar_lista.py` conserva su ventana y trata a todos como "con cédula"; la app puede diferir del notebook. |
 | (d) | Las listas guardadas no se modifican: pueden tener socios sin cédula (`null`, "—" en pantalla) y horizontes > 31. Ninguna respuesta incluye `correo`. |
 | (e) | El Excel cambia Correo → Cédula y conserva score y aportes; la pantalla no. **Sustituida en R-008:** el Excel ya no lleva score ni aportes (ver §Excel). |
+
+## Decisiones de R-015 (mejora M01)
+
+Detalle metodológico: [mejoras/M01](../../mejoras/M01-modelo-sin-fuga-temporal.md). Decisión de arquitectura: [ADR-014](../../adr/ADR-014-modelo-m01-adopcion-y-cortes-de-riesgo.md).
+
+| | Decisión |
+|---|---|
+| (a) | Historial de un ciclo solo con registros de actividad ≤ T−30 (prueba anti-fuga primero). |
+| (b) | Medianas de monto solo con los ciclos de entrenamiento (app: evaluables con que entrena). |
+| (c)(f) | Márgenes de 30 días en la evaluación del notebook y entre el candidato y la comparación de CU-02. |
+| (d) | Variante sin `forma_pago` ni `inicio_aproximado` (`CONJUNTO_MODELO`). |
+| (e) | Puesta en uso con `adoptar-modelo` (vigente + 1), no por CU-02. |
+| (g) | `PERIODO_REFERENCIA_FACTORES` = vencimientos < 2025-12-02. |
+| — | Niveles con cortes fijos 0,70/0,50 (decisión del usuario); corte de los datos para etiquetar. |
 
 ## Pendientes
 

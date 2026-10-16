@@ -25,11 +25,12 @@ Tú indicas **cuántos socios quieres contactar primero** (por ejemplo, 25).
 Cada socio tiene un nivel: **alto**, **medio** o **bajo**.
 
 - Los niveles **no dependen** de cuántos prioritarios pidas. Pedir 10 o 50 no cambia el nivel de nadie.
-- Se fijaron una sola vez, al preparar el sistema con el historial del gimnasio:
-  - aproximadamente el **20 %** de socios con más riesgo es **alto**;
-  - el siguiente **30 %** es **medio**;
-  - el **50 %** restante es **bajo**.
-- Por eso lo normal es que los prioritarios salgan en nivel alto.
+- Dependen de la probabilidad de que el socio **no renueve**:
+  - **alto**: 70 % o más;
+  - **medio**: entre 50 % y 70 %;
+  - **bajo**: menos de 50 %.
+- Son los mismos cortes del estudio con que se construyó el modelo. Por eso puede haber listas con pocos socios en nivel alto: los primeros de la lista siguen siendo los de más riesgo aunque salgan en nivel medio.
+- Las listas generadas antes del 15-10-2026 usaron otra regla (por porcentajes: 20 % alto, 30 % medio, 50 % bajo) y conservan sus niveles.
 
 ## 4. Motivos
 

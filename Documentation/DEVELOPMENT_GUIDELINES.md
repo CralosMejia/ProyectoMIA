@@ -16,7 +16,7 @@ Entran todos los casos de uso, CU-00 a CU-12, varios en versión simplificada ([
 | CU-02 Reentrenar el modelo | Simplificado: fecha programada cada 6 meses sin recuperar fechas perdidas, comando manual y comparación contra el vigente. |
 | CU-03 Migrar el histórico inicial | Completo: automático en el primer arranque con la base vacía, atómico con el modelo v1 ([ADR-004](adr/ADR-004-migracion-datos-al-arrancar.md)). |
 | CU-04 Generar priorización | Completo. |
-| CU-05 Nivel de riesgo | Completo, umbrales por percentiles. |
+| CU-05 Nivel de riesgo | Completo, cortes fijos del notebook 0,70 / 0,50 (desde M01, R-015; antes, percentiles 20/30/50). |
 | CU-06 Parametrizar campañas | Simplificado: reglas solo por nivel de riesgo y tipo de plan. |
 | CU-07 Recomendar campañas | Simplificado: filtra por nivel y plan, ordena por prioridad. |
 | CU-08 / CU-10 Gestión | Simplificado: un solo formulario; una gestión por ciclo. |
@@ -49,7 +49,7 @@ No se implementa nada de esta sección. Si un requerimiento lo pide, el planner 
 
 - Cargar solo las filas válidas de un archivo con errores (CU-01).
 - Recuperar una fecha de reentrenamiento perdida porque el PC estaba apagado (CU-02).
-- Cambiar la lógica del notebook: revisar `inicio_aproximado` y `mes_vencimiento`, usar asistencias o los estados del registro (`BAJA`, `CONGELAMIENTO`, `REINGRESO`) en la etiqueta y la lista.
+- Cambiar la lógica del notebook: revisar `inicio_aproximado` y `mes_vencimiento`, usar asistencias o los estados del registro (`BAJA`, `CONGELAMIENTO`, `REINGRESO`) en la etiqueta y la lista. **Excepción ya ejecutada:** la mejora M01 del tutor (R-015, pedida explícitamente por el usuario tras la entrega) cambió las variables (corte T−30, medianas solo de entrenamiento), la partición (márgenes de 30 días) y retiró `forma_pago` e `inicio_aproximado` del modelo ([mejoras/M01](mejoras/M01-modelo-sin-fuga-temporal.md), [ADR-014](adr/ADR-014-modelo-m01-adopcion-y-cortes-de-riesgo.md)). Lo demás de este punto sigue diferido.
 - Días de congelamiento como dato propio.
 - Reglas de campaña por antigüedad, ciclos previos y vigencia (CU-06).
 - Editar una gestión cerrada o más de una gestión por ciclo (CU-08, CU-10).

@@ -33,7 +33,7 @@ El sistema no requiere autenticación por usuario. Funciona en **un solo PC** de
 | CU-02 | Reentrenar el modelo | **Simplificado**: se ejecuta en la fecha programada cada 6 meses, sin recuperar una fecha perdida, más un comando manual documentado. Incluye comparación contra el modelo vigente. |
 | CU-03 | Migrar el histórico inicial | **Completo**: automático en el primer arranque con la base vacía, atómico con el modelo v1. Todo lo demás depende de él. |
 | CU-04 | Generar priorización | **Completo.** |
-| CU-05 | Clasificar el nivel de riesgo | **Completo**, con umbrales por percentiles. |
+| CU-05 | Clasificar el nivel de riesgo | **Completo**, con los cortes fijos del notebook 0,70 / 0,50 (desde M01; antes, percentiles). |
 | CU-06 | Parametrizar campañas | **Simplificado**: reglas solo por nivel de riesgo y tipo de plan. |
 | CU-07 | Recomendar campañas | **Simplificado**: filtra por nivel y plan, ordena por prioridad. |
 | CU-08 | Asignar campaña y crear seguimiento | **Simplificado**: se resuelve en el mismo formulario de gestión que CU-10. |
@@ -275,7 +275,7 @@ Además, para **reemplazar** al modelo vigente, el modelo nuevo **no puede tener
 - **RN-02.4** La etiqueta observada entre T y T+30 nunca entra como predictor.
 - **RN-02.5** Solo hay un modelo vigente. Las versiones anteriores se conservan.
 - **RN-02.6** Los modelos se guardan dentro de la base de datos, para que entren en el mismo respaldo. Solo se cargan modelos generados por el propio sistema.
-- **RN-02.7** Las variables del modelo son las del notebook, incluidas `inicio_aproximado` y `mes_vencimiento`, y se calculan igual.
+- **RN-02.7** Las variables del modelo son las del notebook y se calculan igual. **Desde M01 (R-015, [ADR-014](adr/ADR-014-modelo-m01-adopcion-y-cortes-de-riesgo.md))** el modelo usa la variante sin `forma_pago` ni `inicio_aproximado` (8 variables, `mes_vencimiento` incluida), y el historial de cada ciclo solo admite registros con fecha de actividad ≤ T−30.
 
 ### Criterios de aceptación
 
@@ -288,6 +288,8 @@ Además, para **reemplazar** al modelo vigente, el modelo nuevo **no puede tener
 - El comando manual documentado crea una nueva versión cuando se cumplen los criterios.
 
 **Precisiones de la implementación (R-011, [ADR-011](adr/ADR-011-reglas-del-reentrenamiento.md)).** "Ciclo nuevo evaluable" = evaluable hoy y con vencimiento + 30 días posterior a la fecha de corte del modelo vigente. "Membresías nuevas" (criterio 2) = las registradas después del último entrenamiento. Si el PC estuvo apagado en varias fechas programadas, se registra un `OMITIDO` por cada una y la próxima fecha es 6 meses después de la última perdida. El sistema revisa al arrancar y cada hora. Los umbrales de los criterios son configurables por variables de entorno (`REENTRENAR_*`).
+
+**Precisiones de M01 (R-015, [ADR-014](adr/ADR-014-modelo-m01-adopcion-y-cortes-de-riesgo.md)).** Paso 4: los ciclos se etiquetan al **corte de los datos** = el más reciente entre el corte del modelo vigente y el día de la última carga por plantilla, sin pasar de hoy (etiquetar a "hoy" con datos que terminan antes marcaría como "no renovó" a quien aún no se ha cargado). Paso 6: el candidato se entrena además **sin** los ciclos que vencen en los 30 días previos al primer vencimiento del conjunto de comparación (margen de 30 días: su etiqueta no se conocería antes), y con las medianas de monto calculadas solo con sus ciclos de entrenamiento. Además existe el comando manual `python -m app.cli adoptar-modelo`, que pone en uso un modelo nuevo (versión vigente + 1) **sin** los criterios 1 a 4 ni la comparación; se usó una vez para adoptar el modelo M01.
 
 ---
 
@@ -422,22 +424,22 @@ Prioridad, nombre, cédula, plan, fecha de vencimiento, días para vencer, nivel
 
 ### Regla de umbrales
 
-Los umbrales se calculan **cada vez que se entrena un modelo** (CU-03 para v1 y CU-02 para las siguientes), a partir de los scores del nuevo modelo sobre los ciclos evaluables de los **últimos 3 meses con resultado conocido** (el mismo período que usa la comparación de CU-02):
+**Vigente desde M01 (R-015, decisión del usuario, [ADR-014](adr/ADR-014-modelo-m01-adopcion-y-cortes-de-riesgo.md)): cortes fijos del notebook.**
 
-| Nivel | Regla por defecto |
+| Nivel | Regla |
 |---|---|
-| **ALTO** | El 20 % de scores más altos |
-| **MEDIO** | El 30 % siguiente |
-| **BAJO** | El 50 % restante |
+| **ALTO** | score ≥ 0,70 |
+| **MEDIO** | 0,50 ≤ score < 0,70 |
+| **BAJO** | score < 0,50 |
 
-Los porcentajes son configurables. Los umbrales resultantes (valores de score) se guardan con la versión del modelo.
+Un score igual a un corte queda en el nivel superior. Cada modelo guarda sus umbrales (0,70 y 0,50) y, a título informativo, el reparto observado por nivel de sus scores sobre los evaluables de los **últimos 3 meses con resultado conocido** (`porcentajes_umbral`; con el modelo v2 del stack principal: ALTO 15 %, MEDIO 52 %, BAJO 33 %). Así la app y el notebook asignan el mismo nivel a cada socio. Consecuencia aceptada: en una lista concreta puede haber muy pocos socios en ALTO (en la lista de septiembre del notebook, 2 de 57).
 
-Se usan percentiles, y no probabilidades fijas, porque el notebook mostró que las probabilidades del modelo están desplazadas hacia abajo: con los cortes de 0,70 y 0,50, casi ningún socio aparecía como ALTO.
+~~Regla original (R-004, decisión (d)): percentiles sobre los scores de los últimos 3 meses — ALTO el 20 % más alto, MEDIO el 30 % siguiente, BAJO el 50 % restante —, elegida porque con los cortes 0,70/0,50 casi ningún socio aparecía como ALTO.~~ Sustituida en R-015.
 
 ### Reglas de negocio
 
 - **RN-05.1** Cada versión del modelo conserva sus umbrales.
-- **RN-05.2** Cambiar los porcentajes afecta solo a los modelos que se entrenen después; no modifica las listas ya guardadas.
+- **RN-05.2** Cambiar los cortes afecta solo a los modelos que se entrenen después; no modifica las listas ya guardadas (las listas hechas con v1 conservan sus niveles por percentiles).
 - **RN-05.3** El score se presenta como **indicador de prioridad**, no como la probabilidad exacta de que un socio no renueve.
 
 ### Criterios de aceptación
@@ -793,7 +795,7 @@ Como el histórico no cumple la plantilla, algunos campos que la plantilla exige
 | Reconstrucción temporal | Reutiliza las reglas de ciclo, T−30, T+30, elegibilidad y exclusiones (Parte 5). |
 | Entrenamiento (CU-02, CU-03) | Reutiliza el Random Forest operativo y su pipeline (Secciones 9.5 y 13.8). Añade versionado, criterios de reentrenamiento y guardado en la base. |
 | Predicción (CU-04) | Reutiliza la cartera futura, la exclusión de renovados, el cálculo de variables, el score y los factores principales (Sección 13.8). |
-| Nivel de riesgo (CU-05) | Cambia los umbrales fijos del notebook por percentiles. |
+| Nivel de riesgo (CU-05) | Reutiliza los umbrales fijos del notebook 0,70 / 0,50 (desde M01, R-015; hasta entonces se cambiaban por percentiles). |
 | Exportación (CU-12) | Reutilizaba las hojas `top_K`, `cartera_completa` y `resumen`; desde R-008 el Excel replica las tablas de la pantalla (§15). |
 | Campañas, gestión, alertas y dashboard (CU-06 a CU-11) | Nuevos; no existen en el notebook. |
 

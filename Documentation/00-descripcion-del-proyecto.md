@@ -45,7 +45,7 @@ Convertir el prototipo predictivo en un **proceso cerrado de retención**: ident
 | Migración del histórico | CU-03 | En el primer arranque con la base vacía, carga los libros 2025–2026 y entrena el modelo v1 en una sola operación atómica. |
 | Carga de datos nuevos | CU-01 | Subida de la plantilla oficial (máx. 500 filas) con vista previa; si una fila es inválida, no se carga nada. |
 | Reentrenamiento | CU-02 | Automático cada 6 meses y por comando manual; se compara con el modelo vigente antes de reemplazarlo. |
-| Lista priorizada | CU-04, CU-05 | A pedido del usuario, para una fecha dada: socios por vencer ordenados por riesgo, con nivel alto/medio/bajo por percentiles. |
+| Lista priorizada | CU-04, CU-05 | A pedido del usuario, para una fecha dada: socios por vencer ordenados por riesgo, con nivel alto/medio/bajo por cortes de probabilidad 0,70 / 0,50 (desde M01; antes, percentiles). |
 | Campañas | CU-06, CU-07 | Mtabolic define sus campañas con reglas por nivel de riesgo y plan; el sistema sugiere las compatibles para cada socio. |
 | Gestión y seguimiento | CU-08, CU-10 | Un formulario para asignar campaña y fecha de seguimiento y, más tarde, registrar el resultado. Una gestión por ciclo. |
 | Alertas | CU-09 | Contador de seguimientos vencidos, para hoy y para los próximos 7 días, dentro de la aplicación. |

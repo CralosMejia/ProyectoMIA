@@ -5,9 +5,182 @@
 
 ## ACTIVO
 
-_(vacío)_
+_(ninguno)_
 
 ## TERMINADOS RECIENTEMENTE
+
+### R-015 — Mejora M01 (tutor): variables solo con datos ≤ T−30, medianas solo de entrenamiento, márgenes de 30 días, reentrenamiento y variante sin `forma_pago`/`inicio_aproximado`; la app adopta el modelo nuevo · **DONE** 2026-10-15
+
+**Cierre:** documento para la tesis [mejoras/M01](mejoras/M01-modelo-sin-fuga-temporal.md) · [ADR-014](adr/ADR-014-modelo-m01-adopcion-y-cortes-de-riesgo.md). Seguridad: sin critical/high; S1 (códigos MTB sha256 sin sal → HMAC-SHA256 con sal secreta), S2 (transacciones bancarias en §2.5 → columna tapada) y S3 (`verificar_lista` solo imprime el tipo de error) cerrados; historial de git no reescrito (repositorio privado). Pruebas: pass (pytest backend, 862 Vitest, 10 E2E en 8081, `verificar_lista` 0 diferencias en 57 filas).
+
+**Decisiones finales**
+- Variante elegida por la regla (d): PR-AUC val RF 0,7204 vs 0,7284, IC 95 % de la diferencia [−0,040; +0,027] contiene 0; además cumple los tres criterios de §11.3.
+- Niveles de riesgo con cortes fijos 0,70/0,50 (decisión del usuario); sustituye la decisión (d) de R-004 (percentiles 20/30/50).
+- Etiquetado al corte de los datos `min(hoy, max(corte vigente, última carga))` en CU-02 y `adoptar-modelo` (añadido en T11 para igualar al notebook).
+- Margen de 30 días (no 60): limitación declarada.
+- Las salidas del notebook quedaron en `salidas/m01/` (no en `Notebookes/salidas_m01/`) y las figuras en `Documentation/claude/mejoras/M01/`, ambas fuera de git.
+- T13: v2 vigente en el principal (1.660 ciclos, `fecha_corte` 2026-09-30, reparto ALTO 15 / MEDIO 52 / BAJO 33 %), respaldo `respaldos/proyectofinal-20261015-235425`, v1 conservado, conteos de negocio idénticos.
+
+**Objetivo:** el notebook `Notebookes/MVP.ipynb` y la app calculan las variables sin fuga temporal (prueba automática anti-fuga), evalúan con partición con márgenes y bootstrap por socio, comparan la variante sin dos variables, y la app pone en uso el modelo resultante (v2) con una lista idéntica a la del notebook nuevo.
+
+**Fuente:** petición del usuario (recomendaciones del tutor, [mejoras/README](mejoras/README.md)) · notebook §7.2–7.4, §8.2, §9.6, §11–§12.9, §13.3, §13.8, §14 · [backend/12](docs/backend/12-modelo-y-listas.md) · [ADR-005](adr/ADR-005-fidelidad-al-notebook-del-modelo-v1.md), [ADR-011](adr/ADR-011-reglas-del-reentrenamiento.md), [ADR-002](adr/ADR-002-ml-en-infraestructura.md).
+
+**Notas de alcance del planner**
+- [DEVELOPMENT_GUIDELINES §Fuera de alcance](DEVELOPMENT_GUIDELINES.md) difiere "cambiar la lógica del notebook: revisar `inicio_aproximado`…". El usuario lo pide **explícitamente** como mejora posterior a la entrega (carpeta `mejoras/`, decisiones ya tomadas); se ejecuta y DOC-1 registra la excepción en la guía. No se añaden hiperparámetros automáticos ni otros algoritmos.
+- Sin migraciones de esquema, sin endpoints nuevos, sin cambios de frontend. Dominio sin pandas/numpy/sklearn (ADR-002); montos y métricas guardadas en `Decimal`; `float` solo en `infrastructure/ml/random_forest.py`.
+- Listas, predicciones y gestiones existentes se conservan (hechas con v1, `modelo_id` intacto). El artefacto v1 sigue cargable: `construir_variables` devuelve **siempre** las 10 columnas y cada artefacto selecciona las suyas (`numericas`/`categoricas` guardadas en el artefacto).
+- Stack principal (8080): **no se crean datos de prueba**; v2 entra en uso solo en T13, con respaldo previo y conteos. Pruebas con BD solo en PostgreSQL de pruebas y en `mtabolic-e2e` (8081).
+
+**Definiciones fijadas por el planner (reversibles; avisar al usuario)**
+- (a) **Corte T−30:** un "dato con fecha" es un registro de membresía fechado por su `fecha_actividad`. Historial previo de un ciclo = ciclos no excluidos del mismo socio con `fecha_actividad < actividad del ciclo` **y** `fecha_actividad ≤ T−30`. `ciclos_previos`, `monto_historico`, `dias_desde_ultima_membresia` y `antiguedad_dias` salen solo de ese historial. Los campos del propio ciclo (plan, forma de pago, monto, duración, vencimiento, `inicio_aproximado`) son el objeto de la predicción y se admiten. Si el developer detecta otra vía de fuga (p. ej. el estado `EXCLUIDO` de un previo depende del corte), la prueba anti-fuga manda y se documenta.
+- (b) **Medianas de monto:** se ajustan con los ciclos del conjunto de entrenamiento con monto conocido (en la evaluación: partición de entrenamiento; en el modelo operativo y en la app: los ciclos **evaluables** usados para entrenar, no los pendientes) y se aplican tal cual a validación, prueba y predicción (se guardan en `metadata_tecnica["medianas_monto"]`, como hoy).
+- (c) **Márgenes:** entrenamiento = vencimiento `< 2026-01-01 − 30 d` (≤ 2025-12-01); validación = `2026-01-01 ≤ T < 2026-05-01 − 30 d`; prueba = `T ≥ 2026-05-01` (mismo final que hoy). Los ciclos del margen se descartan de la evaluación. Es lo que pidió el usuario (30 d = la etiqueta del entrenamiento se conoce antes de que empiece el conjunto siguiente); el criterio estricto "conocida en T−30 del primer ciclo siguiente" exigiría 60 d → se deja como limitación en M01 salvo que el usuario diga otra cosa.
+- (d) **Variante "igual o mejor":** la variante sin `forma_pago` ni `inicio_aproximado` se adopta si su PR-AUC en **validación** (métrica de selección del notebook §11.3) es ≥ la del modelo completo, **o** si el IC 95 % bootstrap por socio de la diferencia (variante − completo) contiene 0. Prueba solo informa.
+- (e) **Puesta en uso de v2:** CU-02 exige ≥ 150 ciclos nuevos y otros criterios que hoy no se cumplen; v2 se adopta con un **comando manual nuevo** `python -m app.cli adoptar-modelo` (versión = vigente + 1, intento `MANUAL`/`ENTRENADO` con motivo "Adopción del modelo M01", sin pasar por los criterios de CU-02, una transacción). Requiere ADR-014 (DOC-1). Una instalación limpia (CU-03) entrenará ya el modelo M01 como v1.
+- (f) **CU-02:** sí necesita el margen: el candidato se entrena sin los ciclos de comparación **ni** los que vencen en los 30 días previos al primer vencimiento de la comparación; medianas del candidato = las de su entrenamiento.
+- (g) `PERIODO_REFERENCIA_FACTORES` (socio típico de §13.3) se alinea con el nuevo `X_train` del notebook (`hasta` = 2025-12-02) para que los factores coincidan.
+
+**Tareas** — lote A (notebook/análisis: `Notebookes/**`) y lote B (app: `Backend/**`) tienen archivos disjuntos. 🗄 = usa base de datos.
+
+Lote A · notebook (secuencial, un solo archivo principal)
+
+- [x] **T1** · `domain` (análisis) · Línea base "antes"
+  - Archivos: `Notebookes/MVP.ipynb` (solo lectura de salidas guardadas, principal), `Notebookes/MVP_v1.ipynb` (solo lectura), `Notebookes/salidas_m01/antes/*.csv` (nuevos).
+  - Docs: `Documentation/docs/backend/12-modelo-y-listas.md` §Modelo, §Conciliación.
+  - Aceptación:
+    - Si `MVP_v1.ipynb` no es igual (código) a `MVP.ipynb`, se guarda una copia `Notebookes/MVP_antes_M01.ipynb` del estado actual antes de editar.
+    - `salidas_m01/antes/` contiene, tomadas de las salidas guardadas del notebook actual: tamaños y tasa por partición (§8.2), métricas de validación y prueba de piso, regresión logística y Random Forest (§11.2, §12.1), bootstrap (§12.7, por fila, como estaba), importancia por permutación (§12.9) y top 25 de septiembre (§13.8). Cada CSV con su sección de origen en el nombre.
+  - Pruebas: ninguna de código; registro en `.harness/tests.md`.
+
+- [x] **T2** · `domain` (análisis) · Prueba anti-fuga (TDD) y variables con corte T−30
+  - Archivos: `Notebookes/MVP.ipynb` (principal: §7.2 y nueva §7.5 "Prueba anti-fuga").
+  - Docs: este plan, definición (a); `docs/backend/12-modelo-y-listas.md` §Componentes (`variables.py`).
+  - Aceptación:
+    - **Primero** se añade la celda de prueba §7.5 y se ejecuta contra el §7.2 actual: para una muestra de ciclos (todas las particiones, semilla 42), altera/duplica/borra todos los registros con `fecha_actividad > T−30` (montos, fechas, planes, formas de pago, ciclos nuevos) y recalcula las variables con las medianas fijas; con la lógica actual **falla** (se registra el ciclo y la variable que cambió).
+    - Tras corregir §7.2 con la definición (a), la misma celda pasa (`assert` sin excepciones) para las 10 variables y también para la cartera de §13.8.
+    - El notebook se ejecuta completo de arriba abajo sin errores (`jupyter nbconvert --execute`, scikit-learn 1.8.0, libros de `plantillas/`).
+  - Pruebas: celda §7.5 (falla antes, pasa después; salida registrada en `.harness/tests.md`).
+
+- [x] **T3** · `domain` (análisis) · Medianas solo de entrenamiento y partición con márgenes
+  - Archivos: `Notebookes/MVP.ipynb` (principal: §7.3, §8.1–8.2, §13.8 paso 3).
+  - Docs: definiciones (b) y (c).
+  - Aceptación:
+    - `mediana_por_plan`/`mediana_general` se calculan solo con la partición de entrenamiento y se aplican sin recalcular a validación, prueba y cartera; el modelo operativo de §13.8 usa las de sus evaluables. Una celda comprueba que las medianas no cambian al alterar montos de validación/prueba.
+    - `asignar_particion` aplica los márgenes de (c); tabla §8.2 con tamaño, socios, tasa de no renovación y descartados por margen de cada conjunto; una celda verifica `max(T_train) + 30 < min(T_val)` y `max(T_val) + 30 < min(T_test)`.
+    - Ningún socio-ciclo aparece en dos conjuntos; notebook ejecuta completo.
+  - Pruebas: celdas de control en §8.2 y §14.2.
+
+- [x] **T4** · `domain` (análisis) · Reentrenamiento y métricas nuevas (RL y RF, semilla 42)
+  - Archivos: `Notebookes/MVP.ipynb` (principal: §9.6–§12.9, §14.1).
+  - Docs: definición (c); `docs/backend/12-modelo-y-listas.md` §Modelo (hiperparámetros sin cambio).
+  - Aceptación:
+    - RL y RF con los mismos hiperparámetros y `random_state=SEMILLA=42`; tablas de §11.2, §12.1, §12.3–§12.8 regeneradas.
+    - §12.7: bootstrap **por socio** (remuestrea socios con reemplazo y toma todos sus ciclos de prueba; 1.000 réplicas, `default_rng(42)`), IC 95 % de PR-AUC del modelo, del piso y de la diferencia; el texto del notebook dice "por socio".
+    - §12.9: importancia por permutación (`n_repeats=10`, `random_state=42`, `average_precision`) en validación, con media y desviación.
+    - Figuras del notebook guardadas como PNG en `Notebookes/salidas_m01/figuras/` con nombre por sección; CSV de §14.1 regenerados en `salidas_mvp/`.
+  - Pruebas: notebook ejecuta completo; §14.2 en verde.
+
+- [x] **T5** · `domain` (análisis) · Variante sin `forma_pago` ni `inicio_aproximado` y tabla antes/después
+  - Archivos: `Notebookes/MVP.ipynb` (principal: nueva §12.11), `Notebookes/salidas_m01/despues/*.csv` (nuevos).
+  - Docs: definición (d).
+  - Aceptación:
+    - RL y RF de la variante con la misma partición, semilla e hiperparámetros; mismas métricas, bootstrap por socio e importancia por permutación.
+    - Tabla única antes / después (completo) / después (variante) con **todas** las métricas de validación y prueba, tamaños de conjuntos e IC; exportada a `salidas_m01/despues/comparacion_antes_despues.csv`.
+    - Celda que aplica la regla (d) e imprime la decisión (`VARIABLES_MODELO` elegido) y su justificación numérica; §13 usa ese conjunto.
+  - Pruebas: notebook ejecuta completo.
+
+- [x] **T6** · `domain` (análisis) · Lista operativa nueva (§13.8) y controles
+  - Archivos: `Notebookes/MVP.ipynb` (principal: §13.3, §13.8, §14.1–§14.2, §15).
+  - Docs: `docs/backend/12-modelo-y-listas.md` §Conciliación; definición (g).
+  - Aceptación:
+    - Modelo operativo con el conjunto elegido en T5 y medianas de (b); referencia de factores = nuevo `X_train`; lista de septiembre (31-08-2026) top 25 exportada (`salidas_mvp/`, CSV con código anónimo, probabilidad a 3 decimales, factores).
+    - §14.2 añade el control "variables sin datos posteriores a T−30" (reutiliza §7.5) y pasa; §15 actualizada con las cifras nuevas.
+  - Pruebas: notebook ejecuta completo; controles §14.2 en verde.
+
+Lote B · app (backend)
+
+- [x] **T7** · `domain` · Variables con corte T−30 y medianas de entrenamiento (TDD)
+  - Archivos: `Backend/app/domain/modelo/variables.py` (principal), `Backend/tests/unit/domain/modelo/test_variables.py`.
+  - Docs: `Documentation/docs/backend/12-modelo-y-listas.md` §Componentes por capa (`modelo/variables.py`); definiciones (a), (b).
+  - Aceptación:
+    - **Primero** `test_construir_variables_datos_posteriores_a_t30_alterados_no_cambian_variables`: historial con ciclos del socio con `fecha_actividad > T−30` (alterados, añadidos o quitados) y otros socios → las 10 variables iguales; **falla** con el código actual (ciclo previo con actividad entre T−30 y la actividad del ciclo).
+    - `construir_variables` aplica (a); caso: previo con actividad = T−30 cuenta, con T−29 no cuenta.
+    - `calcular_medianas` se usa solo con ciclos de entrenamiento: nueva prueba que demuestra que montos de ciclos no pasados no cambian el resultado; ningún `float` en el dominio; sin imports de pandas/numpy/sklearn (`lint-imports`).
+    - `construir_variables` sigue devolviendo las 10 claves (superconjunto) para que el artefacto v1 siga prediciendo.
+  - Pruebas: unitarias (TDD); `ruff`, `mypy`, `lint-imports`, `pytest tests/unit/domain/modelo`.
+
+- [x] **T8** · `application` · Entrenamiento con medianas de evaluables y conjunto de variables configurable
+  - Archivos: `Backend/app/application/modelo/entrenar_modelo.py` (principal), `Backend/tests/unit/application/modelo/test_entrenar_modelo.py`, `Backend/app/application/listas/generar_lista.py` (solo si cambia la firma), `Backend/app/domain/modelo/variables.py` (constantes `VARIABLES_MODELO_*`, `PERIODO_REFERENCIA_FACTORES`).
+  - Docs: `docs/backend/12-modelo-y-listas.md` §Modelo y §Lista priorizada; definiciones (b), (g).
+  - Aceptación:
+    - `ejecutar_ciclos` calcula medianas solo con los evaluables que entrena (pendientes con monto no las cambian → prueba) y las guarda en `metadata_tecnica`.
+    - Las variables con que se entrena salen de constantes del dominio (`VARIABLES_NUMERICAS_MODELO`, `VARIABLES_CATEGORICAS_MODELO`); por defecto el conjunto completo hasta que T11 fije el elegido. Con un predictor doble, `train` recibe exactamente esas listas.
+    - `GenerarLista` y CU-02 usan las medianas del modelo vigente (`medianas_de(metadata)`) para la cartera; prueba existente de lista en verde.
+    - `PERIODO_REFERENCIA_FACTORES.hasta = 2025-12-02`.
+  - Pruebas: unitarias de aplicación con dobles; suite `pytest tests/unit`.
+
+- [x] **T9** · `application` · Margen de 30 días en la comparación de CU-02
+  - Archivos: `Backend/app/application/modelo/reentrenar_modelo.py` (principal), `Backend/app/domain/modelo/reentrenamiento.py`, `Backend/tests/unit/domain/modelo/test_reentrenamiento.py`, `Backend/tests/unit/application/modelo/test_reentrenar_modelo.py`.
+  - Docs: `docs/backend/12-modelo-y-listas.md` §Reentrenamiento; `adr/ADR-011-reglas-del-reentrenamiento.md`; definición (f).
+  - Aceptación:
+    - Función de dominio `ciclos_para_candidato(evaluables, comparacion)` excluye la comparación y los ciclos con `vencimiento + 30 ≥ min(vencimiento de la comparación)`; caso borde a 30 y 31 días.
+    - El candidato se entrena solo con esos ciclos y sus medianas; prueba con predictor doble verifica los ciclos recibidos. El modelo final sigue entrenándose con todos los evaluables.
+    - Resultados `CRITERIOS_NO_CUMPLIDOS`/`NO_SUPERA_VIGENTE`/`ENTRENADO`, transacciones y fechas sin cambios (pruebas existentes en verde).
+  - Pruebas: unitarias dominio + aplicación.
+
+- [x] **T10** · `application` · Comando `adoptar-modelo` (puesta en uso de v2) 🗄
+  - Archivos: `Backend/app/application/modelo/adoptar_modelo.py` (principal, nuevo), `Backend/app/cli.py`, `Backend/tests/unit/application/modelo/test_adoptar_modelo.py` (nuevo), `Backend/tests/integration/test_adoptar_modelo.py` (nuevo).
+  - Docs: `docs/backend/12-modelo-y-listas.md` §Reentrenamiento (tabla `app/cli.py`); definición (e).
+  - Aceptación:
+    - `python -m app.cli adoptar-modelo` con sistema `LISTO` → entrena con todos los evaluables al día de negocio (reloj inyectado), crea versión = vigente + 1 vigente (el anterior se conserva, no vigente) e intento `MANUAL`/`ENTRENADO` con motivo "Adopción del modelo M01" **en una sola transacción**; salida `0` y una línea "v2 en uso".
+    - Sistema no listo o sin modelo vigente → salida `1`, nada guardado; bloqueo de reentrenamiento ocupado → salida `2`. Fallo del entrenamiento → nada guardado (prueba de reversión).
+    - Integración (PostgreSQL de pruebas): tras adoptar, `listas_priorizadas`, `predicciones` y `gestiones_retencion` previas sin cambios (mismo `modelo_id` v1); una lista nueva usa v2; un `GET` de una lista v1 sigue mostrando `modelo_version` "v1". Logs sin datos personales.
+    - No cambia la próxima fecha de reentrenamiento programado.
+  - Pruebas: unitarias con dobles; integración con BD real.
+
+- [x] **T11** · `infra` · `verificar_lista.py` contra el notebook nuevo y conjunto de variables elegido
+  - Archivos: `Backend/scripts/verificar_lista.py` (principal), `Backend/tests/unit/scripts/test_verificar_lista.py`, `Backend/app/domain/modelo/variables.py` (fija `VARIABLES_*_MODELO` según T5), `Backend/tests/unit/domain/modelo/test_variables.py`.
+  - Docs: `docs/backend/12-modelo-y-listas.md` §Conciliación con el notebook; definición (d).
+  - Aceptación:
+    - Referencias del script (cartera, ya renovaron, a priorizar, ciclos de entrenamiento, top 25 con código, probabilidad a 3 decimales y factores) tomadas de las salidas de T6.
+    - `python scripts/verificar_lista.py plantillas` (scikit-learn 1.8.0) → salida `0`: conteos iguales, top 25 con **probabilidades, orden y factores iguales** al notebook nuevo (empates en el corte como conjunto).
+    - Las variables con que entrena la app = las elegidas en T5 (prueba que lo fija).
+  - Pruebas: unitarias del script; ejecución manual registrada en `.harness/tests.md`.
+
+- [x] **T12** · `infra-deploy` · Ensayo de adopción en el stack aislado `mtabolic-e2e` (8081) 🗄
+  - Archivos: ninguno versionado (salvo que falle algo).
+  - Docs: `docs/backend/10-docker.md` §Stack E2E aislado; `Documentation/comandos/respaldo-y-restauracion.md`.
+  - Aceptación: reconstruir backend → `adoptar-modelo` → salida `0`; conteos de las 9 tablas antes/después (solo `modelos` +1 e `intentos_reentrenamiento` +1); lista nueva con `modelo_version` "v2"; listas y gestiones anteriores iguales; E2E existentes en verde.
+  - Pruebas: comprobación manual + `npx playwright test` contra 8081.
+
+- [x] **T13** · `infra-deploy` · Puesta en uso en el stack principal (orquestador, al final) 🗄
+  - Archivos: ninguno versionado.
+  - Docs: `Documentation/comandos/respaldo-y-restauracion.md`; `docs/backend/10-docker.md` §Servicios.
+  - Aceptación: respaldo previo verificado (archivo + restauración de prueba a base nueva con nombre validado); conteos de las 9 tablas antes; reconstruir backend; `adoptar-modelo` → `0`; conteos después: solo `modelos` +1 e `intentos_reentrenamiento` +1; `/sistema/estado` `LISTO` con "v2"; **sin generar listas ni datos de prueba**.
+  - Pruebas: registro en `.harness/tests.md`.
+
+- [x] **SEC-1** · security-reviewer · Revisión del diff de R-015 (CLI nueva, logs sin datos personales, sin secretos, transacción única, artefacto solo desde BD).
+
+- [x] **DOC-1** · doc-agent · `Documentation/mejoras/M01-modelo-sin-fuga-temporal.md` con todo lo pedido para la tesis (recomendación del tutor; cambios de metodología y por qué; definición exacta de cada variable con su corte T−30; partición con márgenes y tamaños; semilla; métricas antes/después; bootstrap por socio con IC; importancia antes/después; variante y decisión; efecto en la app y la lista; rutas de figuras `Notebookes/salidas_m01/figuras/`; limitaciones, incluido 30 vs 60 d) · índice `mejoras/README.md` · ADR-014 (adopción del modelo M01, comando `adoptar-modelo`, margen en CU-02; complementa ADR-005 y ADR-011) · `docs/backend/12-modelo-y-listas.md` · `Backend/README.md` §4 · `DEVELOPMENT_GUIDELINES.md` (excepción M01 al diferido de la lógica del notebook) · `05-cronograma-semana.md` y este board.
+
+**Lotes**
+- Lote 1: T1 ‖ T7.
+- Lote 2: T2 ‖ T8 (T8 tras T7).
+- Lote 3: T3 ‖ T9.
+- Lote 4: T4 ‖ T10.
+- Lote 5: T5 → T6 (notebook).
+- Lote 6: T11 (necesita T6 y T8).
+- Lote 7: T12 → SEC-1 → T13 → DOC-1.
+
+**Dependencias**
+- Notebook: T1 → T2 → T3 → T4 → T5 → T6 (mismo archivo, secuencial).
+- App: T7 → T8 → T9; T8 → T10; T6 + T8 → T11; T9 + T10 + T11 → T12 → SEC-1 → T13 → DOC-1.
+- Externas: libros reales en `plantillas/`; entorno con scikit-learn 1.8.0 y Jupyter para ejecutar el notebook; stack `mtabolic-e2e` para T12; script de respaldo de R-013 para T13.
+
+**Riesgos**
+1. **Lista no idéntica notebook ↔ app:** cualquier diferencia en el corte T−30, las medianas, el orden de entrenamiento o `PERIODO_REFERENCIA_FACTORES` cambia el bosque; mitigación: definiciones (a)(b)(g) únicas, T11 compara probabilidades a 3 decimales y factores, scikit-learn 1.8.0 en ambos.
+2. **Puesta en uso en el principal:** escritura en datos reales; mitigación: ensayo en 8081 (T12), respaldo con restauración probada, una transacción, conteos antes/después y v1 conservado (vuelta atrás = marcar v1 vigente desde el respaldo).
+3. **Prueba de la variante y tamaño de prueba:** con márgenes el conjunto de prueba baja de 277 casos y los IC se ensanchan; la regla (d) puede adoptar la variante por empate estadístico; mitigación: regla fijada antes de ver prueba y reportada con IC en M01.
 
 ### R-014 — Tablas sin recorte horizontal en escritorio (Lista, Seguimiento, Campañas, Dashboard) · **DONE** 2026-10-01
 
@@ -2017,7 +2190,7 @@ _(vacío)_
   - Aceptación:
     - Las referencias vienen del notebook:
       - cartera 59; ya renovaron 2; a priorizar 57; socios 57; 1.564 ciclos de entrenamiento;
-      - el top 25 como códigos `MTB-` + los 8 primeros caracteres hexadecimales en mayúsculas de `sha256(identidad)`, con su probabilidad a 3 decimales (p. ej. 1 `MTB-7C5F302E` 0,702 … 25 `MTB-043DE3C6` 0,605).
+      - el top 25 como códigos anónimos `MTB-` + 8 caracteres hexadecimales, con su probabilidad a 3 decimales. **Corregido en R-015:** los códigos son un HMAC-SHA256 de la identidad con una sal secreta (`MTABOLIC_SAL_CODIGOS` o `salidas/.sal_codigos`), no un `sha256` sin sal; los códigos de ejemplo que figuraban aquí se eliminaron por ser rastreables.
     - Compara: los conteos; la probabilidad de cada código a 3 decimales; el orden, con los empates comparados como conjunto; y los factores, como porcentaje de coincidencia, informativo por la decisión (a).
     - La salida solo imprime códigos `MTB-`, conteos y cifras. Nunca imprime nombres, cédulas, celulares ni correos (test con sintéticos).
     - El developer lo ejecuta con la carpeta real y **pega la salida** en el handoff. Si difiere, localiza la causa (orden de las filas, montos negativos, versión de scikit-learn) y la anota. Si la diferencia es de un caso, se documenta (03 §6).
@@ -2809,7 +2982,7 @@ _(vacío)_
 - 2026-09-29 · R-004 · Contrato de listas: `GET /listas` nuevo; `fecha_generacion` pasa a `date`, se añaden `creada_en` y `monto_cobrado` → [API_CONTRACT](docs/API_CONTRACT.md).
 - 2026-09-29 · R-004 · Fallo de migración → `PENDIENTE` y `FALTAN_DATOS_HISTORICOS`; se reintenta al reiniciar el backend (ADR-004).
 - 2026-09-29 · R-004 · scikit-learn fijado a 1.8.0, la versión del notebook: con 1.9.1 cambia el bosque; con 1.8.0 la lista de septiembre es idéntica → [ADR-005](adr/ADR-005-fidelidad-al-notebook-del-modelo-v1.md), [Backend/README](../Backend/README.md). Corrige la línea de R-002 sobre versiones "no las del notebook" para esta librería.
-- 2026-09-29 · R-004 · Niveles de riesgo por percentiles 20/30/50 (CU-05), no los umbrales fijos 0,70/0,50 del notebook: difieren por diseño.
+- 2026-09-29 · R-004 · Niveles de riesgo por percentiles 20/30/50 (CU-05), no los umbrales fijos 0,70/0,50 del notebook: difieren por diseño. **Sustituida en R-015** (cortes fijos 0,70/0,50, ADR-014).
 - 2026-09-29 · R-004 · Los ítems de una lista guardada no filtran `deleted_at` (lista inmutable, RN-04.5); la versión del modelo la calcula el llamante; bloqueo consultivo de sesión en conexión propia `AUTOCOMMIT`, liberado en `finally`; el localizador solo lee `*Control*Gym*.xlsx`.
 - 2026-09-29 · R-004 · La revisión de seguridad de R-004 se difiere a la revisión única del día 7 (decisión del usuario, [05 §1](05-cronograma-semana.md)).
 
@@ -2883,6 +3056,10 @@ _(vacío)_
 - 2026-10-01 · R-013 · (g) `reiniciar-base-historica` espera `LISTO` por `FRONTEND_PORT` → [comandos/reiniciar-base-historica](comandos/reiniciar-base-historica.md).
 - 2026-10-01 · R-013 · (h) 03 §21 paso 4 corregido para no contradecir ADR-006: lista con la fecha de hoy; comparación con el notebook con `verificar_lista.py` → [03 §21](03-casos-de-uso.md).
 - 2026-10-01 · R-014 · Marco a `max-w-[96rem]`; `DataTable` con `className?` por columna (en `th`/`td`), celdas `px-3`, `print:overflow-visible`; anchos por columna en el componente de la tabla, nunca en `DataTable` ni con `style=` → [frontend/01 §Estilos](docs/frontend/01-arquitectura.md).
+
+- 2026-10-15 · R-015 · M01: variables con corte T−30, medianas solo de entrenamiento, márgenes de 30 días, variante sin `forma_pago`/`inicio_aproximado`; excepción registrada al diferido "cambiar la lógica del notebook" → [mejoras/M01](mejoras/M01-modelo-sin-fuga-temporal.md), [DEVELOPMENT_GUIDELINES](DEVELOPMENT_GUIDELINES.md).
+- 2026-10-15 · R-015 · Niveles con cortes fijos 0,70/0,50 (decisión del usuario), sustituye R-004 (d); corte de los datos para etiquetar; comando `adoptar-modelo`; v2 vigente en el principal → [ADR-014](adr/ADR-014-modelo-m01-adopcion-y-cortes-de-riesgo.md), [03 §CU-05](03-casos-de-uso.md).
+- 2026-10-15 · R-015 · Privacidad: códigos MTB con HMAC-SHA256 y sal secreta; códigos de ejemplo antiguos eliminados de la documentación.
 
 ## PRÓXIMO
 

@@ -46,5 +46,6 @@ Registro del paso del notebook `MVP.ipynb` a una aplicación web. Sirve de insum
 | [ADR-008](adr/ADR-008-gestion-por-ciclo-y-nombre-de-campania-congelado.md) | Gestión por ciclo de membresía, nombre de la campaña congelado al asignar y reglas de campañas y gestiones (R-009) |
 | [ADR-012](adr/ADR-012-rol-de-aplicacion-sin-superusuario.md) | La app se conecta con un rol sin superusuario ni `DELETE`; migraciones con el propietario (S23, R-013) |
 | [ADR-013](adr/ADR-013-proteccion-host-y-origin.md) | Filtro de `Host` y `Origin` contra DNS rebinding y CSRF (S1, R-013) |
+| [ADR-014](adr/ADR-014-modelo-m01-adopcion-y-cortes-de-riesgo.md) | Modelo M01: variante sin `forma_pago`/`inicio_aproximado`, cortes 0,70/0,50, corte de los datos y `adoptar-modelo` (R-015) · mejoras del tutor en [mejoras/](mejoras/README.md) |
 
 Cómo levantar el stack: [README.md de la raíz](../README.md).

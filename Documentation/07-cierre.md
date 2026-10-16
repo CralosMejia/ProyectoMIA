@@ -2,6 +2,8 @@
 
 Estado al cierre del día 7 (R-013, 2026-10-01). Resume qué se entregó, en qué se aparta del notebook, qué queda diferido con sus riesgos y cómo se opera. El detalle vive en los documentos enlazados; aquí no se repite.
 
+> **Mejora posterior a la entrega (2026-10-15, R-015):** a recomendación del tutor, el notebook y la app eliminaron la posible fuga temporal (variables con corte T−30, medianas solo de entrenamiento, márgenes de 30 días), el modelo usa la variante sin `forma_pago` ni `inicio_aproximado`, los niveles usan los cortes 0,70/0,50 y el stack principal tiene el modelo v2 vigente (v1 conservado). Detalle: [mejoras/M01](mejoras/M01-modelo-sin-fuga-temporal.md), [ADR-014](adr/ADR-014-modelo-m01-adopcion-y-cortes-de-riesgo.md).
+
 ## 1. Qué se entregó
 
 Aplicación web local (FastAPI + PostgreSQL 16 + React) en Docker, accesible solo desde el propio PC, que cubre los casos de uso de [03](03-casos-de-uso.md) dentro del alcance de [DEVELOPMENT_GUIDELINES](DEVELOPMENT_GUIDELINES.md):
@@ -26,8 +28,8 @@ Día 7: respaldo y restauración con scripts, rol de base de datos sin superusua
 
 | Diferencia | Motivo | Referencia |
 |---|---|---|
-| Niveles de riesgo por percentiles 20/30/50, no umbrales fijos 0,70/0,50 | CU-05 | [ADR-005](adr/ADR-005-fidelidad-al-notebook-del-modelo-v1.md) |
-| Referencia de factores fija en el periodo 2025 | Igualar los factores del notebook | ADR-005 |
+| ~~Niveles de riesgo por percentiles 20/30/50, no umbrales fijos 0,70/0,50~~ — ya no es diferencia desde M01: la app usa 0,70/0,50 | CU-05 · R-015 | [ADR-014](adr/ADR-014-modelo-m01-adopcion-y-cortes-de-riesgo.md) |
+| Referencia de factores fija (desde M01: vencimientos ≤ 01-12-2025, el `X_train` del notebook) | Igualar los factores del notebook | ADR-005, ADR-014 |
 | La lista se genera desde **hoy** (fecha de Ecuador), horizonte ≤ 31 días; no se puede generar al 31-08-2026 desde la app | Lista operativa | [ADR-006](adr/ADR-006-lista-desde-hoy-y-cedula-en-lugar-de-correo.md) |
 | Cédula en lugar de correo; socios sin cédula fuera de la cartera | Identificación por el personal | ADR-006 |
 | 2 celdas basura de vencimiento no se convierten en fechas (pandas sí); monto negativo → sin monto | Robustez; sin efecto en evaluables ni etiquetas | [11-historico](docs/backend/11-historico.md) |

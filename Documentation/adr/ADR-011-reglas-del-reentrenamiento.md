@@ -3,6 +3,7 @@
 - **Estado:** aceptada · 2026-09-30 · R-011 (día 6)
 - **Origen:** [03 §5](../03-casos-de-uso.md) (CU-02) · decisiones (d)–(g) de R-011
 - **Detalla:** [ADR-003](ADR-003-reentrenamiento-y-versionado.md), que sigue vigente.
+- **Complementada por [ADR-014](ADR-014-modelo-m01-adopcion-y-cortes-de-riesgo.md) (R-015):** etiquetado al corte de los datos (no "hoy"), margen de 30 días entre el entrenamiento del candidato y la comparación, y comando `adoptar-modelo` fuera de los criterios.
 
 ## Contexto
 

@@ -2,6 +2,7 @@
 
 - **Estado:** aceptada · 2026-09-29 · R-004 (D3-BE-02, D3-BE-05)
 - **Origen:** criterio de D3-BE-05 en [05 §3](../05-cronograma-semana.md): la lista al 31-08-2026 debe coincidir con la del notebook
+- **Sustituida en parte por [ADR-014](ADR-014-modelo-m01-adopcion-y-cortes-de-riesgo.md) (R-015, M01):** el punto 3 (percentiles) deja de aplicar —los niveles usan los cortes fijos 0,70/0,50— y `PERIODO_REFERENCIA_FACTORES` del punto 2 pasa a vencimientos ≤ 01-12-2025 (el nuevo `X_train`). El punto 1 sigue vigente.
 - **Se aparta de:** la decisión de R-002 en `ACTION_PLAN.md` (versiones de datos/ML "estables, no las del notebook") para scikit-learn, y de la decisión (a) inicial del plan de R-004 (referencia de factores = todo el entrenamiento)
 
 ## Contexto
