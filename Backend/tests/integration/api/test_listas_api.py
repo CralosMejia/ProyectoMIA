@@ -4,6 +4,8 @@ Aislamiento entre usuarios: NO APLICA. No hay login (RT-12): el acceso se contro
 (CU-00) y no existe un propietario de datos por usuario.
 """
 
+import re
+from collections import Counter
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -17,6 +19,16 @@ from sqlalchemy import Engine, text
 from app.api.dependencies import get_clock, get_predictor
 from app.application.listas.generar_lista import MENSAJE_FECHA_PASADA
 from app.domain.common.predictor import FeatureRow, Prediction, TrainedModel
+from app.infrastructure.ml.random_forest import (
+    APORTE_MINIMO,
+    MAX_FACTORES,
+    NOMBRE_VARIABLE,
+    RandomForestPredictor,
+    _a_frame,  # mismo DataFrame que el adaptador, para recalcular SHAP fuera de la API
+    aportes_shap,
+    cargar_artefacto,
+    formatear_aporte,
+)
 from tests.integration.api.contract_helpers import assert_operation_contract, json_example
 from tests.integration.api.listas_datos import FILAS_ESPERADAS, fijar_reloj_api
 
@@ -361,3 +373,116 @@ def test_openapi_documents_nombre_in_request_and_responses(
     assert json_example(post, 201)["nombre"] == "Campaña octubre"
     resumen = openapi_spec["paths"][LISTAS]["get"]["responses"]["200"]["content"]
     assert all("nombre" in r for r in resumen["application/json"]["example"])
+
+
+# ---------------------------------------------------------------- motivos con SHAP (R-017 T7)
+
+# Motivos con el formato del metodo anterior (sustitucion por el socio "tipico"), distintos de
+# los que da SHAP con el modelo sintetico: simulan una lista generada antes de M03.
+MOTIVOS_ANTIGUOS = ("Forma de pago: TRANSFERENCIA (+0,37)", "Membresías previas: 0 (+0,21)")
+_MOTIVO = re.compile(r"^(?P<nombre>.+): (?P<valor>.+) \((?P<aporte>[+-]\d+,\d{2})\)$")
+
+
+class PredictorMetodoAnterior:
+    """Probabilidades del modelo real con los motivos fijos del metodo anterior a SHAP."""
+
+    def train(self, *args: object, **kwargs: object) -> TrainedModel:
+        raise AssertionError("no se entrena")
+
+    def predict(self, artefacto: bytes, features: Sequence[FeatureRow]) -> list[Prediction]:
+        return [
+            Prediction(score=p.score, factores_principales=MOTIVOS_ANTIGUOS)
+            for p in RandomForestPredictor().predict(artefacto, features)
+        ]
+
+
+class PredictorEspia:
+    """El adaptador real (SHAP) sin cambios; guarda lo que recibe para recalcular SHAP aparte."""
+
+    def __init__(self) -> None:
+        self.llamadas: list[tuple[bytes, list[FeatureRow]]] = []
+
+    def train(self, *args: object, **kwargs: object) -> TrainedModel:
+        raise AssertionError("no se entrena")
+
+    def predict(self, artefacto: bytes, features: Sequence[FeatureRow]) -> list[Prediction]:
+        self.llamadas.append((artefacto, list(features)))
+        return RandomForestPredictor().predict(artefacto, features)
+
+
+def _motivos_shap_esperados(artefacto: bytes, features: Sequence[FeatureRow]) -> Counter[str]:
+    """Regla (e) de R-017 aplicada a mano sobre SHAP: (nombre, aporte) de cada motivo."""
+    modelo = cargar_artefacto(artefacto)
+    frame = _a_frame(features, modelo.numericas, modelo.categoricas)
+    aportes = aportes_shap(modelo, frame)
+    probabilidades = modelo.pipeline.predict_proba(frame)[:, 1]
+    assert abs(aportes.valor_base + aportes.valores.sum(axis=1) - probabilidades).max() < 1e-6
+    candidatas = [v for v in NOMBRE_VARIABLE if v in aportes.variables]
+    assert "mes_vencimiento" in aportes.variables  # se explica, pero no es candidata
+    esperados: Counter[str] = Counter()
+    for i in range(len(frame)):
+        positivos = [(v, float(aportes.valores[i, aportes.variables.index(v)])) for v in candidatas]
+        elegidos = sorted(
+            [(v, a) for v, a in positivos if a > APORTE_MINIMO], key=lambda par: -par[1]
+        )[:MAX_FACTORES]
+        esperados.update(f"{NOMBRE_VARIABLE[v]} ({formatear_aporte(a)})" for v, a in elegidos)
+    return esperados
+
+
+def test_lista_previa_conserva_sus_motivos_y_la_nueva_sale_con_motivos_shap(
+    contract_app: FastAPI, contract_client: TestClient, base_migrada: Engine
+) -> None:
+    """R-017 T7: los motivos guardados no se recalculan; una lista nueva los calcula con SHAP."""
+    contract_app.dependency_overrides[get_predictor] = PredictorMetodoAnterior
+    try:
+        previa = contract_client.post(LISTAS, json=BODY)
+    finally:
+        contract_app.dependency_overrides.pop(get_predictor, None)
+    assert previa.status_code == 201
+    motivos_previos = [i["factores_principales"] for i in previa.json()["items"]]
+    assert motivos_previos == [list(MOTIVOS_ANTIGUOS)] * FILAS_ESPERADAS
+
+    espia = PredictorEspia()
+    contract_app.dependency_overrides[get_predictor] = lambda: espia
+    try:
+        nueva = contract_client.post(LISTAS, json=BODY)
+    finally:
+        contract_app.dependency_overrides.pop(get_predictor, None)
+
+    # La lista previa se lee tal como se guardo (sin recalcular), por id y en el historial.
+    releida = contract_client.get(f"{LISTAS}/{previa.json()['id']}")
+    assert releida.status_code == 200
+    assert [i["factores_principales"] for i in releida.json()["items"]] == motivos_previos
+    assert releida.json() == previa.json()
+
+    assert nueva.status_code == 201
+    ultima = contract_client.get(f"{LISTAS}/ultima")
+    assert ultima.status_code == 200
+    assert ultima.json() == nueva.json()
+    items = nueva.json()["items"]
+    assert len(items) == FILAS_ESPERADAS
+    nombres = set(NOMBRE_VARIABLE.values())
+    obtenidos: Counter[str] = Counter()
+    for item in items:
+        motivos = item["factores_principales"]
+        assert len(motivos) <= MAX_FACTORES
+        assert not set(motivos) & set(MOTIVOS_ANTIGUOS)
+        partes = [_MOTIVO.fullmatch(m) for m in motivos]
+        assert all(partes), motivos
+        aportes = [Decimal(p["aporte"].replace(",", ".")) for p in partes if p]
+        assert all(a > 0 for a in aportes)
+        assert aportes == sorted(aportes, reverse=True)
+        assert all(p["nombre"] in nombres for p in partes if p)
+        assert not any(m.lower().startswith("mes") for m in motivos)
+        obtenidos.update(f"{p['nombre']} ({p['aporte']})" for p in partes if p)
+    assert sum(obtenidos.values()) > 0  # el modelo sintetico da motivos que comparar
+
+    # Los motivos de la lista nueva son los aportes SHAP del modelo vigente (regla (e)).
+    assert len(espia.llamadas) == 1
+    artefacto, features = espia.llamadas[0]
+    assert obtenidos == _motivos_shap_esperados(artefacto, features)
+    with base_migrada.connect() as conexion:
+        metodo = conexion.execute(
+            text("SELECT metadata_tecnica->>'metodo_factores' FROM modelos WHERE version = 1")
+        ).scalar_one()
+    assert metodo == "shap"

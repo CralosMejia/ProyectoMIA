@@ -6,11 +6,13 @@ Replica el notebook MVP:
   numericas y ``SimpleImputer(most_frequent)`` + ``OneHotEncoder(handle_unknown="ignore")``
   para las categoricas, y ``RandomForestClassifier(n_estimators=300, max_depth=6,
   min_samples_leaf=20, class_weight="balanced", random_state=42)``.
-- 13.3: factores principales. Para cada variable explicable se sustituye su valor por el del
-  socio "tipico" (mediana o moda de las filas de referencia) y el aporte es
-  ``p(fila) - p(fila con la variable sustituida)``. Se muestran hasta 3 aportes ``> 0,005``,
-  de mayor a menor, con el formato ``"Plan: TRIMESTRAL (+0,09)"``. ``mes_vencimiento`` no se
-  explica (no es accionable).
+- 13.3 (M03, R-017): factores principales con SHAP. ``shap.TreeExplainer`` del bosque sobre la
+  matriz preprocesada del pipeline (clase "no renovó"); las columnas *one-hot* se suman a su
+  variable original. Candidatas: las de ``NOMBRE_VARIABLE`` presentes en el modelo (nunca
+  ``mes_vencimiento``, no accionable). Se muestran hasta 3 aportes ``> 0,005``, de mayor a
+  menor (empate: orden de ``NOMBRE_VARIABLE``), con el formato ``"Plan: TRIMESTRAL (+0,09)"``.
+  La ``referencia`` (socio "tipico") del metodo anterior por sustitucion se sigue calculando y
+  guardando en el artefacto por compatibilidad, pero ya no interviene en los factores.
 
 Es el unico sitio donde ``Decimal`` pasa a ``float`` (entrada del modelo) y la probabilidad
 vuelve a ``Decimal`` cuantizada a 8 decimales (``NUMERIC(10,8)``).
@@ -31,6 +33,7 @@ from typing import Any
 import joblib
 import numpy as np
 import pandas as pd  # type: ignore[import-untyped]  # pandas no publica tipos (sin pandas-stubs)
+import shap
 import sklearn
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import RandomForestClassifier
@@ -48,8 +51,10 @@ HIPERPARAMETROS: Mapping[str, Any] = {
     "class_weight": "balanced",
     "random_state": SEMILLA,
 }
+# Regla de los motivos (definicion (e) de R-017). Parametros que T6 alinea con el notebook.
 MAX_FACTORES = 3
 APORTE_MINIMO = 0.005
+METODO_FACTORES = "shap"
 FORMATO_ARTEFACTO = 1
 _OCHO_DECIMALES = Decimal("0.00000001")
 
@@ -165,6 +170,67 @@ def _calcular_referencia(
     return referencia
 
 
+# ---------------------------------------------------------------- aportes SHAP (M03)
+
+
+CLASE_NO_RENOVO = 1
+"""Indice de la clase explicada (``predict_proba[:, 1]`` = "no renovó")."""
+
+
+@dataclass(frozen=True, slots=True)
+class AportesShap:
+    """SHAP por variable original de cada fila (clase "no renovó").
+
+    ``valores[i, j]`` es el aporte de ``variables[j]`` a la fila ``i``; las columnas *one-hot*
+    de una categorica ya estan sumadas a su variable. ``valor_base + valores[i].sum()`` es la
+    probabilidad de la fila (aditividad de TreeExplainer).
+    """
+
+    valor_base: float
+    variables: tuple[str, ...]
+    valores: np.ndarray
+
+
+def _variable_original(columna: str, categoricas: Sequence[str]) -> str:
+    """``variable_original`` del notebook (12.12): prefijo del ``ColumnTransformer``."""
+    tipo, nombre = columna.split("__", 1)
+    if tipo == "numericas":
+        return nombre
+    candidatas = [v for v in categoricas if nombre.startswith(v + "_")]
+    if not candidatas:
+        raise ValueError("Columna transformada sin variable original.")
+    return max(candidatas, key=len)
+
+
+def aportes_shap(modelo: ArtefactoRandomForest, frame: pd.DataFrame) -> AportesShap:
+    """``shap.TreeExplainer`` sobre la matriz preprocesada del pipeline del artefacto.
+
+    Igual que el notebook (12.12, 13.3): matriz = ``preparacion.transform(X)`` densa, salida
+    ``[:, :, 1]`` y columnas *one-hot* sumadas a su variable original (en el orden
+    ``numericas + categoricas`` del artefacto).
+    """
+    preparacion = modelo.pipeline.named_steps["preparacion"]
+    matriz = preparacion.transform(frame)
+    matriz = matriz.toarray() if hasattr(matriz, "toarray") else np.asarray(matriz)
+    explicador = shap.TreeExplainer(modelo.pipeline.named_steps["modelo"])
+    valores = explicador.shap_values(matriz)
+    if isinstance(valores, list):
+        valores = np.stack(valores, axis=-1)
+    por_columna = np.asarray(valores, dtype=np.float64)[:, :, CLASE_NO_RENOVO]
+    valor_base = float(np.atleast_1d(explicador.expected_value)[CLASE_NO_RENOVO])
+
+    variables = (*modelo.numericas, *modelo.categoricas)
+    originales = [
+        _variable_original(c, modelo.categoricas) for c in preparacion.get_feature_names_out()
+    ]
+    # Suma secuencial en float64 desde 0,0 y de izquierda a derecha en el orden de la matriz,
+    # igual que el notebook (contrato M03, punto 4): mismo redondeo en el borde de 0,005.
+    agregados = np.zeros((por_columna.shape[0], len(variables)), dtype=np.float64)
+    for k, original in enumerate(originales):
+        agregados[:, variables.index(original)] += por_columna[:, k]
+    return AportesShap(valor_base=valor_base, variables=variables, valores=agregados)
+
+
 # ---------------------------------------------------------------- textos de los factores
 
 
@@ -190,10 +256,14 @@ def texto_valor(variable: str, valor: object, numericas: Sequence[str]) -> str:
 
 
 def seleccionar_factores(
-    aportes: Mapping[str, float], n: int = MAX_FACTORES
+    aportes: Mapping[str, float], n: int = MAX_FACTORES, minimo: float = APORTE_MINIMO
 ) -> list[tuple[str, float]]:
-    """Aportes ``> 0,005`` de mayor a menor (estable ante empates), como maximo ``n``."""
-    positivos = [(v, a) for v, a in aportes.items() if a > APORTE_MINIMO]
+    """Aportes ``> minimo`` de mayor a menor, como maximo ``n``.
+
+    Estable ante empates: conserva el orden de ``aportes`` (``NOMBRE_VARIABLE`` en el adaptador).
+    Con menos de ``n`` aportes positivos devuelve solo esos; sin ninguno, lista vacia.
+    """
+    positivos = [(v, a) for v, a in aportes.items() if a > minimo]
     return sorted(positivos, key=lambda par: -par[1])[:n]
 
 
@@ -260,6 +330,8 @@ class RandomForestPredictor:
             "numpy": np.__version__,
             "pandas": pd.__version__,
             "joblib": joblib.__version__,
+            "shap": shap.__version__,
+            "metodo_factores": METODO_FACTORES,
         }
         return TrainedModel(artefacto=buffer.getvalue(), metadata_tecnica=metadata)
 
@@ -271,30 +343,32 @@ class RandomForestPredictor:
     def predecir_con(
         self, modelo: ArtefactoRandomForest, features: Sequence[FeatureRow]
     ) -> list[Prediction]:
-        """Predice con un artefacto ya deserializado (score y factores de cada fila)."""
+        """Predice con un artefacto ya deserializado (score y factores de cada fila).
+
+        El score es ``predict_proba[:, 1]``; los factores salen de ``aportes_shap`` (M03).
+        ``modelo.referencia`` ya no interviene (se conserva en el artefacto por compatibilidad).
+        """
         if not features:
             return []
         frame = _a_frame(features, modelo.numericas, modelo.categoricas)
-        base = modelo.pipeline.predict_proba(frame)[:, 1]
+        probabilidades = modelo.pipeline.predict_proba(frame)[:, CLASE_NO_RENOVO]
 
-        explicables = [v for v in NOMBRE_VARIABLE if v in frame.columns]
-        aportes: dict[str, np.ndarray] = {}
-        for v in explicables:
-            sustituido = frame.copy()
-            valor = modelo.referencia[v]
-            dtype = "float64" if v in modelo.numericas else object
-            sustituido[v] = pd.Series([valor] * len(frame), index=frame.index, dtype=dtype)
-            aportes[v] = base - modelo.pipeline.predict_proba(sustituido)[:, 1]
+        shap_filas = aportes_shap(modelo, frame)
+        explicables = [
+            (v, shap_filas.variables.index(v)) for v in NOMBRE_VARIABLE if v in shap_filas.variables
+        ]
 
         predicciones: list[Prediction] = []
         for i in range(len(frame)):
-            elegidos = seleccionar_factores({v: float(aportes[v][i]) for v in explicables})
+            elegidos = seleccionar_factores(
+                {v: float(shap_filas.valores[i, j]) for v, j in explicables}
+            )
             factores = tuple(
                 f"{NOMBRE_VARIABLE[v]}: "
                 f"{texto_valor(v, frame.iloc[i][v], modelo.numericas)} ({formatear_aporte(a)})"
                 for v, a in elegidos
             )
             predicciones.append(
-                Prediction(score=_a_score(float(base[i])), factores_principales=factores)
+                Prediction(score=_a_score(float(probabilidades[i])), factores_principales=factores)
             )
         return predicciones

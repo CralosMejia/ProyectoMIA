@@ -20,6 +20,8 @@ dependencies = [
     "scikit-learn==1.8.0",
     "openpyxl==3.1.5",
     "joblib==1.6.0",
+    # Motivos con SHAP (R-017/M03), misma version que el notebook. Solo en infrastructure.
+    "shap==0.54.1",
     "alembic==1.20.0",
     "python-multipart==0.0.32",
 ]
@@ -58,10 +60,10 @@ strict = true
 plugins = ["pydantic.mypy"]
 warn_unreachable = true
 
-# scikit-learn y joblib no publican stubs de tipos: sin este override mypy --strict
-# falla en cada import. Limitado a esos dos paquetes; el resto sigue estricto.
+# scikit-learn, joblib y shap no publican stubs de tipos (shap no incluye py.typed): sin este
+# override mypy --strict falla en cada import. Limitado a esos paquetes; el resto sigue estricto.
 [[tool.mypy.overrides]]
-module = ["sklearn.*", "joblib.*"]
+module = ["sklearn.*", "joblib.*", "shap.*"]
 ignore_missing_imports = true
 
 [tool.pydantic-mypy]
@@ -140,7 +142,7 @@ ignore_imports = [
 # ADR-002: la logica de datos y ML vive en infrastructure; domain y application no dependen
 # de librerias tecnicas de datos.
 [[tool.importlinter.contracts]]
-name = "domain y application no importan pandas, numpy ni sklearn (ADR-002)"
+name = "domain y application no importan pandas, numpy, sklearn ni shap (ADR-002)"
 type = "forbidden"
 source_modules = ["app.domain", "app.application"]
-forbidden_modules = ["pandas", "numpy", "sklearn"]
+forbidden_modules = ["pandas", "numpy", "sklearn", "shap"]

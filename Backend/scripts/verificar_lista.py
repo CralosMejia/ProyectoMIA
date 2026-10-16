@@ -1,4 +1,4 @@
-"""Verificacion local de la lista de septiembre frente al notebook M01 (R-015 T11).
+"""Verificacion local de la lista de septiembre frente al notebook M01/M03 (R-015, R-017).
 
 Fuera de la suite. Uso (desde ``Backend/``, con el entorno virtual activo)::
 
@@ -13,12 +13,19 @@ una unidad de trabajo en memoria. Lo compara con las salidas del notebook
 ``salidas/`` (nunca se copian a un archivo versionado):
 
 - ``m01/despues/parametros_modelo_operativo.json``: conteos de la cartera, ciclos de
-  entrenamiento, variables del modelo, medianas de monto y referencia de los factores;
+  entrenamiento, variables del modelo, medianas de monto, metodo de los motivos
+  (``metodo_factores``) y referencia de los factores;
 - ``mvp/lista_operativa_2026-09.xlsx`` (hoja ``cartera_completa``): la lista completa con la
-  probabilidad sin redondear, el nivel y los factores de cada socio.
+  probabilidad sin redondear, el nivel y los motivos de cada socio.
 
 Se comparan **todas** las filas de la lista: probabilidad a 8 decimales (la precision que
-guarda la app), nivel (cortes fijos 0,70 / 0,50 en ambos), factores (texto exacto) y orden.
+guarda la app), nivel (cortes fijos 0,70 / 0,50 en ambos), motivos (texto exacto) y orden.
+
+M03 (R-017): los motivos ("factores principales") salen de SHAP en los dos lados, asi que su
+texto exacto (variable, valor y aporte SHAP a 2 decimales) cuenta como diferencia, y el metodo
+de los motivos del notebook y de la app debe ser ``shap``. La referencia de los factores (socio
+"tipico" del metodo anterior por sustitucion) ya no interviene en los motivos: se sigue
+mostrando, pero es informativa y no cuenta como diferencia.
 Los socios con la misma probabilidad forman un grupo de empate: el notebook los ordena con un
 ``sort_values`` no estable (orden arbitrario) y la app por vencimiento y ``membresia_id``, asi
 que el orden se compara por grupo (mismo conjunto de socios en las mismas posiciones).
@@ -89,6 +96,7 @@ VARIABLE_SAL = "MTABOLIC_SAL_CODIGOS"
 ARCHIVO_SAL = Path(".sal_codigos")
 SEPARADOR_FACTORES = "; "
 SIN_FACTORES = "Sin factores de riesgo destacados"
+METODO_FACTORES = "shap"
 _OCHO_DECIMALES = Decimal("0.00000001")
 
 # Las salidas del notebook M01 se generaron con scikit-learn 1.8.0 (la version fijada en la
@@ -131,6 +139,7 @@ class Referencia:
     medianas: Mapping[str, Decimal]
     referencia_factores: Mapping[str, float | str | None]
     lista: tuple[FilaReferencia, ...]
+    metodo_factores: str | None = None
 
 
 def codigo_anonimo(identidad: str, sal: bytes) -> str:
@@ -231,6 +240,7 @@ def cargar_referencia(carpeta: Path) -> Referencia:
             tuple(parametros["variables_categoricas"]),
         )
         referencia_factores = dict(parametros["referencia_factores"])
+        metodo = parametros.get("metodo_factores")
     except (KeyError, TypeError, ValueError) as exc:
         raise ReferenciaNoDisponibleError(
             "Los parametros del notebook no tienen la forma."
@@ -241,6 +251,7 @@ def cargar_referencia(carpeta: Path) -> Referencia:
         medianas=medianas,
         referencia_factores=referencia_factores,
         lista=_leer_lista(lista_ruta),
+        metodo_factores=str(metodo) if metodo is not None else None,
     )
 
 
@@ -418,6 +429,7 @@ class ResultadoApp:
     variables: tuple[tuple[str, ...], tuple[str, ...]] = ((), ())
     medianas: Mapping[str, Decimal] = field(default_factory=dict)
     referencia_factores: Mapping[str, float | str | None] = field(default_factory=dict)
+    metodo_factores: str | None = None
 
 
 def _membresias(registros: Sequence[RegistroHistorico]) -> list[MembresiaParaPrediccion]:
@@ -545,6 +557,7 @@ def ejecutar_en_memoria(
         ),
         medianas=medianas,
         referencia_factores=dict(referencia) if isinstance(referencia, dict) else {},
+        metodo_factores=str(metadata["metodo_factores"]) if "metodo_factores" in metadata else None,
     )
 
 
@@ -601,10 +614,17 @@ def _conciliar_modelo(app: ResultadoApp, ref: Referencia, c: Conciliacion) -> No
         for v in set(ref.referencia_factores) | set(app.referencia_factores)
         if not _mismo_valor(ref.referencia_factores.get(v), app.referencia_factores.get(v))
     )
-    c.contar("referencia_factores", len(referencia_distinta))
+    # M03: informativa; los motivos con SHAP no usan la referencia (no cuenta como diferencia).
     c.lineas.append(
-        f"referencia de los factores ({len(ref.referencia_factores)} variables): "
-        + ("ok" if not referencia_distinta else "DIFIERE " + ", ".join(referencia_distinta))
+        f"referencia de los factores ({len(ref.referencia_factores)} variables, informativa: "
+        "no interviene en los motivos SHAP): "
+        + ("igual" if not referencia_distinta else "distinta en " + ", ".join(referencia_distinta))
+    )
+    metodo_ok = app.metodo_factores == ref.metodo_factores == METODO_FACTORES
+    c.contar("metodo_factores", 0 if metodo_ok else 1)
+    c.lineas.append(
+        f"metodo de los motivos: notebook {ref.metodo_factores} | app {app.metodo_factores}: "
+        + ("ok" if metodo_ok else f"DIFIERE (se espera {METODO_FACTORES} en ambos)")
     )
 
 
@@ -629,7 +649,7 @@ def _conciliar_lista(
     filas: Sequence[FilaApp], lista: Sequence[FilaReferencia], top_k: int, c: Conciliacion
 ) -> None:
     por_codigo = {f.codigo: f for f in filas}
-    prob = nivel = factores = ausentes = 0
+    prob = nivel = motivos = ausentes = 0
     detalle: list[str] = []
     for posicion, ref in enumerate(lista, 1):
         app = por_codigo.get(ref.codigo)
@@ -646,9 +666,9 @@ def _conciliar_lista(
             nivel += 1
             detalle.append(f"posicion {posicion}: nivel notebook {ref.nivel} / app {app.nivel}")
         if app.factores != ref.factores:
-            factores += 1
+            motivos += 1
             detalle.append(
-                f"posicion {posicion}: factores notebook {list(ref.factores)} / "
+                f"posicion {posicion}: motivos notebook {list(ref.factores)} / "
                 f"app {list(app.factores)}"
             )
     sobrantes = len({f.codigo for f in filas} - {r.codigo for r in lista})
@@ -670,7 +690,7 @@ def _conciliar_lista(
     c.contar("filas", ausentes + sobrantes)
     c.contar("probabilidades", prob)
     c.contar("niveles", nivel)
-    c.contar("factores", factores)
+    c.contar("motivos", motivos)
     c.contar("orden", orden)
     c.lineas.append(
         f"lista: notebook {len(lista)} filas | app {len(filas)} filas | ausentes {ausentes} | "
@@ -678,7 +698,7 @@ def _conciliar_lista(
     )
     c.lineas.append(
         f"probabilidades distintas (8 decimales): {prob} | niveles distintos: {nivel} | "
-        f"factores distintos: {factores} | posiciones fuera de orden: {orden}"
+        f"motivos (SHAP) distintos: {motivos} | posiciones fuera de orden: {orden}"
     )
     c.lineas.append(
         f"grupos de empate (misma probabilidad): {len(empates)}, con "
@@ -718,7 +738,7 @@ def _verificar(
     sal: bytes | None,
     salida: TextIO,
 ) -> int:
-    parser = argparse.ArgumentParser(description="Verifica la lista frente al notebook M01.")
+    parser = argparse.ArgumentParser(description="Verifica la lista frente al notebook M01/M03.")
     parser.add_argument("carpeta", type=Path, help="carpeta con los libros Control Gym")
     parser.add_argument("--referencia", type=Path, default=CARPETA_SALIDAS)
     parser.add_argument("--fecha", type=date.fromisoformat, default=FECHA_GENERACION)

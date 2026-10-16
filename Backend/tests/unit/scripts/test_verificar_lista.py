@@ -1,4 +1,4 @@
-"""Script de verificacion de la lista frente al notebook M01 (libros sinteticos, sin BD).
+"""Script de verificacion de la lista frente al notebook M01/M03 (libros sinteticos, sin BD).
 
 Las referencias se inyectan o se escriben en ``tmp_path``: ninguna prueba lee ``salidas/``.
 """
@@ -55,6 +55,7 @@ def _referencia(res: script.ResultadoApp) -> script.Referencia:
         variables=res.variables,
         medianas=dict(res.medianas),
         referencia_factores=dict(res.referencia_factores),
+        metodo_factores=res.metodo_factores,
         lista=tuple(
             script.FilaReferencia(f.codigo, f.score, f.nivel, f.factores) for f in res.filas
         ),
@@ -149,6 +150,7 @@ def _escribir_salidas(carpeta: Path) -> None:
         "ciclos_entrenamiento_operativo": 1564,
         "medianas_monto_operativo": {"por_plan": {"ANUAL": 237.5, "MENSUAL": 39.0}, "general": 39},
         "referencia_factores": {"ciclos_previos": 0.0, "plan": "MENSUAL"},
+        "metodo_factores": "shap",
         "cartera_septiembre": {
             "Ciclos que vencen entre el 01-09-2026 y el 30-09-2026": 59,
             "ya registraron una membresía posterior (renovación anticipada)": 2,
@@ -211,6 +213,7 @@ def test_cargar_referencia_lee_parametros_y_lista_completa(tmp_path: Path) -> No
         "general": Decimal("39"),
     }
     assert ref.referencia_factores == {"ciclos_previos": 0.0, "plan": "MENSUAL"}
+    assert ref.metodo_factores == "shap"
     assert ref.lista == (
         script.FilaReferencia(
             "MTB-AAAAAAAA", Decimal("0.71019972"), "ALTO", ("Plan: ANUAL (+0,04)",)
@@ -395,10 +398,86 @@ def test_main_con_nivel_o_factores_distintos_sale_con_uno(resultado: script.Resu
 
     assert codigo == 1
     assert "niveles 1" in texto
-    assert "factores 1" in texto
+    assert "motivos 1" in texto
 
 
-@pytest.mark.parametrize("apartado", ["variables", "medianas", "referencia_factores"])
+MOTIVOS_SHAP = ("Plan: TRIMESTRAL (+0,09)", "Monto actual (USD): 70 (+0,03)")
+
+
+def _app_con_motivos(
+    resultado: script.ResultadoApp, monkeypatch: pytest.MonkeyPatch
+) -> script.ResultadoApp:
+    """La app devuelve motivos SHAP en su primera fila (los sinteticos no superan 0,005)."""
+    con_motivos = replace(
+        resultado, filas=(replace(resultado.filas[0], factores=MOTIVOS_SHAP), *resultado.filas[1:])
+    )
+    monkeypatch.setattr(script, "ejecutar_en_memoria", lambda *_: con_motivos)
+    return con_motivos
+
+
+def test_main_con_un_motivo_shap_distinto_en_un_centesimo_sale_con_uno(
+    resultado: script.ResultadoApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # M03: los motivos se comparan con su texto exacto, incluido el aporte SHAP a 2 decimales.
+    ref = _referencia(_app_con_motivos(resultado, monkeypatch))
+    otro = ("Plan: TRIMESTRAL (+0,10)", MOTIVOS_SHAP[1])
+    ref = replace(ref, lista=(replace(ref.lista[0], factores=otro), *ref.lista[1:]))
+
+    codigo, texto = _ejecutar(ref)
+
+    assert codigo == 1
+    assert "motivos (SHAP) distintos: 1" in texto
+    assert "motivos 1" in texto
+    assert "total 1" in texto
+
+
+def test_main_con_motivos_shap_identicos_sale_con_cero(
+    resultado: script.ResultadoApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ref = _referencia(_app_con_motivos(resultado, monkeypatch))
+    assert ref.lista[0].factores == MOTIVOS_SHAP
+
+    codigo, texto = _ejecutar(ref)
+
+    assert codigo == 0
+    assert "motivos (SHAP) distintos: 0" in texto
+    assert "motivos 0" in texto
+
+
+def test_main_con_referencia_de_factores_distinta_es_informativo(
+    resultado: script.ResultadoApp,
+) -> None:
+    # M03: la referencia del metodo por sustitucion ya no interviene en los motivos.
+    ref = _referencia(resultado)
+    ref = replace(ref, referencia_factores={**ref.referencia_factores, "plan": "ANUAL"})
+
+    codigo, texto = _ejecutar(ref)
+
+    assert codigo == 0
+    assert "total 0" in texto
+    assert "referencia_factores" not in texto.split("diferencias:")[-1]
+    assert "informativa: no interviene en los motivos SHAP" in texto
+
+
+def test_main_informa_el_metodo_de_los_motivos(resultado: script.ResultadoApp) -> None:
+    assert resultado.metodo_factores == "shap"
+
+    _, texto = _ejecutar(replace(_referencia(resultado), metodo_factores="shap"))
+
+    assert "metodo de los motivos: notebook shap | app shap" in texto
+
+
+def test_main_con_metodo_de_motivos_distinto_sale_con_uno(
+    resultado: script.ResultadoApp,
+) -> None:
+    # Unas salidas del notebook anteriores a M03 (motivos por sustitucion) no son comparables.
+    codigo, texto = _ejecutar(replace(_referencia(resultado), metodo_factores=None))
+
+    assert codigo == 1
+    assert "metodo_factores 1" in texto
+
+
+@pytest.mark.parametrize("apartado", ["variables", "medianas"])
 def test_main_con_el_modelo_distinto_sale_con_uno(
     resultado: script.ResultadoApp, apartado: str
 ) -> None:
@@ -406,9 +485,6 @@ def test_main_con_el_modelo_distinto_sale_con_uno(
     cambios: dict[str, object] = {
         "variables": {"variables": (ref.variables[0], ("plan", "forma_pago"))},
         "medianas": {"medianas": {**ref.medianas, "general": Decimal("999")}},
-        "referencia_factores": {
-            "referencia_factores": {**ref.referencia_factores, "plan": "ANUAL"}
-        },
     }[apartado]
     assert isinstance(cambios, dict)
 

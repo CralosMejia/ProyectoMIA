@@ -25,8 +25,11 @@ pip install -e ".[dev]"
 | joblib | 1.6.0 |
 | alembic | 1.20.0 |
 | python-multipart | 0.0.32 |
+| shap | 0.54.1 |
 
-El notebook original corrió con Python 3.11.15 y no registra las versiones de la mayoría de sus librerías: estas son las estables compatibles con Python 3.12. **Excepción: scikit-learn se fija a 1.8.0, la versión del notebook** (R-004): con 1.9.1 el bosque cambia (24/25 del top iguales, probabilidades ±0,001–0,016); con 1.8.0 la lista de septiembre es idéntica. No se actualiza sin repetir `scripts/verificar_lista.py`. Se mantiene pandas 3.x: las cifras de referencia del notebook corresponden a pandas 3 y la conversión de fechas y montos de la app no usa pandas (detalle en `../Documentation/docs/backend/11-historico.md`). `mypy` ignora imports sin tipos solo para `sklearn.*` y `joblib.*`. pandas, numpy y scikit-learn están prohibidos en `domain` y `application` (contrato de `lint-imports`, ADR-002).
+El notebook original corrió con Python 3.11.15 y no registra las versiones de la mayoría de sus librerías: estas son las estables compatibles con Python 3.12. **Excepción: scikit-learn se fija a 1.8.0, la versión del notebook** (R-004): con 1.9.1 el bosque cambia (24/25 del top iguales, probabilidades ±0,001–0,016); con 1.8.0 la lista de septiembre es idéntica. No se actualiza sin repetir `scripts/verificar_lista.py`. Se mantiene pandas 3.x: las cifras de referencia del notebook corresponden a pandas 3 y la conversión de fechas y montos de la app no usa pandas (detalle en `../Documentation/docs/backend/11-historico.md`). `mypy` ignora imports sin tipos solo para `sklearn.*`, `joblib.*` y `shap.*`. pandas, numpy, scikit-learn y shap están prohibidos en `domain` y `application` (contrato de `lint-imports`, ADR-002).
+
+**shap 0.54.1 (R-017, mejora M03):** la misma versión del notebook; calcula los "Motivos principales" de la lista (ADR-015). Trae slicer 0.0.8 y tqdm 4.70.1 y **no** instala numba ni llvmlite; no cambia scikit-learn ni numpy. Las transitivas no están fijadas (no hay *lockfile*; diferido).
 
 ## Variables de entorno
 
@@ -78,7 +81,7 @@ Imprime solo conteos "notebook vs obtenido" (nunca nombres, cédulas, contactos 
 python scripts/verificar_lista.py <carpeta con los libros Control Gym>
 ```
 
-Compone en memoria, sin base de datos, lectura + limpieza + entrenamiento + lista al 2026-08-31 (horizonte 30, top 25) y la compara con la lista de septiembre del notebook M01 (§13.8), cuyas salidas lee de `../salidas` (git-ignorada; otra carpeta con `--referencia`): **todas** las filas, con probabilidad a 8 decimales, nivel (0,70/0,50), factores y orden (los empates se comparan por grupo). Necesita la sal de los códigos anónimos en `MTABOLIC_SAL_CODIGOS` o en `salidas/.sal_codigos` (nunca se imprime). Sale con `0` sin diferencias, `1` con alguna y `2` si faltan libros, salidas o sal; ante un error solo imprime su tipo. Resultado de R-015 con scikit-learn 1.8.0: `0`, 0 diferencias en 57 filas (ALTO 2, MEDIO 39, BAJO 16). Detalle: `../Documentation/docs/backend/12-modelo-y-listas.md`.
+Compone en memoria, sin base de datos, lectura + limpieza + entrenamiento + lista al 2026-08-31 (horizonte 30, top 25) y la compara con la lista de septiembre del notebook M01 (§13.8), cuyas salidas lee de `../salidas` (git-ignorada; otra carpeta con `--referencia`): **todas** las filas, con probabilidad a 8 decimales, nivel (0,70/0,50), factores y orden (los empates se comparan por grupo). Necesita la sal de los códigos anónimos en `MTABOLIC_SAL_CODIGOS` o en `salidas/.sal_codigos` (nunca se imprime). Sale con `0` sin diferencias, `1` con alguna y `2` si faltan libros, salidas o sal; ante un error solo imprime su tipo. Resultado de R-015 con scikit-learn 1.8.0: `0`, 0 diferencias en 57 filas (ALTO 2, MEDIO 39, BAJO 16). Desde R-017 (M03) los factores comparados son los motivos SHAP y `referencia_factores` es solo informativa; resultado con shap 0.54.1: `0`, 0 diferencias en 57 filas y 146 motivos. Detalle: `../Documentation/docs/backend/12-modelo-y-listas.md`.
 
 ## Docker
 

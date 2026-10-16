@@ -4,6 +4,7 @@ import math
 import random
 import re
 from collections.abc import Sequence
+from dataclasses import replace
 from decimal import ROUND_HALF_EVEN, Decimal
 
 import numpy as np
@@ -11,11 +12,22 @@ import pandas as pd  # type: ignore[import-untyped]  # pandas no publica tipos (
 import pytest
 
 from app.domain.common.predictor import FeatureRow, Prediction, PredictorModel
-from app.domain.modelo.variables import VARIABLES_CATEGORICAS, VARIABLES_NUMERICAS
+from app.domain.modelo.variables import (
+    VARIABLES_CATEGORICAS,
+    VARIABLES_CATEGORICAS_MODELO,
+    VARIABLES_EXCLUIBLES_M01,
+    VARIABLES_NUMERICAS,
+    VARIABLES_NUMERICAS_MODELO,
+)
 from app.infrastructure.ml.random_forest import (
+    APORTE_MINIMO,
+    MAX_FACTORES,
     NOMBRE_VARIABLE,
+    ArtefactoRandomForest,
     RandomForestPredictor,
+    _a_frame,
     _a_score,
+    aportes_shap,
     cargar_artefacto,
     construir_pipeline,
     formatear_aporte,
@@ -329,18 +341,177 @@ def test_factores_excluyen_mes_vencimiento() -> None:
     assert set(NOMBRE_VARIABLE) == (set(NUMERICAS) | set(CATEGORICAS)) - {"mes_vencimiento"}
 
 
-def test_fila_igual_a_la_referencia_no_tiene_factores(
+# ---------------------------------------------------------------- motivos con SHAP (M03, R-017)
+
+
+def _modelo(artefacto: bytes) -> ArtefactoRandomForest:
+    return cargar_artefacto(artefacto)
+
+
+@pytest.fixture(scope="module")
+def artefacto_variante(predictor: RandomForestPredictor) -> bytes:
+    """Artefacto con el conjunto vigente de la app (sin ``forma_pago`` ni ``inicio_aproximado``)."""
+    return predictor.train(
+        FILAS, ETIQUETAS, list(VARIABLES_NUMERICAS_MODELO), list(VARIABLES_CATEGORICAS_MODELO)
+    ).artefacto
+
+
+def _frame(modelo: ArtefactoRandomForest, filas: Sequence[FeatureRow]) -> pd.DataFrame:
+    return _a_frame(filas, modelo.numericas, modelo.categoricas)
+
+
+@pytest.mark.parametrize("nombre", ["artefacto", "artefacto_variante"])
+def test_aportes_shap_base_mas_suma_igual_a_la_probabilidad(
+    nombre: str, request: pytest.FixtureRequest
+) -> None:
+    modelo = _modelo(request.getfixturevalue(nombre))
+    frame = _frame(modelo, FILAS)
+
+    shap_filas = aportes_shap(modelo, frame)
+
+    probabilidades = modelo.pipeline.predict_proba(frame)[:, 1]
+    assert shap_filas.variables == (*modelo.numericas, *modelo.categoricas)
+    assert shap_filas.valores.shape == (len(FILAS), len(shap_filas.variables))
+    reconstruida = shap_filas.valor_base + shap_filas.valores.sum(axis=1)
+    assert np.max(np.abs(reconstruida - probabilidades)) < 1e-6
+
+
+def test_aportes_shap_agrega_el_one_hot_del_plan_en_una_sola_variable(artefacto: bytes) -> None:
+    modelo = _modelo(artefacto)
+
+    shap_filas = aportes_shap(modelo, _frame(modelo, FILAS[:10]))
+
+    assert shap_filas.variables.count("plan") == 1
+    assert not any(v.startswith("plan_") for v in shap_filas.variables)
+
+
+def test_factor_elegido_es_el_shap_agregado_redondeado_a_dos_decimales(
     predictor: RandomForestPredictor, artefacto: bytes
 ) -> None:
-    referencia = cargar_artefacto(artefacto).referencia
-    fila: dict[str, Decimal | int | str | None] = {
-        v: Decimal(str(referencia[v])) for v in NUMERICAS
+    modelo = _modelo(artefacto)
+    shap_filas = aportes_shap(modelo, _frame(modelo, FILAS))
+    nombre_a_variable = {nombre: v for v, nombre in NOMBRE_VARIABLE.items()}
+
+    predicciones = predictor.predecir_con(modelo, FILAS)
+
+    comprobados = 0
+    for i, p in enumerate(predicciones):
+        aportes = dict(zip(shap_filas.variables, shap_filas.valores[i], strict=True))
+        esperados = seleccionar_factores(
+            {v: float(aportes[v]) for v in NOMBRE_VARIABLE if v in aportes}
+        )
+        assert [nombre_a_variable[f.split(":")[0]] for f in p.factores_principales] == [
+            v for v, _ in esperados
+        ]
+        for f, (_, a) in zip(p.factores_principales, esperados, strict=True):
+            assert f.endswith(f"({formatear_aporte(a)})")
+            comprobados += 1
+    assert comprobados > 0
+
+
+def test_factores_sin_aporte_positivo_suficiente_son_tupla_vacia(
+    predictor: RandomForestPredictor, artefacto: bytes
+) -> None:
+    modelo = _modelo(artefacto)
+    shap_filas = aportes_shap(modelo, _frame(modelo, FILAS))
+    explicables = [i for i, v in enumerate(shap_filas.variables) if v in NOMBRE_VARIABLE]
+    sin_motivos = [
+        i
+        for i in range(len(FILAS))
+        if all(shap_filas.valores[i, j] <= APORTE_MINIMO for j in explicables)
+    ]
+    assert sin_motivos, "los datos sinteticos deben tener filas sin aportes positivos"
+
+    predicciones = predictor.predecir_con(modelo, [FILAS[i] for i in sin_motivos])
+
+    assert all(p.factores_principales == () for p in predicciones)
+
+
+def test_mes_vencimiento_nunca_es_motivo_aunque_sea_el_mayor_aporte(
+    predictor: RandomForestPredictor,
+) -> None:
+    # Etiqueta que depende solo del mes: su SHAP domina, pero no se muestra (no accionable).
+    # Dos meses (150 filas cada uno) para que el one-hot supere min_samples_leaf=20.
+    filas = [{**f, "mes_vencimiento": MESES[i % 2]} for i, f in enumerate(FILAS)]
+    etiquetas = [i % 2 for i in range(len(filas))]
+    modelo = _modelo(predictor.train(filas, etiquetas, NUMERICAS, CATEGORICAS).artefacto)
+    shap_filas = aportes_shap(modelo, _frame(modelo, filas))
+    columna_mes = shap_filas.variables.index("mes_vencimiento")
+    assert np.max(shap_filas.valores[:, columna_mes]) > np.max(
+        np.delete(shap_filas.valores, columna_mes, axis=1)
+    )
+
+    predicciones = predictor.predecir_con(modelo, filas)
+
+    for p in predicciones:
+        assert len(p.factores_principales) <= MAX_FACTORES
+        for f in p.factores_principales:
+            assert not re.match(r"(?i)mes", f)
+            assert f.split(":")[0] in set(NOMBRE_VARIABLE.values())
+
+
+def test_artefacto_variante_explica_solo_sus_variables(
+    predictor: RandomForestPredictor, artefacto_variante: bytes
+) -> None:
+    predicciones = predictor.predict(artefacto_variante, FILAS)
+
+    nombres = {f.split(":")[0] for p in predicciones for f in p.factores_principales}
+    assert nombres
+    assert nombres <= {
+        NOMBRE_VARIABLE[v] for v in NOMBRE_VARIABLE if v not in VARIABLES_EXCLUIBLES_M01
     }
-    fila.update({v: str(referencia[v]) for v in CATEGORICAS})
 
-    (prediccion,) = predictor.predict(artefacto, [fila])
 
-    assert prediccion.factores_principales == ()
+def test_un_motivo_por_variable_en_cada_fila(
+    predictor: RandomForestPredictor, artefacto: bytes
+) -> None:
+    for p in predictor.predict(artefacto, FILAS):
+        nombres = [f.split(":")[0] for f in p.factores_principales]
+        assert len(nombres) == len(set(nombres))
+
+
+def test_metadata_registra_shap_y_metodo_de_factores(predictor: RandomForestPredictor) -> None:
+    metadata = predictor.train(FILAS, ETIQUETAS, NUMERICAS, CATEGORICAS).metadata_tecnica
+
+    assert metadata["shap"] == "0.54.1"
+    assert metadata["metodo_factores"] == "shap"
+
+
+def test_predecir_con_referencia_distinta_da_los_mismos_motivos_y_scores(
+    predictor: RandomForestPredictor, artefacto: bytes
+) -> None:
+    # R-017 T5: la referencia se sigue cargando (compatibilidad) pero ya no interviene.
+    modelo = _modelo(artefacto)
+    otra_referencia = {
+        **modelo.referencia,
+        "plan": "TRIMESTRAL",
+        "ciclos_previos": 99.0,
+        "monto_actual": 0.0,
+    }
+    alterado = replace(modelo, referencia=otra_referencia)
+
+    original = predictor.predecir_con(modelo, FILAS)
+    con_otra = predictor.predecir_con(alterado, FILAS)
+
+    assert alterado.referencia != modelo.referencia
+    assert con_otra == original
+
+
+def test_seleccionar_factores_con_empate_conserva_el_orden_de_entrada() -> None:
+    # Regla (e): empate estable por el orden de NOMBRE_VARIABLE (el orden del mapa de aportes).
+    aportes = {"ciclos_previos": 0.04, "monto_actual": 0.04, "plan": 0.04, "forma_pago": 0.04}
+
+    assert seleccionar_factores(aportes) == [
+        ("ciclos_previos", 0.04),
+        ("monto_actual", 0.04),
+        ("plan", 0.04),
+    ]
+
+
+def test_seleccionar_factores_aporte_igual_al_minimo_se_descarta() -> None:
+    assert seleccionar_factores({"plan": APORTE_MINIMO, "monto_actual": APORTE_MINIMO + 1e-9}) == [
+        ("monto_actual", APORTE_MINIMO + 1e-9)
+    ]
 
 
 def test_seleccionar_factores_umbral_orden_y_maximo() -> None:
