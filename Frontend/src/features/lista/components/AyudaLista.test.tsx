@@ -117,6 +117,16 @@ describe('AyudaLista', () => {
     return (seccion?.textContent ?? '').replace(/\s+/g, ' ')
   }
 
+  it('seccion "Niveles de riesgo": cortes fijos 70 % y 50 %, sin porcentajes de socios (M01)', async () => {
+    const texto = await textoDeLaSeccion('Niveles de riesgo: alto, medio y bajo')
+
+    expect(texto).toMatch(/alto si esa probabilidad es de 70 % o más/)
+    expect(texto).toMatch(/medio si está entre 50 % y 70 %/)
+    expect(texto).toMatch(/bajo si es menor de 50 %/)
+    expect(texto).toMatch(/no cambian según cuántos prioritarios pidas/)
+    expect(texto).not.toMatch(/20 %|30 %|el resto/)
+  })
+
   it('seccion "Campañas": donde se administran, que se puede hacer y para que sirve cada dato', async () => {
     const texto = await textoDeLaSeccion('Campañas')
 

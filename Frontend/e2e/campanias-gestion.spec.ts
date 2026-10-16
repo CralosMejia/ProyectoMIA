@@ -17,6 +17,7 @@ import { crearPlantillaSintetica } from './plantilla-sintetica'
 
 const PUERTO_PRINCIPAL = ':8080'
 const CAMPANIAS_EJEMPLO = 3
+const NIVELES = ['Alto', 'Medio', 'Bajo'] as const
 const PLANES = ['Mensual', 'Trimestral', 'Semestral', 'Anual', 'Otro'] as const
 
 /** Fecha de hoy en el calendario local, `YYYY-MM-DD` (la misma que usa la pantalla). */
@@ -61,12 +62,14 @@ test('crea y reactiva una campaña, gestiona socios con y sin campaña y cierra 
     )
   })
 
-  await test.step('crear la campaña (Alto/Medio, todos los planes, prioridad 1)', async () => {
+  await test.step('crear la campaña (todos los niveles y planes, prioridad 1)', async () => {
     await page.getByRole('button', { name: 'Nueva campaña' }).click()
     const dialogo = page.getByRole('dialog', { name: 'Nueva campaña' })
     await dialogo.getByLabel('Nombre').fill(nombreCampania)
-    await grupo(dialogo, 'Niveles de riesgo').getByLabel('Alto').check()
-    await grupo(dialogo, 'Niveles de riesgo').getByLabel('Medio').check()
+    // R-015 (M01): los niveles salen de cortes fijos (0,70/0,50), no de percentiles; con la
+    // plantilla sintetica la lista puede no tener ningun Alto/Medio, asi que la campaña cubre
+    // los tres niveles y la fila elegida (de cualquier nivel) siempre la tiene sugerida.
+    for (const nivel of NIVELES) await grupo(dialogo, 'Niveles de riesgo').getByLabel(nivel).check()
     for (const plan of PLANES) await grupo(dialogo, 'Planes').getByLabel(plan).check()
     await dialogo.getByLabel('Prioridad').fill('1')
 
@@ -149,11 +152,11 @@ test('crea y reactiva una campaña, gestiona socios con y sin campaña y cierra 
     await expect(botonAyuda).toBeFocused()
   })
 
-  const prioridad = await test.step('abrir «Gestionar» en un socio de riesgo alto o medio', async () => {
+  const prioridad = await test.step('abrir «Gestionar» en un socio con nivel de riesgo', async () => {
     const fila = page
       .getByRole('row')
       .filter({ has: page.getByRole('button', { name: /^Gestionar prioridad \d+$/ }) })
-      .filter({ has: page.getByText(/^(Alto|Medio)$/) })
+      .filter({ has: page.getByText(/^(Alto|Medio|Bajo)$/) })
       .first()
     await expect(fila).toBeVisible()
     const boton = fila.getByRole('button', { name: /^Gestionar prioridad \d+$/ })

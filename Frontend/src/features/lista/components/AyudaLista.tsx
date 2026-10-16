@@ -30,9 +30,9 @@ function Contenido() {
 
       <SeccionAyuda titulo="Niveles de riesgo: alto, medio y bajo">
         <p>
-          Cada socio tiene un nivel alto, medio o bajo. Los niveles se fijaron una sola vez con el
-          historial del gimnasio (más o menos, el 20 % con más riesgo es alto, el siguiente 30 % es
-          medio y el resto es bajo) y no cambian según cuántos prioritarios pidas.
+          Cada socio tiene un nivel alto, medio o bajo según la probabilidad de que no renueve: es
+          alto si esa probabilidad es de 70 % o más, medio si está entre 50 % y 70 %, y bajo si es
+          menor de 50 %. Los niveles no cambian según cuántos prioritarios pidas.
         </p>
       </SeccionAyuda>
 

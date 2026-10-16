@@ -8,7 +8,7 @@ import { crearPlantillaSintetica } from './plantilla-sintetica'
  * Generar lista -> gestionar un socio con campaña y seguimiento HOY -> Inicio «Para hoy» sube en 1
  * -> pulsarlo -> la fila esta en Seguimiento -> «Abrir gestión» -> registrar «¿Renovó? Sí» -> la
  * fila desaparece y el contador vuelve -> Dashboard del mes con la campaña (1 gestion, «Casos
- * insuficientes») y la tarjeta «Versión v1».
+ * insuficientes») y la tarjeta «Versión vN» del modelo vigente (R-015: ya no siempre v1).
  * R-012: la ventana se cierra al crear con campaña; ayuda de Inicio y del Dashboard; «Resultados de
  * <mes>», embudo y dona (la gestion suma 1 a «Renovaron» y al total respecto de antes de crearla) e
  * «Imprimir / Guardar PDF», que llama a window.print (sustituido: no se abre el dialogo real).
@@ -17,12 +17,13 @@ import { crearPlantillaSintetica } from './plantilla-sintetica'
  * `mtabolic-e2e` (E2E_BASE_URL=http://localhost:8081), nunca contra el principal.
  * Solo datos ficticios (plantilla sintetica). La fila de Seguimiento se identifica por el nombre
  * unico de la campaña creada en esta ejecucion, no por el socio. En la Lista se toma la ULTIMA
- * fila Alto/Medio sin gestion (campanias-gestion toma la primera) para no competir por el mismo
+ * fila sin gestion (campanias-gestion toma la primera) para no competir por el mismo
  * ciclo si los specs corren en paralelo; los contadores son globales, asi que la ejecucion de
  * referencia es con `--workers=1`.
  */
 
 const PUERTO_PRINCIPAL = ':8080'
+const NIVELES = ['Alto', 'Medio', 'Bajo'] as const
 const PLANES = ['Mensual', 'Trimestral', 'Semestral', 'Anual', 'Otro'] as const
 
 /** Fecha de hoy en el calendario local, `YYYY-MM-DD` (la misma que usa la pantalla). */
@@ -130,15 +131,22 @@ test('alertas para hoy: registrar el resultado desde Seguimiento y verlo en el D
 
   const nombreCampania = `Campaña Alertas E2E ${Date.now()}`
   const hoy = hoyLocal()
+  // R-015: la version vigente cambia con `adoptar-modelo`; se toma de /sistema/estado.
+  const estado = await page.request.get('/api/v1/sistema/estado')
+  expect(estado.status()).toBe(200)
+  const versionVigente: string = (await estado.json()).modelo_vigente.version
+  expect(versionVigente).toMatch(/^v\d+$/)
 
-  await test.step('crear una campaña propia (Alto/Medio, todos los planes, prioridad 1)', async () => {
+  await test.step('crear una campaña propia (todos los niveles y planes, prioridad 1)', async () => {
     await page.goto('/campanias')
     await expect(page.getByRole('heading', { level: 1, name: 'Campañas' })).toBeVisible()
     await page.getByRole('button', { name: 'Nueva campaña' }).click()
     const dialogo = page.getByRole('dialog', { name: 'Nueva campaña' })
     await dialogo.getByLabel('Nombre').fill(nombreCampania)
-    await grupo(dialogo, 'Niveles de riesgo').getByLabel('Alto').check()
-    await grupo(dialogo, 'Niveles de riesgo').getByLabel('Medio').check()
+    // R-015 (M01): los niveles salen de cortes fijos (0,70/0,50), no de percentiles; con la
+    // plantilla sintetica la lista puede no tener ningun Alto/Medio, asi que la campaña cubre
+    // los tres niveles y la fila elegida (de cualquier nivel) siempre la tiene sugerida.
+    for (const nivel of NIVELES) await grupo(dialogo, 'Niveles de riesgo').getByLabel(nivel).check()
     for (const plan of PLANES) await grupo(dialogo, 'Planes').getByLabel(plan).check()
     await dialogo.getByLabel('Prioridad').fill('1')
     const creada = page.waitForResponse(
@@ -190,12 +198,12 @@ test('alertas para hoy: registrar el resultado desde Seguimiento y verlo en el D
     leerDona(page),
   )
 
-  await test.step('gestionar un socio Alto/Medio con la campaña y seguimiento HOY', async () => {
+  await test.step('gestionar un socio (cualquier nivel) con la campaña y seguimiento HOY', async () => {
     await page.goto('/lista')
     const fila = page
       .getByRole('row')
       .filter({ has: page.getByRole('button', { name: /^Gestionar prioridad \d+$/ }) })
-      .filter({ has: page.getByText(/^(Alto|Medio)$/) })
+      .filter({ has: page.getByText(/^(Alto|Medio|Bajo)$/) })
       .last()
     await expect(fila).toBeVisible({ timeout: 30_000 })
     await fila.getByRole('button', { name: /^Gestionar prioridad \d+$/ }).click()
@@ -266,7 +274,7 @@ test('alertas para hoy: registrar el resultado desde Seguimiento y verlo en el D
     .getByRole('row')
     .filter({ has: page.getByRole('cell', { name: nombreCampania, exact: true }) })
 
-  await test.step('Dashboard del mes: la campaña con 1 gestion, «Casos insuficientes» y «Versión v1»', async () => {
+  await test.step('Dashboard del mes: la campaña con 1 gestion, «Casos insuficientes» y «Versión» del modelo vigente', async () => {
     await page.goto('/dashboard')
     await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
     await expect(page.getByLabel('Mes', { exact: true })).toHaveValue(hoy.slice(0, 7))
@@ -277,7 +285,7 @@ test('alertas para hoy: registrar el resultado desde Seguimiento y verlo en el D
     await expect(celdas.nth(2)).toHaveText('1')
     await expect(celdas.nth(3)).toHaveText('1')
     await expect(celdas.nth(4)).toContainText('Casos insuficientes')
-    await expect(page.getByText('Versión v1', { exact: true })).toBeVisible()
+    await expect(page.getByText(`Versión ${versionVigente}`, { exact: true })).toBeVisible()
   })
 
   await test.step('Dashboard: «Resultados de <mes>», embudo y dona con la gestion contada como «Renovaron»', async () => {
@@ -353,6 +361,6 @@ test('alertas para hoy: registrar el resultado desde Seguimiento y verlo en el D
     // Sin gestiones no se dibujan graficos.
     await expect(graficoResultados(page)).toHaveCount(0)
     await expect(page.getByRole('img', { name: /^Embudo del mes: / })).toHaveCount(0)
-    await expect(page.getByText('Versión v1', { exact: true })).toBeVisible()
+    await expect(page.getByText(`Versión ${versionVigente}`, { exact: true })).toBeVisible()
   })
 })
