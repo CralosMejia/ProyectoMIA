@@ -235,7 +235,7 @@ Nota: el v2 del stack principal tiene corte de datos 30-09-2026 porque esa base 
 
 1. **Margen de 30 días, no 60.** El criterio estricto ("la etiqueta del entrenamiento se conoce en T−30 del primer ciclo del conjunto siguiente") exigiría 60 días; se usó 30, como se pidió.
 2. **Estado `EXCLUIDO - Vencimiento posterior al período disponible`.** Depende de la fecha de corte de los datos (31-08-2026), no de T−30; afecta a 4 ciclos (2 del margen 1, 1 de validación, 1 de prueba). Se mantuvo para conservar la definición y la paridad con la app.
-3. **`mes_vencimiento` codificado año-mes no aporta**: sus valores de validación y prueba nunca aparecen en entrenamiento. Se conservó para no cambiar más de lo pedido; una codificación por mes del año (estacionalidad) queda como trabajo futuro.
+3. **`mes_vencimiento` codificado año-mes no aporta**: sus valores de validación y prueba nunca aparecen en entrenamiento. Se conservó para no cambiar más de lo pedido; una codificación por mes del año (estacionalidad) queda como trabajo futuro. **Recomendación (tras M02):** probar a codificarla como mes del año (1–12), de modo que los meses de validación y prueba sí aparezcan en entrenamiento, y **quitarla** si no mejora la PR-AUC de validación. En M02 su \|SHAP\| medio medido es 0,0092: desplaza a todos los casos casi por igual y no cambia el orden, coherente con su importancia por permutación 0 ([M02 §6](M02-explicabilidad-shap.md)).
 4. **Conjuntos pequeños**: validación 247 y prueba 277 ciclos; los IC son anchos (≈ ±0,08 de PR-AUC).
 5. **Comparación antes/después con conjuntos distintos**: los márgenes cambian el conjunto de validación; la mejora observada no se puede atribuir solo a la corrección.
 

@@ -34,7 +34,13 @@ Cada socio tiene un nivel: **alto**, **medio** o **bajo**.
 
 ## 4. Motivos
 
-Junto a cada socio se muestran los **motivos principales** por los que tiene más riesgo; por ejemplo, el plan que tiene o cuántas membresías ha tenido antes. Se muestran sin números, en pantalla y en el Excel: sirven para orientar la conversación con el socio. Si no hay motivos destacados, se indica "Sin factores de riesgo destacados".
+Junto a cada socio se muestran hasta 3 motivos: los datos del socio que más suben su probabilidad de no renovar, comparado con un socio promedio. Por ejemplo, el plan que tiene o cuántas membresías ha tenido antes. El mes en que vence la membresía no se muestra como motivo.
+
+Se muestran sin números, en pantalla y en el Excel. Sirven para orientar la conversación con el socio, pero no son la causa de que el socio deje de venir. Si no hay motivos destacados, se indica "Sin factores de riesgo destacados".
+
+Las listas que ya habías guardado conservan los motivos que tenían.
+
+> Desde la mejora M03 (2026-10-16) los motivos se calculan con SHAP, el mismo método que el análisis del modelo en la tesis ([mejoras/M03](mejoras/M03-shap-prueba-y-motivos-en-la-app.md), [ADR-015](adr/ADR-015-motivos-con-shap-en-la-app.md)). Las listas anteriores a esa fecha conservan los motivos del método anterior.
 
 > La ayuda **"¿Cómo funciona esta lista?"** de la aplicación muestra un resumen de las secciones 1 a 4 y, desde R-010, de las secciones 7 ("Gestionar a un socio") y 8 ("Campañas"). Las secciones 5 y 6 solo están en este documento.
 

@@ -14,7 +14,7 @@ R-004 (día 3). CU-03 completo, CU-04, CU-05 y CU-12. Réplica del notebook `Not
 | application | `modelo/adoptar_modelo.py` | `AdoptarModelo` (R-015): comando `adoptar-modelo`, ver §Reentrenamiento. |
 | application | `sistema/{ports,migrar_historico,consultar_estado}.py` | `MigrarHistorico` (CU-03) y estado del sistema. |
 | application | `listas/{generar_lista,consultar_listas,ports,dtos}.py` | `GenerarLista` (CU-04) y consultas (CU-05). |
-| infrastructure | `ml/random_forest.py` | Único punto con scikit-learn y `Decimal ↔ float`. Pipeline §9.5, factores §13.3, artefacto joblib y `metadata_tecnica` con parámetros y versiones. |
+| infrastructure | `ml/random_forest.py` | Único punto con scikit-learn, shap y `Decimal ↔ float`. Pipeline §9.5, factores §13.3 con SHAP (`aportes_shap`, R-017), artefacto joblib y `metadata_tecnica` con parámetros y versiones. |
 | infrastructure | `exportacion/excel_lista.py` | Excel en memoria (CU-12). |
 | infrastructure | `persistence/{unit_of_work,unit_of_work_listas}.py`, `repositories/{modelo,listas,sistema}.py`, `historico/localizador_libros.py` | Unidades de trabajo, repositorios, bloqueo consultivo y localizador `*Control*Gym*.xlsx`. |
 | api | `routers/sistema.py`, `routers/listas.py`, `main.py` | Estado real, endpoints de listas y lanzamiento de la migración en un hilo al arrancar. |
@@ -24,7 +24,9 @@ R-004 (día 3). CU-03 completo, CU-04, CU-05 y CU-12. Réplica del notebook `Not
 - `SimpleImputer(median)` + `StandardScaler` para las numéricas; `SimpleImputer(most_frequent)` + `OneHotEncoder(handle_unknown="ignore")` para las categóricas; `RandomForestClassifier(n_estimators=300, max_depth=6, min_samples_leaf=20, class_weight="balanced", random_state=42)`, entrenado con **todos** los evaluables (1.564 con los libros reales).
 - **scikit-learn 1.8.0** (la del notebook): con 1.9.1 el bosque cambia (24/25 del top iguales, probabilidades ±0,001–0,016). Ver `Backend/README.md`.
 - El artefacto (joblib) se guarda en `modelos.artefacto` y **solo** se deserializa desde ahí (ADR-003). Serializar → deserializar da scores idénticos.
-- **Factores (§13.3):** hasta 3, aporte > 0,005, de mayor a menor, sin `mes_vencimiento`; formato `"Plan: TRIMESTRAL (+0,09)"`, numéricos con separador de miles `.`, `None` → `"sin dato"`. Referencia = medianas y modas de los evaluables con vencimiento en `PERIODO_REFERENCIA_FACTORES` = vencimientos < 2025-12-02 (R-015: el `X_train` del notebook M01; antes [2025-01-01, 2026-01-01)); parametrizable en `domain/modelo/variables.py`. Solo se calculan sobre las variables del modelo: con M01 ya no aparecen "Forma de pago" ni "Inicio aproximado" como factor.
+- **Factores con SHAP (§13.3, R-017/M03, [ADR-015](../../adr/ADR-015-motivos-con-shap-en-la-app.md)):** `aportes_shap(modelo, frame)` aplica `shap.TreeExplainer` al bosque sobre `preparacion.transform(X)` densa, toma la clase "no renovó" (`[:, :, 1]`) y suma las columnas *one-hot* a su variable de izquierda a derecha desde 0,0 (`float64`); shap comprueba la aditividad (`check_additivity`). `predecir_con` elige candidatas de `NOMBRE_VARIABLE` presentes en el modelo (**nunca** `mes_vencimiento`), aporte > 0,005 sin redondear, de mayor a menor (empate: orden de `NOMBRE_VARIABLE`), hasta 3; formato `"Plan: TRIMESTRAL (+0,09)"`, numéricos con separador de miles `.`, `None` → `"sin dato"`; ninguno → tupla vacía. El `score` no cambia. Coste medido: ~0,02 s para 57 filas, ~0,4 s para 1.600. `shap==0.54.1` (transitivas slicer y tqdm; **no** numba ni llvmlite); `import-linter` prohíbe `shap` en `domain`/`application`.
+  - El método lo decide el adaptador: v1 y v2 explican con SHAP sin reentrenar. `metadata_tecnica` registra `shap` y `metodo_factores: "shap"` solo en modelos entrenados después de M03.
+  - ~~Factores por sustitución contra una referencia (medianas y modas de `PERIODO_REFERENCIA_FACTORES`)~~ — sustituido en R-017. La referencia se sigue calculando y guardando en el artefacto (`referencia_factores`) por compatibilidad, pero no interviene en los motivos. Las listas guardadas conservan los motivos con que se generaron.
 - **Variables del modelo (M01):** numéricas `ciclos_previos`, `antiguedad_dias`, `duracion_modelo`, `monto_actual`, `monto_historico`, `dias_desde_ultima_membresia`; categóricas `plan`, `mes_vencimiento`. Elegidas por la regla (d) de R-015 ([ADR-014](../../adr/ADR-014-modelo-m01-adopcion-y-cortes-de-riesgo.md)).
 - **Umbrales (CU-05, R-015, decisión del usuario):** cortes fijos del notebook; ALTO si `score ≥ 0,70`, MEDIO si `≥ 0,50`, si no BAJO (igualdad → nivel superior). `porcentajes_umbral` = reparto observado (entero, redondeo bancario) de los scores sobre los evaluables de los 3 meses de vencimiento más recientes; informativo. App y notebook asignan ya el mismo nivel. ~~P80/P50 con `porcentajes_umbral = {"ALTO":20,"MEDIO":30,"BAJO":50}`~~ (R-004 (d), sustituido; el v1 del stack principal conserva esos umbrales y sus listas sus niveles).
 - La `version` la calcula el llamante (v1 en la migración).
@@ -95,6 +97,8 @@ Decisiones y motivos: [ADR-011](../../adr/ADR-011-reglas-del-reentrenamiento.md)
 
 **Desde R-015 (M01):** `python scripts/verificar_lista.py <carpeta> [--referencia ../salidas]` (en memoria, sin BD, scikit-learn 1.8.0) lee las referencias **en tiempo de ejecución** de la carpeta git-ignorada `salidas/` del notebook (`m01/despues/parametros_modelo_operativo.json` y la hoja `cartera_completa` de `mvp/lista_operativa_2026-09.xlsx`; nunca se copian a archivos versionados) y compara **todas** las filas de la cartera: probabilidad a 8 decimales, nivel (0,70/0,50 en ambos), factores (texto exacto) y orden por grupo de empate. Los códigos de socio son HMAC-SHA256 con sal secreta (`MTABOLIC_SAL_CODIGOS` o `salidas/.sal_codigos`); la sal nunca se imprime. Ante un error no controlado solo imprime el tipo. Salidas: `0` sin diferencias, `1` alguna, `2` faltan libros, salidas o sal. Resultado: `0`, 0 diferencias en 57 filas (ALTO 2, MEDIO 39, BAJO 16), cartera 59, ya renovaron 2, 1.564 ciclos de entrenamiento.
 
+**Desde R-017 (M03):** los factores comparados son los **motivos SHAP** (texto exacto, aporte a 2 decimales) y se comprueba también `metodo_factores`; la comparación de `referencia_factores` pasa a informativa (no cuenta como diferencia). La línea de resultado informa "motivos (SHAP) distintos: N". Resultado con scikit-learn 1.8.0 y shap 0.54.1: `0`, 0 diferencias en 57 filas, incluidos los 146 motivos.
+
 ~~R-004: top 25 comparado contra cifras fijas en el script~~ (sustituido por lo anterior): salida `0`, 25/25 probabilidades, orden y factores iguales, empate en la posición 25 como conjunto.
 
 R-005 (decisión c): el script no pasa por la API ni por `GenerarLista` con la validación de fecha; construye su entrada con `model_construct` para mantener su ventana de 180 días y marca todas las membresías con `socio_con_cedula=True` para seguir comparando con el notebook. Sigue saliendo con `0`. Consecuencia: la lista de la app puede diferir del top 25 del notebook si en él hay socios sin cédula (por diseño).
@@ -134,6 +138,16 @@ Detalle metodológico: [mejoras/M01](../../mejoras/M01-modelo-sin-fuga-temporal.
 | (e) | Puesta en uso con `adoptar-modelo` (vigente + 1), no por CU-02. |
 | (g) | `PERIODO_REFERENCIA_FACTORES` = vencimientos < 2025-12-02. |
 | — | Niveles con cortes fijos 0,70/0,50 (decisión del usuario); corte de los datos para etiquetar. |
+
+## Decisiones de R-017 (mejora M03)
+
+Detalle: [mejoras/M03](../../mejoras/M03-shap-prueba-y-motivos-en-la-app.md). Decisión de arquitectura: [ADR-015](../../adr/ADR-015-motivos-con-shap-en-la-app.md).
+
+| | Decisión |
+|---|---|
+| (e) | Motivos con SHAP, misma regla que el notebook (hasta 3, > 0,005, sin `mes_vencimiento`, formato sin cambios). Sustituye a (a) de R-004 y (g) de R-015 en lo que toca a los motivos. |
+| (f) | Pantalla y Excel siguen sin mostrar el número (ADR-007). |
+| — | Sin reentrenar ni adoptar; sin migraciones, endpoints ni cambio de contrato. Puesto en uso en el principal el 2026-10-16 (v2, conteos idénticos, sin generar listas). |
 
 ## Pendientes
 

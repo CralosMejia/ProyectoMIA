@@ -108,6 +108,8 @@ Etiquetas renombradas en R-005 (usuario no técnico): "Fecha de referencia" → 
 
 **Ayuda de la lista (R-010).** `AyudaLista.tsx` añade las secciones "Campañas" y "Gestionar a un socio" a las cuatro existentes; mismo contenido que [06 §7–§8](../../06-como-funciona-la-lista.md), sin términos técnicos (la prueba comprueba que no aparecen `API`, `endpoint`, `null`, nombres de estados ni códigos).
 
+**Ayuda de la lista · Motivos (R-017, M03).** La sección "Motivos" de `AyudaLista.tsx` explica, sin tecnicismos, que se muestran hasta 3 datos del socio que más suben su probabilidad de no renovar frente a un socio promedio, que el mes de vencimiento no es motivo, que se muestran sin números (ADR-007), que no indican la causa y que las listas guardadas conservan sus motivos; sigue citando "Sin factores de riesgo destacados". Mismo texto que [06 §4](../../06-como-funciona-la-lista.md#4-motivos). La pantalla no cambia (el número sigue oculto por `APORTE_FINAL`); el cálculo con SHAP es del backend ([ADR-015](../../adr/ADR-015-motivos-con-shap-en-la-app.md)).
+
 ### Alertas, Seguimiento, Dashboard y acceso denegado (R-011, día 6)
 
 | Feature | Archivos | Comportamiento |

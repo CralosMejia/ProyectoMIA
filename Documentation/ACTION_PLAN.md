@@ -5,9 +5,235 @@
 
 ## ACTIVO
 
-_(ninguno)_
+Ninguno.
 
 ## TERMINADOS RECIENTEMENTE
+
+### R-017 — Mejora M03: SHAP en prueba, lista y entrenamiento (notebook) y "Motivos principales" con SHAP en el notebook y la app · **DONE** 2026-10-16
+
+**Cierre:** documento para la tesis [mejoras/M03](mejoras/M03-shap-prueba-y-motivos-en-la-app.md) · [ADR-015](adr/ADR-015-motivos-con-shap-en-la-app.md). Seguridad: clean; diferidos low S1 (transitivas de shap sin *lockfile*, como S10) y S2 (notebook §13.3/§13.8 con código HMAC junto a fecha, plan y monto por socio). Pruebas: pass (backend 2050+3 pytest, 863 Vitest, 10 E2E en 8081, `verificar_lista` 0 diferencias en 57 filas y 146 motivos SHAP). T10: principal reconstruido con respaldo previo, v2 `LISTO`, conteos idénticos, sin generar listas.
+
+**Decisiones finales**
+- Prueba: 277 casos, PR-AUC 0,7934, valor base 0,5029; Spearman validación–prueba 0,881 (las 3 primeras variables iguales); 10 de 11 conclusiones FP/FN de M02 se mantienen (C3 no; C4 más débil).
+- Motivos SHAP en la lista de septiembre: mismo primer motivo 17/57, conjunto distinto 43/57, "Sin factores" 7 → 6; probabilidades, orden y niveles idénticos.
+- **Corrección del plan:** `shap` 0.54.1 trae slicer 0.0.8 y tqdm 4.70.1 y **no** instala numba ni llvmlite (las menciones de SEC-1 y del riesgo 2 de abajo quedan superadas).
+- `metadata_tecnica.metodo_factores` solo en modelos entrenados tras M03; v1/v2 explican con SHAP porque lo decide el adaptador. `referencia_factores` solo informativa en `verificar_lista`.
+
+**Objetivo:** el notebook amplía el SHAP de §12.12 a prueba (277), lista de septiembre (57) y entrenamiento (845), y tanto el notebook (§13.3/§13.8) como la app calculan los "Motivos principales" con SHAP, con lista idéntica entre los dos (`verificar_lista` 0 diferencias).
+
+**Fuente:** petición del usuario (continuación de M02) · notebook §12.12, §13.3, §13.8, §14.2, §15.4 · [mejoras/M02](mejoras/M02-explicabilidad-shap.md) §2–§11 · [backend/12](docs/backend/12-modelo-y-listas.md) §Modelo, §Conciliación · [ADR-002](adr/ADR-002-ml-en-infraestructura.md), [ADR-005](adr/ADR-005-fidelidad-al-notebook-del-modelo-v1.md), [ADR-007](adr/ADR-007-excel-igual-a-la-pantalla-y-nombre-de-lista.md), [ADR-014](adr/ADR-014-modelo-m01-adopcion-y-cortes-de-riesgo.md).
+
+**Notas de alcance del planner**
+- Dentro de alcance: cambia **cómo se explica** el riesgo (motivos), no las variables, la etiqueta, la partición, el modelo ni las probabilidades. Igual que M01, es una mejora posterior a la entrega pedida explícitamente; DOC-1 la anota como excepción en [DEVELOPMENT_GUIDELINES §Diferido](DEVELOPMENT_GUIDELINES.md). No es inferencia causal (se advierte en textos y ayuda).
+- Sin migraciones, sin endpoints nuevos, sin cambio de contrato (`factores_principales: string[]` igual). Dominio y aplicación no importan `shap` (ADR-002; se añade a `forbidden_modules` de `import-linter`).
+- **Sin reentrenar ni adoptar:** SHAP se calcula con el `pipeline` que ya guarda el artefacto (v1 y v2 sirven); el modelo vigente v2 explica con SHAP en cuanto se reconstruye el backend. Si T5 demostrara que un artefacto existente no puede explicarse, se para y se escala (no se reentrena por iniciativa propia).
+- Las listas ya generadas conservan sus motivos (`predicciones.factores_principales` es instantánea inmutable; nada los recalcula). Stack principal: **no se crean listas ni datos**.
+
+**Definiciones fijadas por el planner (reversibles; avisar al usuario)**
+- (a) **Modelos explicados:** prueba y entrenamiento → `modelo_seleccionado` de §12.11 (mismo explicador que M02); lista de septiembre → el **modelo operativo de §13.8** (el que produce la lista y el que reproduce la app). Matriz = `named_steps["preparacion"].transform(X)`, salida `[:, :, 1]`, *one-hot* sumado a su variable (definición (b) de R-016).
+- (b) **Clasificación en prueba:** top 25 por cada mes de vencimiento de prueba (empate en el puesto 25 → código HMAC ascendente; mes con < 25 casos se indica) y umbral 0,32 (el de validación, no se reajusta). Lista: sin grupos (aún sin resultado). Entrenamiento: solo importancia global, informativo (dentro de muestra, se advierte).
+- (c) **Comparación validación ↔ prueba:** ranking de \|SHAP\| medio (Spearman de rangos y puestos lado a lado) y aporte medio con signo por grupo; "se mantiene" una conclusión FP/FN de M02 §9 si la variable que la sustenta conserva el signo del aporte medio y queda entre las 3 primeras del grupo en prueba; si no, se dice "no se mantiene" con las cifras.
+- (d) **Privacidad y waterfalls:** como R-016 (d)(e): mayor y menor probabilidad por grupo del top 25 en prueba; para la lista, 2 waterfalls (mayor y menor probabilidad del top 25) sin grupo; < 2 casos → "solo ilustrativo" con `n`; 0 → texto con la causa.
+- (e) **Motivos con SHAP (notebook y app, misma regla):** aporte de una variable = su SHAP agregado (clase "no renovó"); candidatas = las de `NOMBRE_VARIABLE` presentes en el modelo (**sin** `mes_vencimiento`); se muestran hasta 3 con aporte `> 0,005`, de mayor a menor (empate estable por orden de `NOMBRE_VARIABLE`); texto igual al actual `"Plan: TRIMESTRAL (+0,09)"` (valor con `texto_valor`, aporte con `es(a, 2, True)`); sin ninguno → "Sin factores de riesgo destacados".
+- (f) **Pantalla y Excel:** siguen mostrando el motivo **sin** el número (regla actual `APORTE_FINAL`, ADR-007); el aporte SHAP queda guardado en el texto y se explica en la ayuda. Si el usuario quiere ver el número en pantalla, es un cambio aparte.
+
+**Tareas** — lote A (notebook, `Notebookes/MVP.ipynb`, secuencial) y lote B (app) con archivos disjuntos. 🗄 = usa base de datos.
+
+Lote A · notebook
+
+- [x] **T1** · `domain` (análisis) · §12.12 ampliada a prueba: aditividad, VP/FP/FN/VN y aporte por grupo y por mes
+  - Archivos: `Notebookes/MVP.ipynb` (principal: nueva subsección "12.12 · M03 prueba" al final de §12.12), `salidas/m03/*.csv` (nuevos, fuera de git).
+  - Docs: [mejoras/M02](mejoras/M02-explicabilidad-shap.md) §2, §4, §5, §7, §8; definiciones (a)(b).
+  - Aceptación:
+    - Explicador M02 sobre `preparacion.transform(X_test)`: `assert len == 277` y `max|base + ΣSHAP − predict_proba[:,1]| < 1e-6` (en *one-hot* y agregado); imprime el error máximo.
+    - Tamaños por grupo en top 25 por mes (VP+FP = 25 por mes, con `n` por mes) y en umbral 0,32 (conteos = matriz de confusión del RF variante en prueba de §12.11); los grupos suman 277 en cada clasificación (`assert`).
+    - Aporte medio con signo y \|SHAP\| medio por variable y grupo (ambas clasificaciones) e importancia por mes con ranking.
+    - CSV `m03_prueba_grupos_tamanos.csv`, `m03_prueba_aporte_por_grupo_top25.csv`, `m03_prueba_aporte_por_grupo_umbral.csv`, `m03_prueba_importancia_por_mes.csv`, `m03_shap_prueba.csv` (solo código HMAC, mes `AAAA-MM`, grupo, probabilidad a 3 decimales y SHAP agregados; `assert` sin columnas prohibidas).
+    - Cifras de M01/M02 sin cambios (PR-AUC val 0,7204, umbral 0,32, error de aditividad de validación); notebook ejecuta completo.
+  - Pruebas: celdas `assert` (aditividad, 277, sumas de grupos, columnas prohibidas).
+
+- [x] **T2** · `domain` (análisis) · Entrenamiento (845, informativo) y comparación validación ↔ prueba
+  - Archivos: `Notebookes/MVP.ipynb` (principal: §12.12 M03), `salidas/m03/*.csv`.
+  - Docs: definición (c); [mejoras/M02](mejoras/M02-explicabilidad-shap.md) §6, §9.
+  - Aceptación:
+    - SHAP sobre `X_train` (`assert len == 845`, aditividad `< 1e-6`) con la advertencia "dentro de muestra, informativo".
+    - Tabla \|SHAP\| medio y puesto por variable en entrenamiento, validación y prueba (`m03_importancia_comparada.csv`) con Spearman de rangos validación–prueba impreso.
+    - Tabla de conclusiones FP/FN de M02 §9 con columna "¿se mantiene en prueba?" según la regla (c) y cifras de apoyo (`m03_conclusiones_fp_fn.csv`).
+    - Notebook ejecuta completo.
+  - Pruebas: `assert` de aditividad y tamaños.
+
+- [x] **T3** · `domain` (análisis) · Figuras M03 de prueba y comparación, control de privacidad y conclusiones
+  - Archivos: `Notebookes/MVP.ipynb` (principal: §12.12 M03, encabezado con rutas M03), `Documentation/claude/mejoras/M03/*.png` (nuevos, fuera de git).
+  - Docs: definición (d); [mejoras/README](mejoras/README.md) §Dónde están las imágenes.
+  - Aceptación:
+    - PNG: `m03_prueba_resumen_bar.png`, `m03_prueba_beeswarm.png`, `m03_prueba_waterfall_<grupo>_<1|2>.png`, `m03_prueba_aporte_por_grupo.png`, `m03_prueba_importancia_por_mes.png`, `m03_importancia_val_vs_prueba.png` (y entrenamiento como tercera serie). Etiquetas redondeadas/en rangos; títulos solo con grupo, mes ("may 2026") y probabilidad a 2 decimales.
+    - Celda de control (como la de M02) sobre las salidas visibles M03 y los textos de las figuras: sin `socio_id`, nombre, cédula ni fecha `AAAA-MM-DD` (`assert`); selección de casos reproducible.
+    - Markdown de conclusiones: FP/FN en prueba (primero top 25, umbral como complemento), si se mantienen respecto a validación y advertencias (no causal, variables correlacionadas, grupos pequeños).
+    - `git status` no muestra PNG ni CSV nuevos; notebook ejecuta completo.
+  - Pruebas: control de privacidad; reproducibilidad en `.harness/tests.md`.
+
+- [x] **T4** · `domain` (análisis) · Motivos con SHAP en §13.3/§13.8, SHAP de la lista de septiembre y controles §14.2
+  - Archivos: `Notebookes/MVP.ipynb` (principal: §13.3 `aportes_individuales`/`factores_principales`, §13.8, §14.2, §15.4), `salidas/m03/*.csv`, `Documentation/claude/mejoras/M03/*.png`.
+  - Docs: definición (e); [backend/12](docs/backend/12-modelo-y-listas.md) §Conciliación con el notebook.
+  - Aceptación:
+    - **Antes** de cambiar, se guardan los motivos actuales de la lista de septiembre (`m03_motivos_antes.csv`: código HMAC, puesto, motivos).
+    - §13.3 calcula los aportes con SHAP según (e) (función con el explicador del modelo recibido); §13.8 usa el modelo operativo; `mes_vencimiento` nunca aparece (`assert`); formato de texto igual que antes.
+    - Lista de septiembre: 57 filas, probabilidades, orden y niveles **idénticos** a antes (`assert` contra `m03_motivos_antes.csv`/salidas previas); aditividad SHAP `< 1e-6`; importancia global de la lista y 2 waterfalls (definición (d)) → `m03_lista_importancia.csv`, `m03_lista_waterfall_<1|2>.png`.
+    - Tabla de efecto del cambio de método (`m03_motivos_antes_despues.csv` + resumen impreso: socios con el mismo primer motivo, con el mismo conjunto, con motivos distintos, "sin factores" antes/después).
+    - Salidas de `salidas_mvp/` que lee `verificar_lista` regeneradas con los motivos SHAP (mismo nombre y columnas).
+    - §14.2: controles nuevos "aditividad SHAP en prueba y lista", "motivos = SHAP sin `mes_vencimiento`" y "salidas M03 sin datos personales" en verde; §15.4 actualiza la limitación de motivos.
+    - Ejecución final completa con nbconvert sin errores; cifras de M01/M02 sin cambios.
+  - Pruebas: `assert` y §14.2 en verde.
+
+Lote B · app
+
+- [x] **T5** · `infra` · Motivos con SHAP en el adaptador del modelo (TDD)
+  - Archivos: `Backend/app/infrastructure/ml/random_forest.py` (principal: `predecir_con`, docstring), `Backend/tests/unit/infrastructure/ml/test_random_forest.py`, `Backend/pyproject.toml` (`shap==0.54.1`; override de mypy para `shap.*` si no publica tipos, con justificación; `shap` en `forbidden_modules` del contrato de `domain`/`application`).
+  - Docs: [backend/12](docs/backend/12-modelo-y-listas.md) §Modelo; [ADR-002](adr/ADR-002-ml-en-infraestructura.md); definición (e).
+  - Aceptación:
+    - **Primero** pruebas que fallan con la sustitución actual: (1) para un modelo entrenado con datos sintéticos, la suma de los aportes por variable + valor base = probabilidad (tol. `1e-6`) — expone una función de infraestructura `aportes_shap(modelo, frame)`; (2) el aporte del factor elegido = SHAP agregado redondeado a 2 decimales.
+    - Plan *one-hot* agregado en un único motivo; `mes_vencimiento` nunca es motivo; máximo 3, `> 0,005`, de mayor a menor; formato `"Plan: TRIMESTRAL (+0,09)"`; sin motivos → tupla vacía.
+    - El `score` no cambia (mismas probabilidades que `predict_proba`); un artefacto con las 10 columnas (estilo v1, con `forma_pago`/`inicio_aproximado`) sigue prediciendo y explicando; `referencia` del artefacto se sigue cargando (compatibilidad) aunque ya no se use para los motivos.
+    - `pip install -e .[dev]` resuelve con scikit-learn 1.8.0 y numpy 2.5.3 sin cambiar (si el resolvedor los cambia → `BLOCKED`); `metadata_tecnica` de los entrenamientos nuevos registra `shap` y `metodo_factores: "shap"`.
+    - `ruff check`, `ruff format --check`, `mypy app`, `lint-imports`, `pytest tests/unit` en verde.
+  - Pruebas: unitarias de infraestructura (TDD).
+
+- [x] **T6** · `infra` · `verificar_lista.py` compara los motivos SHAP con el notebook
+  - Archivos: `Backend/scripts/verificar_lista.py` (principal), `Backend/tests/unit/scripts/test_verificar_lista.py`.
+  - Docs: [backend/12](docs/backend/12-modelo-y-listas.md) §Conciliación con el notebook.
+  - Aceptación:
+    - Docstring y mensajes citan M03; la línea de resultado informa "motivos (SHAP) distintos: N"; la comparación de `referencia_factores` pasa a informativa (no cuenta como diferencia) porque ya no interviene en los motivos.
+    - Prueba unitaria: un motivo con aporte distinto en 0,01 cuenta 1 diferencia y salida `≠ 0`; textos iguales → `0`.
+    - `python scripts/verificar_lista.py plantillas` (scikit-learn 1.8.0, shap 0.54.1) contra las salidas de T4 → salida `0`: conteos, 57 filas, probabilidades, orden, niveles y **motivos SHAP** iguales (0 diferencias).
+  - Pruebas: unitarias del script; ejecución registrada en `.harness/tests.md`.
+
+- [x] **T7** · `infra` · Integración: las listas existentes conservan sus motivos y las nuevas usan SHAP 🗄
+  - Archivos: `Backend/tests/integration/api/test_listas_api.py` (principal).
+  - Docs: [backend/12](docs/backend/12-modelo-y-listas.md) §Lista priorizada.
+  - Aceptación (PostgreSQL de pruebas): una lista guardada con motivos "antiguos" → tras generar otra con el adaptador SHAP, `GET` de la primera devuelve exactamente los mismos `factores_principales` (`200`); la nueva devuelve motivos con el formato (e), sin `mes_vencimiento` y como máximo 3 por socio (`201`/`200` según el contrato actual).
+  - Pruebas: integración con BD real.
+
+- [x] **T8** · `frontend` · Ayuda de la Lista: motivos explicados con SHAP en lenguaje sencillo
+  - Archivos: `Frontend/src/features/lista/components/AyudaLista.tsx` (principal), `Frontend/src/features/lista/components/AyudaLista.test.tsx`.
+  - Docs: `Documentation/docs/frontend/01-arquitectura.md` (sección donde cita `AyudaLista`); `Documentation/06-como-funciona-la-lista.md` §4.
+  - Aceptación: la sección "Motivos" dice, sin tecnicismos, que son las (hasta) 3 características del socio que más empujan su riesgo hacia "no renueva" según el modelo, que no se muestra el mes de vencimiento, que no indican causa y que listas anteriores conservan sus motivos; sigue mencionando "Sin factores de riesgo destacados". Vitest de la ayuda en verde; `npm run lint`, `tsc` y la suite Vitest en verde.
+  - Pruebas: frontend (Vitest).
+
+- [x] **T9** · `infra-deploy` · Ensayo en `mtabolic-e2e` (8081) 🗄
+  - Archivos: ninguno versionado (salvo que falle algo).
+  - Docs: [backend/10](docs/backend/10-docker.md) §Stack E2E aislado.
+  - Aceptación: reconstruir backend y frontend con `-p mtabolic-e2e`; `pip show shap` en el contenedor = 0.54.1; `/sistema/estado` `LISTO` con el mismo modelo vigente (sin reentrenar ni adoptar); generar una lista → motivos con formato (e) y sin mes; listas y gestiones anteriores con los mismos motivos; conteos de las 9 tablas: solo `listas_priorizadas`/`predicciones` crecen por la lista de prueba; `npx playwright test` contra 8081 en verde.
+  - Pruebas: manual + E2E, registrado en `.harness/tests.md`.
+
+- [x] **T10** · `infra-deploy` · Puesta en uso en el stack principal (orquestador, al final) 🗄
+  - Archivos: ninguno versionado.
+  - Docs: `Documentation/comandos/respaldo-y-restauracion.md`; [backend/10](docs/backend/10-docker.md) §Servicios.
+  - Aceptación: respaldo previo verificado (archivo + restauración de prueba a base nueva con nombre validado); conteos de las 9 tablas antes; reconstruir backend y frontend; conteos después **idénticos**; `/sistema/estado` `LISTO` con "v2"; comprobación de solo lectura dentro del contenedor (cargar el artefacto vigente y explicar filas en memoria, sin escribir) → aditividad `< 1e-6` y motivos con formato (e); **sin generar listas ni datos**. Decisión "sin reentrenar/adoptar" registrada.
+  - Pruebas: registro en `.harness/tests.md`.
+
+- [x] **SEC-1** · security-reviewer · Diff de R-017: dependencia nueva `shap==0.54.1` (y transitivas; ~~`numba`, `llvmlite`~~ no se instalan: slicer 0.0.8, tqdm 4.70.1, `cloudpickle`) con versión fija, sin avisos conocidos; `shap` solo en infraestructura; el artefacto sigue deserializándose solo desde BD; sin datos personales en salidas guardadas del notebook, CSV y figuras M03; logs sin datos personales; `salidas/` y `Documentation/claude/` fuera de git.
+
+- [x] **DOC-1** · doc-agent · `Documentation/mejoras/M03-shap-prueba-y-motivos-en-la-app.md` (resultados en prueba y lista, comparación con validación, entrenamiento informativo, cambio de método de motivos y su efecto con la tabla de T4, figuras con ruta `Documentation/claude/mejoras/M03/` y sección del notebook, limitaciones que cierra (M02 §11 puntos 6 y 7) y las que quedan, sección "Qué cambiar/añadir en el documento de la tesis") · `mejoras/README.md` · M02 §11 (marcar 6 y 7 cerradas por M03) · ADR-015 (motivos con SHAP en la app; complementa ADR-002/ADR-005, sin reentrenar) · `docs/backend/12-modelo-y-listas.md` (§Componentes, §Modelo, §Conciliación, decisiones de R-017) · `06-como-funciona-la-lista.md` §4 · `DEVELOPMENT_GUIDELINES.md` (excepción M03) · `Backend/README.md` si lista dependencias · este board.
+
+**Dependencias**
+- Lote A: T1 → T2 → T3 → T4 (mismo archivo). Lote B: T5 → T7; T8 independiente. T6 requiere T4 (salidas nuevas) y T5. SEC-1 tras T1–T8; T9 tras SEC-1; T10 tras T9; DOC-1 al final (usa cifras de T1–T4 y T10).
+- Lotes paralelos posibles: T1 ‖ T5 ‖ T8.
+- Externas: entorno del notebook (Python 3.12, scikit-learn 1.8.0, numpy 2.5.3, shap 0.54.1), libros en `plantillas/`, sal de códigos (`MTABOLIC_SAL_CODIGOS` o `salidas/.sal_codigos`); Docker para T9/T10.
+
+**Riesgos**
+1. **Igualdad notebook ↔ app de los motivos:** un empate o un aporte en el borde de 0,005 / del redondeo a 2 decimales puede diferir si cambia el orden de columnas *one-hot* o la versión de shap/numba; mitigación: misma regla (e), versiones fijas, agregación por prefijo de nombre de columna y `verificar_lista` con 0 diferencias como criterio bloqueante.
+2. ~~**Dependencia nueva pesada (`numba`/`llvmlite`) en la imagen y el resolvedor:**~~ (no se materializó: shap 0.54.1 no instala numba ni llvmlite; versiones de scikit-learn y numpy sin cambio) puede cambiar numpy/scikit-learn (y el bosque) o fallar en la imagen slim; mitigación: comprobar versiones tras instalar en T5 y en el contenedor en T9, `BLOCKED` si hay conflicto, SEC-1 revisa transitivas.
+3. **Rendimiento y alcance de `predecir_con`:** también se usa en entrenamiento/CU-02 para métricas sobre ~1.600 ciclos; SHAP añade tiempo; mitigación: medir en T5 (tiempo de `predecir_con` sobre la cartera y sobre todos los evaluables, registrado) y, si supera unos segundos, explicar solo cuando se necesiten motivos sin cambiar el puerto del dominio.
+
+### R-016 — Mejora M02 (tutor): explicabilidad SHAP del Random Forest corregido (M01, variante sin `forma_pago`/`inicio_aproximado`), solo en el notebook · **DONE** 2026-10-16
+
+**Cierre:** documento para la tesis [mejoras/M02](mejoras/M02-explicabilidad-shap.md). Seguridad: clean (único hallazgo low, aviso con ruta local en §1.1, corregido). Pruebas: pass (notebook completo, 14 controles de §14.2 en verde, cifras de M01 sin cambios, `verificar_lista` 0 diferencias). shap 0.54.1 solo en el entorno del notebook.
+
+**Objetivo:** el notebook `Notebookes/MVP.ipynb` explica con `shap.TreeExplainer` el RF corregido sobre los 247 casos de validación (clase "no renovó"), compara VP/FP/FN/VN con top 25 por mes y con umbral 0,32, y deja figuras, tablas y un documento M02 listos para la tesis. **La app no cambia.**
+
+**Fuente:** petición del usuario (recomendación del tutor) · notebook §9.5 (preprocesamiento), §11.1 (umbral), §12.8 (mes a mes), §12.9 (importancia), §12.11 (variante y `modelo_seleccionado`), §13.2 (código HMAC), §14.2 (controles) · [mejoras/M01](mejoras/M01-modelo-sin-fuga-temporal.md) §6.1, §8, §10, §13–§15 · [mejoras/README](mejoras/README.md).
+
+**Notas de alcance del planner**
+- Dentro de alcance: es análisis añadido al notebook (nueva §12.12), no cambia la lógica de variables, etiqueta, partición ni modelo; no es inferencia causal (§Fuera del proyecto) y se advierte en el texto. No toca `Backend/**` ni `Frontend/**` (no hace falta consultar sus grafos).
+- El tutor citó 355 casos y umbral 0,31: son del MVP anterior a M01 (validación 354 en §15.2 y umbral 0,31 del RF completo en §12.11). Se usan **247** y **0,32** (RF variante) y se documenta la diferencia.
+- `class_weight="balanced"` pondera más a la clase minoritaria ("sí renovó", prevalencia de "no renovó" en validación 0,6397): el valor base SHAP (media ponderada de las hojas en entrenamiento) queda cerca de 0,5 y no de la prevalencia; se reporta y se explica.
+- `mes_vencimiento` tiene importancia por permutación 0 (M01 §8, categorías de validación desconocidas para el *one-hot*). Con SHAP **puede no salir exactamente 0** (las columnas *one-hot* de entrenamiento valen 0 en validación y eso sí recorre ramas): se reporta el valor medido, sin forzarlo, y se explica.
+- Privacidad: ninguna salida visible del notebook ni figura con código, nombre, cédula o fechas exactas; las tablas de `salidas/m02/` pueden llevar el código HMAC `MTB-XXXXXXXX` (nunca `socio_id`, nombre ni cédula).
+
+**Definiciones fijadas por el planner (reversibles; avisar al usuario)**
+- (a) **Modelo explicado:** `modelo_seleccionado` de §12.11 (RF variante entrenado con `X_train`, semilla 42). Control: su `predict_proba(X_validation)[:,1]` da PR-AUC 0,7204 en validación.
+- (b) **Matriz explicada:** `modelo_seleccionado.named_steps["preparacion"].transform(X_validation)` (denso), nombres de `get_feature_names_out()`; SHAP de la salida `[:, :, 1]` (clase 1 = no renovó). Agregación: suma de las columnas `cat__plan_*` → `plan`, `cat__mes_vencimiento_*` → `mes_vencimiento`; numéricas 1:1. Valores mostrados = `X_validation` original (sin escalar).
+- (c) **Clasificación top 25 por mes:** para cada mes de vencimiento de validación (ene, feb, mar 2026), predicho positivo = los 25 de mayor probabilidad; empates en el puesto 25 se resuelven por código HMAC ascendente (regla fija). **Umbral:** positivo si probabilidad ≥ 0,32. Grupos VP/FP/FN/VN respecto a `no_renovo`.
+- (d) **Casos para waterfall:** dentro de cada grupo de la clasificación top 25 por mes, el caso de **mayor** y el de **menor** probabilidad (empate → código HMAC ascendente). Si el grupo tiene < 2 casos se muestra lo que haya, con `n` y la leyenda "solo ilustrativo"; si tiene 0, se explica por qué.
+- (e) **Redondeo en figuras:** montos al múltiplo de 10 más cercano, días en rangos de 30 (`0–29`, `30–59`, …), probabilidades a 2 decimales; `mes_vencimiento` solo como "ene/feb/mar 2026", nunca día exacto.
+
+**Tareas** — todas en `Notebookes/MVP.ipynb` (mismo archivo: secuenciales). Ninguna usa base de datos.
+
+- [x] **T1** · `infra` (entorno) · `shap` con versión fija en el entorno del notebook
+  - Archivos: `Notebookes/MVP.ipynb` (principal: §1.1 Herramientas, import y comprobación de versiones).
+  - Docs: [mejoras/M01](mejoras/M01-modelo-sin-fuga-temporal.md) §5 (entorno: Python 3.12, scikit-learn 1.8.0, pandas 3.0.6, numpy 2.5.3).
+  - Aceptación:
+    - `pip install shap==<X.Y.Z>` **solo** en el entorno del notebook (nada en `Backend/`), versión elegida con soporte publicado para Python 3.12 y numpy 2.x; tras instalar, `pip show` confirma scikit-learn **1.8.0** y numpy **2.5.3** sin cambios (si el resolvedor intenta bajarlos o `numba` no admite numpy 2.5.3 → no forzar, devolver `BLOCKED` con el conflicto).
+    - §1.1: `import shap` y una celda que imprime y verifica (`assert`) las versiones de shap, scikit-learn y numpy; la tabla de herramientas incluye shap con su versión fija.
+    - El notebook se ejecuta completo (`jupyter nbconvert --execute`, libros de `plantillas/`) sin errores y sin cambiar ninguna cifra previa (§12.11: PR-AUC val RF 0,7204, umbral 0,32).
+  - Pruebas: ejecución completa; versiones y comando registrados en `.harness/tests.md`.
+
+- [x] **T2** · `domain` (análisis) · §12.12 base: explicador, valor base, aditividad y agregación *one-hot*
+  - Archivos: `Notebookes/MVP.ipynb` (principal: nueva §12.12 después de §12.11 y antes de la Parte 13).
+  - Docs: este plan, definiciones (a) y (b); notebook §9.5 y §12.11.
+  - Aceptación:
+    - Texto introductorio: qué es SHAP, por qué 247 y 0,32 y no 355 y 0,31 (antes de M01), clase explicada = "no renovó".
+    - `shap.TreeExplainer(modelo_seleccionado.named_steps["modelo"])` sobre la matriz de (b); control de (a) (PR-AUC 0,7204 con `assert` a 4 decimales).
+    - Celda que imprime el **valor base** de la clase 1, la prevalencia de validación (0,6397) y la media ponderada de entrenamiento, con la explicación de `class_weight="balanced"`.
+    - **Aditividad:** `assert max|base + suma SHAP − predict_proba[:,1]| < 1e-6` sobre los 247 casos (columnas *one-hot* y también tras agregar); imprime el error máximo.
+    - Tabla agregada 247 × 8 variables (`ciclos_previos`, `antiguedad_dias`, `duracion_modelo`, `monto_actual`, `monto_historico`, `dias_desde_ultima_membresia`, `plan`, `mes_vencimiento`); la suma por fila no cambia al agregar. `mes_vencimiento`: se imprime su |SHAP| medio real (definición de alcance).
+    - Notebook ejecuta completo.
+  - Pruebas: celdas `assert` de control (aditividad, PR-AUC, 247 filas, 8 variables).
+
+- [x] **T3** · `domain` (análisis) · Clasificación VP/FP/FN/VN (top 25 por mes y umbral 0,32), aporte por grupo y por mes
+  - Archivos: `Notebookes/MVP.ipynb` (principal: §12.12), `salidas/m02/*.csv` (nuevos, fuera de git).
+  - Docs: definición (c); notebook §11.1 (umbral) y §12.8 (mes a mes).
+  - Aceptación:
+    - Tabla de tamaños por grupo en **ambas** clasificaciones (y por mes en top 25): en top 25, VP+FP = 25 por mes (75 en total, o menos si un mes tiene < 25 casos, indicándolo); en umbral, los conteos coinciden con la matriz de confusión del RF variante en validación de §12.11 (recall 0,9620, especificidad 0,1461).
+    - (b) aporte SHAP **medio con signo** y |SHAP| medio por variable en cada grupo, con `n` en el encabezado, para las dos clasificaciones.
+    - (d) |SHAP| medio por variable en enero, febrero y marzo 2026 (con `n` por mes) y ranking por mes.
+    - CSV en `salidas/m02/` (`m02_grupos_tamanos.csv`, `m02_aporte_por_grupo_top25.csv`, `m02_aporte_por_grupo_umbral.csv`, `m02_importancia_por_mes.csv`, `m02_shap_validacion.csv`); el CSV por caso lleva solo código HMAC, mes (`AAAA-MM`), grupo, probabilidad a 3 decimales y SHAP agregados: **sin** `socio_id`, nombre, cédula ni fechas exactas.
+    - Notebook ejecuta completo; `git status` no muestra nada en `salidas/`.
+  - Pruebas: `assert` de que los grupos suman 247 en cada clasificación y de que el CSV por caso no contiene columnas prohibidas.
+
+- [x] **T4** · `domain` (análisis) · Figuras: resumen global y waterfalls por grupo sin datos personales
+  - Archivos: `Notebookes/MVP.ipynb` (principal: §12.12), `Documentation/claude/mejoras/M02/*.png` (nuevos, fuera de git).
+  - Docs: definiciones (d) y (e); [mejoras/README](mejoras/README.md) §Dónde están las imágenes.
+  - Aceptación:
+    - (a) resumen global: barras de |SHAP| medio por variable original y *beeswarm* de las numéricas coloreado por su valor **original** (no escalado), con `plan` mostrada por categoría legible; PNG `m02_resumen_global_bar.png` y `m02_resumen_global_beeswarm.png`.
+    - (c) 2 waterfall por grupo (VP, FP, FN, VN) de la clasificación top 25 según (d); etiquetas con valores redondeados/por rangos (e); título solo con grupo, mes ("ene 2026") y probabilidad a 2 decimales; **sin** código, nombre, cédula ni fecha exacta; grupos con < 2 casos con `n` y "solo ilustrativo" (y si `n = 0`, celda de texto con la causa). PNG `m02_waterfall_<grupo>_<1|2>.png`.
+    - (d) figura de importancia por mes (`m02_importancia_por_mes.png`) y figura de aporte medio por grupo (`m02_aporte_por_grupo.png`).
+    - Una celda recorre las salidas visibles de §12.12 y los textos de las figuras y verifica (`assert`) que no aparece ningún `socio_id`, nombre, cédula ni fecha `AAAA-MM-DD`; selección de casos reproducible (dos ejecuciones → mismos casos).
+    - Notebook ejecuta completo; `git status` no muestra PNG nuevos.
+  - Pruebas: celda de control de privacidad; reproducibilidad registrada en `.harness/tests.md`.
+
+- [x] **T5** · `domain` (análisis) · Conclusiones FP/FN, advertencias y control en §14.2
+  - Archivos: `Notebookes/MVP.ipynb` (principal: §12.12 conclusiones, encabezado del notebook con rutas de M02, §14.2 controles, §15.4 si cambia una limitación).
+  - Docs: [mejoras/M01](mejoras/M01-modelo-sin-fuga-temporal.md) §8 y §13.
+  - Aceptación:
+    - Markdown con qué variables explican FP y FN apoyado **primero** en la clasificación top 25 por mes y como complemento en la de umbral, citando cifras de las tablas de T3.
+    - Advertencias explícitas: SHAP explica el modelo, no causalidad; variables correlacionadas (p. ej. `ciclos_previos`/`antiguedad_dias`/`monto_historico`) se reparten el mérito; `mes_vencimiento` sin aporte útil (limitación M01, valor medido); tamaños pequeños en grupos de umbral (VN, FN) → solo ilustrativos.
+    - §14.2: controles nuevos "aditividad SHAP" y "salidas M02 sin datos personales" en verde.
+    - Ejecución completa final con nbconvert sin errores; cifras de M01 sin cambios.
+  - Pruebas: ejecución completa; §14.2 en verde.
+
+- [x] **SEC-1** · security-reviewer · Diff de R-016: sin datos personales en salidas guardadas del notebook ni en figuras, códigos HMAC intactos (sal fuera del repositorio), `salidas/` y `Documentation/claude/` fuera de git, sin secretos, dependencia nueva solo en el entorno del notebook con versión fija.
+
+- [x] **DOC-1** · doc-agent · `Documentation/mejoras/M02-explicabilidad-shap.md` (recomendación; 247/0,32 vs 355/0,31; método y preprocesamiento; valor base y `class_weight`; aditividad con error máximo; tamaños de grupos en ambas clasificaciones; tablas; figuras con ruta `Documentation/claude/mejoras/M02/` y sección del notebook; resumen FP/FN; limitaciones; versión de shap; sección "Qué cambiar/añadir en el documento de la tesis") · índice `mejoras/README.md` · este board.
+
+**Dependencias**
+- T1 → T2 → T3 → T4 → T5 → SEC-1 → DOC-1 (mismo archivo; T4 usa las tablas de T3).
+- Externas: entorno del notebook con Python 3.12, scikit-learn 1.8.0, numpy 2.5.3 y Jupyter; libros reales en `plantillas/`; sal de códigos (`MTABOLIC_SAL_CODIGOS` o `salidas/.sal_codigos`) para que los códigos HMAC coincidan con M01.
+
+**Riesgos**
+1. **Compatibilidad de `shap`/`numba` con numpy 2.5.3 y scikit-learn 1.8.0:** el resolvedor puede bajar numpy o scikit-learn y cambiar el bosque; mitigación: versión fija, comprobar versiones tras instalar y cifras de §12.11 sin cambios; si no hay versión compatible → `BLOCKED`.
+2. **Fuga de datos personales en salidas guardadas o figuras** (títulos, ejes, `display` de filas): mitigación: definiciones (d)(e), celda de control de privacidad, CSV solo con código HMAC y revisión SEC-1 de las salidas guardadas del `.ipynb`.
+3. **Interpretación errónea:** valor base ≠ prevalencia, `mes_vencimiento` no exactamente 0, grupos de umbral muy pequeños; mitigación: reportar valores medidos con `n`, explicación de `class_weight` y "solo ilustrativo".
 
 ### R-015 — Mejora M01 (tutor): variables solo con datos ≤ T−30, medianas solo de entrenamiento, márgenes de 30 días, reentrenamiento y variante sin `forma_pago`/`inicio_aproximado`; la app adopta el modelo nuevo · **DONE** 2026-10-15
 
@@ -3060,6 +3286,11 @@ Lote B · app (backend)
 - 2026-10-15 · R-015 · M01: variables con corte T−30, medianas solo de entrenamiento, márgenes de 30 días, variante sin `forma_pago`/`inicio_aproximado`; excepción registrada al diferido "cambiar la lógica del notebook" → [mejoras/M01](mejoras/M01-modelo-sin-fuga-temporal.md), [DEVELOPMENT_GUIDELINES](DEVELOPMENT_GUIDELINES.md).
 - 2026-10-15 · R-015 · Niveles con cortes fijos 0,70/0,50 (decisión del usuario), sustituye R-004 (d); corte de los datos para etiquetar; comando `adoptar-modelo`; v2 vigente en el principal → [ADR-014](adr/ADR-014-modelo-m01-adopcion-y-cortes-de-riesgo.md), [03 §CU-05](03-casos-de-uso.md).
 - 2026-10-15 · R-015 · Privacidad: códigos MTB con HMAC-SHA256 y sal secreta; códigos de ejemplo antiguos eliminados de la documentación.
+- 2026-10-16 · R-016 · M02: SHAP (`shap` 0.54.1 solo en el entorno del notebook) del RF variante de M01 con 247 casos y umbral 0,32, no 355/0,31 del tutor (cifras anteriores a M01); conclusiones con top 25 por mes, umbral como complemento; `mes_vencimiento` se informa con su valor medido (0,0092), sin forzar a 0; grupo con < 2 casos se mostraría y explicaría (decisión del usuario) → [mejoras/M02](mejoras/M02-explicabilidad-shap.md).
+- 2026-10-16 · R-016 · Recomendación añadida a M01 §13: probar `mes_vencimiento` como mes del año (1–12) y quitarla si no mejora → [mejoras/M01](mejoras/M01-modelo-sin-fuga-temporal.md).
+- 2026-10-16 · R-017 · M03: SHAP en prueba (277), lista (57) y entrenamiento (845, informativo); 10 de 11 conclusiones de M02 se mantienen (C3 no; C4 más débil) → [mejoras/M03](mejoras/M03-shap-prueba-y-motivos-en-la-app.md).
+- 2026-10-16 · R-017 · "Motivos principales" con SHAP en notebook y app (`shap==0.54.1` solo en infraestructura; sin numba ni llvmlite), sin reentrenar ni adoptar; el método lo decide el adaptador; listas guardadas sin cambios; pantalla y Excel sin número (ADR-007); segunda excepción al diferido "cambiar la lógica del notebook" → [ADR-015](adr/ADR-015-motivos-con-shap-en-la-app.md), [DEVELOPMENT_GUIDELINES](DEVELOPMENT_GUIDELINES.md).
+- 2026-10-16 · R-017 · Diferidos low: S1 transitivas de shap sin *lockfile* (como S10); S2 notebook §13.3/§13.8 con código HMAC junto a fecha, plan y monto por socio (valorar solo agregados) → [mejoras/M03 §5](mejoras/M03-shap-prueba-y-motivos-en-la-app.md#5-limitaciones).
 
 ## PRÓXIMO
 
