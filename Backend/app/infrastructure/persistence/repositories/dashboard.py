@@ -8,21 +8,39 @@ rango de instantes ``[desde, hasta)`` y se aplica sobre ``gestiones_retencion.cr
 ``SqlAlchemyDashboardRepository`` trabaja sobre la ``Session`` recibida y nunca hace
 ``commit``; ``SqlAlchemyLectorDashboard`` abre una ``Session`` corta por llamada y siempre la
 revierte (mismo patron que el lector del estado del sistema).
+
+Indicadores del piloto (M04, R-018): la lista del mes, sus filas del top 25 con el contacto de
+la gestion no borrada del mismo ciclo, los montos exactos de las membresias de renovacion y la
+ultima carga por plantilla. Ninguna consulta toca ``socios`` ni devuelve datos personales.
 """
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from datetime import date, datetime
 
-from sqlalchemy import ColumnElement, Engine, func, select
+from sqlalchemy import ColumnElement, Engine, and_, func, select
 from sqlalchemy.orm import Session
 
-from app.application.dashboard.ports import FilaCampania, FilaEmbudo, ModeloDashboard
+from app.application.dashboard.ports import (
+    FilaCampania,
+    FilaEmbudo,
+    FilaPiloto,
+    ListaPiloto,
+    ModeloDashboard,
+    MontoMembresia,
+)
 from app.application.modelo.mapeo import ciclo_de_membresia
-from app.domain.common.enums import Respuesta
+from app.domain.common.enums import Respuesta, TipoCarga
+from app.domain.modelo.piloto import TOP_PILOTO
 from app.domain.modelo.variables import CicloModelo
+from app.infrastructure.persistence.models.historial import Carga, Membresia
 from app.infrastructure.persistence.models.modelo import EstadoSistema, Modelo
-from app.infrastructure.persistence.models.retencion import Campania, GestionRetencion
+from app.infrastructure.persistence.models.retencion import (
+    Campania,
+    GestionRetencion,
+    ListaPriorizada,
+    Prediccion,
+)
 from app.infrastructure.persistence.repositories.historial import (
     listar_membresias_para_entrenamiento,
 )
@@ -126,6 +144,67 @@ class SqlAlchemyDashboardRepository:
         # Misma lectura y conversion que el reentrenamiento (CU-02): un solo criterio.
         return [ciclo_de_membresia(m) for m in listar_membresias_para_entrenamiento(self._session)]
 
+    def lista_piloto(self, desde: date, hasta: date) -> ListaPiloto | None:
+        lista = self._session.execute(
+            select(ListaPriorizada.id, ListaPriorizada.nombre, ListaPriorizada.fecha_generacion)
+            .where(
+                ListaPriorizada.fecha_generacion >= desde,
+                ListaPriorizada.fecha_generacion <= hasta,
+            )
+            .order_by(
+                ListaPriorizada.fecha_generacion.desc(),
+                ListaPriorizada.creada_en.desc(),
+                ListaPriorizada.id.desc(),
+            )
+            .limit(1)
+        ).one_or_none()
+        if lista is None:
+            return None
+        # Una gestion no borrada por ciclo (RN-08.1): el contacto cuenta venga de la lista que
+        # venga.
+        filas = self._session.execute(
+            select(Prediccion.membresia_id, Prediccion.prioridad, _G.contactado, _G.fecha_contacto)
+            .outerjoin(
+                _G, and_(_G.membresia_id == Prediccion.membresia_id, _G.deleted_at.is_(None))
+            )
+            .where(Prediccion.lista_id == lista.id, Prediccion.prioridad <= TOP_PILOTO)
+            .order_by(Prediccion.prioridad, Prediccion.id)
+        ).all()
+        return ListaPiloto(
+            id=lista.id,
+            nombre=lista.nombre,
+            fecha_generacion=lista.fecha_generacion,
+            filas=tuple(
+                FilaPiloto(
+                    membresia_id=f.membresia_id,
+                    prioridad=f.prioridad,
+                    contactado=f.contactado,
+                    fecha_contacto=f.fecha_contacto,
+                )
+                for f in filas
+            ),
+        )
+
+    def montos(self, ids: Sequence[int]) -> dict[int, MontoMembresia]:
+        if not ids:
+            return {}
+        filas = self._session.execute(
+            select(Membresia.id, Membresia.monto_cobrado, Membresia.monto_facturado).where(
+                Membresia.id.in_(list(ids)), Membresia.deleted_at.is_(None)
+            )
+        ).all()
+        return {
+            f.id: MontoMembresia(monto_cobrado=f.monto_cobrado, monto_facturado=f.monto_facturado)
+            for f in filas
+        }
+
+    def ultima_carga_plantilla(self) -> datetime | None:
+        return self._session.scalar(
+            select(func.max(Carga.fecha_carga)).where(
+                Carga.tipo == TipoCarga.PLANTILLA.value, Carga.deleted_at.is_(None)
+            )
+        )
+
 
 class SqlAlchemyLectorDashboard:
     """Implementa ``LectorDashboard`` con una ``Session`` corta de solo lectura por llamada."""
@@ -160,3 +239,15 @@ class SqlAlchemyLectorDashboard:
     def ciclos(self) -> list[CicloModelo]:
         with self._repositorio() as repositorio:
             return repositorio.ciclos()
+
+    def lista_piloto(self, desde: date, hasta: date) -> ListaPiloto | None:
+        with self._repositorio() as repositorio:
+            return repositorio.lista_piloto(desde, hasta)
+
+    def montos(self, ids: Sequence[int]) -> dict[int, MontoMembresia]:
+        with self._repositorio() as repositorio:
+            return repositorio.montos(ids)
+
+    def ultima_carga_plantilla(self) -> datetime | None:
+        with self._repositorio() as repositorio:
+            return repositorio.ultima_carga_plantilla()
