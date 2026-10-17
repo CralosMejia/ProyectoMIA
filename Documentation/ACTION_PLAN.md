@@ -9,6 +9,127 @@ Ninguno.
 
 ## TERMINADOS RECIENTEMENTE
 
+### R-018 — Mejora M04 (tutor), alcance reducido: sección "Indicadores del piloto" en el Dashboard · **DONE** 2026-10-16
+
+**Cierre:** documento para la tesis [mejoras/M04](mejoras/M04-indicadores-del-piloto.md). Sustituye el bloqueo previo de R-018 (grupo de control fuera de alcance): el usuario eligió la opción b (solo indicadores descriptivos). Seguridad: clean; diferidos low S1 (`ciclos()` carga todas las membresías y la verificación es 25×N; filtrar por los socios del top si crece) y S2 (el cruce con `gestiones` depende de RN-08.1; si se rompiera duplicaría filas) → [M04 §10](mejoras/M04-indicadores-del-piloto.md#10-limitaciones). Pruebas: pass (backend 2098 pytest, 917 Vitest, 11 E2E en 8081; comprobación manual en e2e igual al cálculo a mano). T9: principal reconstruido con respaldo previo, v2 `LISTO`, conteos idénticos, sin crear datos; septiembre 2026 `PENDIENTE` (corte 2026-09-30, contactados antes 2/25 = 8,0 %, anticipación 9,5 días con n 2); octubre `SIN_DATOS`.
+
+**Decisiones finales**
+- Opción b del usuario: grupo de control aleatorio y reporte A/B con IC **no** implementados; diseño como trabajo futuro en [M04 §9](mejoras/M04-indicadores-del-piloto.md#9-trabajo-futuro-diseño-del-grupo-de-control) (siguen fuera del proyecto).
+- Definiciones (a)–(f) del planner adoptadas sin cambios. Vencimiento posterior al corte → pendiente; otras exclusiones del dominio (duración imposible, `DIARIO`, fecha fuera de rango) → `sin_dato`, fuera de los `n`.
+- `n` del monto = solo contactados ya verificados (distinto del `n` de la tasa); la pantalla lo aclara ("n = X contactados ya verificados") y la ayuda lo explica.
+
+**Objetivo:** el Dashboard muestra, para el mes elegido, cinco indicadores descriptivos del piloto sobre el top 25 de la lista del mes (precisión en T+30, % contactado antes del vencimiento, días de anticipación, tasa de renovación de los contactados en T+30 y monto retenido en `Decimal`), con su `n` y "pendiente"/"sin datos", también en la impresión/PDF y en la ayuda.
+
+**Fuente:** petición del usuario (M04 del tutor) · [03 §14 CU-11](03-casos-de-uso.md) · [06 §10](06-como-funciona-la-lista.md) · [API_CONTRACT §Alertas y dashboard](docs/API_CONTRACT.md) · [backend/11](docs/backend/11-historico.md) (`etiquetar`) · [backend/12 §Reentrenamiento](docs/backend/12-modelo-y-listas.md) (`corte_de_datos`).
+
+**Notas de alcance del planner**
+- **Desbloqueo:** el usuario reduce el alcance a los indicadores descriptivos. El grupo aleatorio "sistema / proceso habitual" y el reporte comparativo con IC **no se implementan**: van como trabajo futuro en M04 (siguen en [DEVELOPMENT_GUIDELINES §Fuera del proyecto](DEVELOPMENT_GUIDELINES.md), "pruebas A/B o inferencia causal"). Las preguntas Q1–Q7 del bloqueo anterior quedan sin efecto.
+- Dentro de alcance: son cifras observadas, no causales (decisión de alcance 5); no es "BI avanzado" (una sección fija, sin filtros nuevos ni resultados por nivel, que siguen diferidos).
+- **Sin migración, sin endpoint nuevo:** cambio **aditivo** en `GET /dashboard` (`DashboardDTO.piloto`), solo lectura, sin datos personales (ni nombre, cédula, celular ni ids de socio en la respuesta).
+
+**Definiciones fijadas por el planner (reversibles; avisar al usuario)**
+- (a) **Lista del mes:** la última lista con `fecha_generacion` dentro del mes elegido (orden `fecha_generacion DESC, creada_en DESC, id DESC`). Sin lista en el mes → `piloto.estado = "SIN_DATOS"` y todos los indicadores en "sin datos".
+- (b) **Top 25:** predicciones de esa lista con `prioridad ≤ 25` (todas si hay menos); fijo en 25 aunque `top_k` sea otro. `n_top` = cuántas hay. T = `fecha_vencimiento` de su membresía (no borrada; si falta o está borrada → caso "sin dato", fuera de los `n`).
+- (c) **Verificación T+30:** corte = `corte_de_datos(hoy, corte del modelo vigente, día de la última carga por plantilla)` (mismo criterio que CU-02; evita contar como "no renovó" a quien aún no tiene datos cargados). Un caso está **verificado** si `clasificar(ciclo, corte)` es `EVALUABLE` (equivale a `T + 30 ≤ corte`); si es `PENDIENTE` → pendiente. **Renovó** = la etiqueta del dominio: otra membresía no `DIARIO` del mismo socio con `fecha_actividad` en `[T − DIAS_RENOVACION_ANTICIPADA (0), T + 30]`; la **membresía de renovación** es la primera por `(fecha_actividad, id)`. `hoy` = `hoy_en_negocio(clock.now())`.
+- (d) **Contactado** = gestión no borrada del mismo `membresia_id` (una por ciclo, RN-08.1) con `contactado IS TRUE`. **Contactado antes del vencimiento** = contactado con `fecha_contacto` no nula y `fecha_contacto < T`.
+- (e) **Fórmulas** (proporciones `Decimal` con 8 decimales `ROUND_HALF_EVEN`, como `tasa_renovacion`; sin mínimo de casos, siempre con `n`):
+  1. `precision_top25` = no renovaron / verificados (del top 25). Estado `COMPLETO` (todos verificados), `PARCIAL` (algunos), `PENDIENTE` (ninguno), `SIN_DATOS` (sin top).
+  2. `contactados_antes_vencimiento` = contactados antes de T / `n_top`.
+  3. `dias_anticipacion` = promedio de `(T − fecha_contacto)` en días sobre los contactados con `fecha_contacto` (puede ser ≤ 0 si se contactó el día o después), `Decimal` con 1 decimal; `n` = esos contactados; 0 → `null` "sin datos".
+  4. `tasa_renovacion_contactados` = renovaron / contactados verificados; con `pendientes` = contactados aún sin verificar; mismos estados que 1.
+  5. `monto_retenido` = Σ monto de la membresía de renovación de los contactados verificados que renovaron; monto = `monto_cobrado`, si es nulo `monto_facturado`; si faltan los dos cuenta en `renovaciones_sin_monto`. `Decimal` cuantizado a 2 decimales; viaja como string.
+- (f) **Sesgo:** como el top 25 es contactado, la precisión observada puede estar sesgada a la baja por la propia gestión; se advierte en la sección, en la impresión y en la ayuda.
+
+**Tareas** 🗄 = usa base de datos.
+
+- [x] **T1** · `domain` · Verificación T+30 de un caso y cálculo de los cinco indicadores (TDD)
+  - Archivos: `Backend/app/domain/modelo/piloto.py` (principal, nuevo), `Backend/tests/unit/domain/modelo/test_piloto.py` (nuevo).
+  - Docs: [backend/11](docs/backend/11-historico.md) (`etiquetar`, `clasificar`, ventana `[T, T+30]`); [backend/12 §Reentrenamiento](docs/backend/12-modelo-y-listas.md) (`etiquetar_ciclos`, `corte_de_datos`); definiciones (c)–(e).
+  - Aceptación:
+    - Solo librería estándar + `app.domain` (reusa `clasificar`, `DIAS_OBSERVACION`, `DIAS_RENOVACION_ANTICIPADA`, `CicloModelo`); value objects `frozen=True, slots=True`; sin `float`, sin `date.today()`.
+    - `verificar_renovacion(ref, ciclos, corte)`: T=2026-08-10, corte=2026-09-08 → `PENDIENTE`; corte=2026-09-09 y otra membresía no `DIARIO` del socio con actividad 2026-09-09 → `RENOVO` con esa membresía; actividad 2026-09-10 o solo un `DIARIO` en la ventana → `NO_RENOVO`; dos renovaciones en ventana → la de menor `(fecha_actividad, ref)`; ciclo sin vencimiento o ref inexistente → `SIN_DATO`.
+    - Prueba de coherencia: en un conjunto sintético de ≥ 20 ciclos, `RENOVO/NO_RENOVO` coincide con `etiquetar_ciclos(ciclos, corte)[i].no_renovo` para cada ciclo evaluable.
+    - `calcular_indicadores(casos, resultados, montos)` con 25 casos sintéticos: valores exactos de las fórmulas (e)1–5 (p. ej. 12 no renovaron de 20 verificados → `Decimal("0.60000000")`, estado `PARCIAL`, `pendientes=5`); contacto el mismo día de T no cuenta como "antes"; `dias_anticipacion` con 1 decimal (`(10+5+0)/3` → `Decimal("5.0")`); monto usa `monto_facturado` si `monto_cobrado` es `None` y cuenta aparte la renovación sin ninguno; sin casos → todo `SIN_DATOS`/`null` sin `ZeroDivisionError`.
+  - Pruebas: unitarias de dominio.
+
+- [x] **T2** · `application` · `ConsultarDashboard` añade `piloto` al DTO (puertos y DTOs nuevos)
+  - Archivos: `Backend/app/application/dashboard/consultar_dashboard.py` (principal), `Backend/app/application/dashboard/ports.py`, `Backend/app/application/dashboard/dtos.py`, `Backend/tests/unit/application/dashboard/test_consultar_dashboard.py`.
+  - Docs: [03 §14 CU-11](03-casos-de-uso.md); [API_CONTRACT §Alertas y dashboard](docs/API_CONTRACT.md) (decimales como string); definiciones (a)–(e).
+  - Aceptación:
+    - Puerto `LectorDashboard` añade: `lista_piloto(desde: date, hasta: date) -> ListaPiloto | None` (id, nombre, `fecha_generacion`, filas `prioridad ≤ 25` con `membresia_id`, `prioridad`, `contactado`, `fecha_contacto`; sin datos personales), `montos(ids) -> dict[int, MontoMembresia]` (`monto_cobrado`, `monto_facturado` `Decimal | None`) y `ultima_carga_plantilla() -> datetime | None`.
+    - `DashboardDTO.piloto: IndicadoresPilotoDTO` (no nulo) con `estado`, `lista` (`id`, `nombre`, `fecha_generacion`) o `null`, `corte_verificacion`, `n_top` y un bloque por indicador con valor (`Decimal | None`), numeradores, `n`, `pendientes` y `estado`; los campos existentes no cambian.
+    - Con `RelojFijo` y lector doble: mes sin lista → `piloto.estado == "SIN_DATOS"`, `lista null`; lista con todos los T+30 > corte → precisión y tasa `PENDIENTE`, `valor null`, `pendientes == n`; caso completo → valores de T1; `ciclos()` se llama **como máximo una vez** por `ejecutar` (compartido con `estado_modelo`); mes = `hoy_en_negocio` cuando no se pasa (instante 2026-10-01T03:00Z → mes `2026-09`).
+    - `ruff`, `mypy app`, `lint-imports` y `pytest tests/unit` en verde.
+  - Pruebas: unitarias de aplicación (dobles de puertos).
+
+- [x] **T3** · `infra` · Lecturas del piloto en el repositorio del dashboard 🗄
+  - Archivos: `Backend/app/infrastructure/persistence/repositories/dashboard.py` (principal: `SqlAlchemyDashboardRepository` y `SqlAlchemyLectorDashboard`), `Backend/tests/integration/persistence/test_dashboard_repository.py`.
+  - Docs: [backend/09 §Retención](docs/backend/09-esquema-base-de-datos.md); `Documentation/docs/backend/03-acceso-a-datos.md`.
+  - Aceptación (PostgreSQL de pruebas, `db_session` con rollback):
+    - Dos listas en septiembre y una en octubre → `lista_piloto(2026-09-01, 2026-09-30)` devuelve la última de septiembre; filas solo `prioridad ≤ 25` ordenadas por `prioridad`; mes sin listas → `None`.
+    - `contactado`/`fecha_contacto` salen de la gestión **no borrada** del mismo `membresia_id` (una gestión con `deleted_at` → `None`; gestión creada desde otra lista para el mismo ciclo sí cuenta).
+    - `montos([..])` devuelve `Decimal` exactos (`NUMERIC(19,4)`), ignora membresías borradas; `ultima_carga_plantilla()` = la carga por plantilla no borrada más reciente (o `None`).
+    - Solo `select` parametrizado; el lector abre sesión corta y hace `rollback`; ninguna columna de `socios` en las consultas nuevas; `test_lector_sin_datos_cumple_el_puerto` sigue en verde.
+  - Pruebas: integración con BD real.
+
+- [x] **T4** · `api` · Contrato aditivo de `GET /dashboard` con ejemplos 🗄
+  - Archivos: `Backend/app/api/routers/dashboard.py` (principal: `DASHBOARD_EXAMPLE` y descripción), `Backend/tests/integration/api/test_dashboard_api.py`, `Backend/tests/integration/api/test_contract_dashboard.py`, `Documentation/docs/API_CONTRACT.md` (§Alertas y dashboard: bloque `piloto`).
+  - Docs: `Documentation/docs/backend/04-api-rest.md`; [API_CONTRACT](docs/API_CONTRACT.md).
+  - Aceptación:
+    - OpenAPI con ejemplo `200` que incluye `piloto` completo y otro con `estado: "SIN_DATOS"`; `400` sin cambios para `mes=2026-13`.
+    - `GET /dashboard?mes=2026-09` con reloj fijo y datos sembrados → `200`, `piloto.precision_top25.valor` string de 8 decimales, `monto_retenido.total` string con 2 decimales, `n` correctos; mes sin lista → `200` con `SIN_DATOS`.
+    - La respuesta no contiene `nombre` de socio, `cedula`, `celular`, `correo` ni `socio_id` (prueba que recorre el JSON).
+    - Prueba de contrato: campos anteriores idénticos (cambio aditivo).
+  - Pruebas: integración API con BD real.
+
+- [x] **T5** · `frontend` · Tipos y mapeo de `piloto` en el cliente del dashboard
+  - Archivos: `Frontend/src/features/dashboard/api/dashboard-api.ts` (principal), `Frontend/src/features/dashboard/api/dashboard-api.handlers.ts`, `Frontend/src/features/dashboard/api/dashboard-api.test.ts`.
+  - Docs: `Documentation/docs/frontend/01-arquitectura.md` §Alertas, Seguimiento, Dashboard (R-011); [API_CONTRACT](docs/API_CONTRACT.md).
+  - Aceptación: tipos `IndicadoresPiloto` espejo del contrato; los decimales siguen como `string` (sin `parseFloat` para calcular); el *handler* MSW devuelve un caso completo, uno `PENDIENTE` y uno `SIN_DATOS` según `mes`; Vitest del mapeo en verde; `npm run lint` y `tsc` en verde.
+  - Pruebas: frontend (Vitest).
+
+- [x] **T6** · `frontend` · Sección "Indicadores del piloto" en el Dashboard, también impresa
+  - Archivos: `Frontend/src/features/dashboard/components/IndicadoresPiloto.tsx` (principal, nuevo), `Frontend/src/features/dashboard/components/IndicadoresPiloto.test.tsx` (nuevo), `Frontend/src/features/dashboard/pages/DashboardPage.tsx`, `Frontend/src/features/dashboard/pages/DashboardPage.test.tsx`.
+  - Docs: `Documentation/docs/frontend/01-arquitectura.md` (§Dashboard, impresión y tokens de color, líneas 113–152).
+  - Aceptación:
+    - Cinco tarjetas/filas con valor en % (o días, o `$` con formato `es-EC`), `n` de cada una y textos "Pendiente (se verifica 30 días después del vencimiento)", "Parcial: X de N verificados" y "Sin datos"; nombre y fecha de la lista del mes y fecha de corte de verificación.
+    - Aviso visible: "Los socios del top 25 se contactan; por eso la precisión observada puede quedar por debajo de la real." y "Cifras observadas, no causales."; con `n < 10` → "Pocos casos: léase con cuidado".
+    - La sección **no** lleva `print:hidden` y no se corta al imprimir (prueba sobre el DOM como las de R-012); solo tokens de color; accesible (`section` con `aria-labelledby`).
+    - Vitest en verde (estados COMPLETO/PARCIAL/PENDIENTE/SIN_DATOS); `npm run lint`, `tsc`.
+  - Pruebas: frontend (Vitest).
+
+- [x] **T7** · `frontend` · Ayuda "¿Cómo funciona el dashboard?" con los indicadores en lenguaje sencillo
+  - Archivos: `Frontend/src/features/dashboard/components/AyudaDashboard.tsx` (principal), `Frontend/src/features/dashboard/components/AyudaDashboard.test.tsx`.
+  - Docs: [06 §10](06-como-funciona-la-lista.md); definiciones (a)–(f).
+  - Aceptación: nueva sección "Indicadores del piloto" que explica sin tecnicismos cada uno de los cinco, qué es "verificado a los 30 días", por qué aparece "pendiente", el sesgo de la precisión por la gestión y que no miden causa; el test lee el texto de la sección; Vitest, lint y `tsc` en verde.
+  - Pruebas: frontend (Vitest).
+
+- [x] **T8** · `frontend` / `infra-deploy` · E2E y ensayo en `mtabolic-e2e` (8081) 🗄
+  - Archivos: `Frontend/e2e/alertas-dashboard.spec.ts` (principal).
+  - Docs: [backend/10 §Stack E2E aislado](docs/backend/10-docker.md); `Documentation/docs/frontend/01-arquitectura.md` (línea 122).
+  - Aceptación: reconstruir backend y frontend con `-p mtabolic-e2e`; el E2E abre el Dashboard, ve la sección "Indicadores del piloto" con `n` y "Pendiente"/"Sin datos" según los datos del stack, abre la ayuda y ve la sección nueva; contra 8080 se salta; `npx playwright test` contra 8081 en verde; `GET /dashboard` del stack responde `200` con `piloto` y sin campos personales.
+  - Pruebas: E2E + manual, registrado en `.harness/tests.md`.
+
+- [x] **SEC-1** · security-reviewer · Diff de R-018: solo lectura y SQL parametrizado; ningún dato personal ni id de socio en la respuesta, en logs ni en la impresión; `mes` validado (S7 sigue); sin `float` en dinero/proporciones en backend; sin dependencias nuevas.
+
+- [x] **T9** · `infra-deploy` · Puesta en uso en el stack principal (orquestador, al final) 🗄
+  - Archivos: ninguno versionado.
+  - Docs: `Documentation/comandos/respaldo-y-restauracion.md`; [backend/10 §Servicios](docs/backend/10-docker.md).
+  - Aceptación: respaldo previo verificado (archivo + restauración de prueba a base nueva con nombre validado); conteos de las 10 tablas antes; reconstruir backend y frontend (sin migración: `alembic current` sigue en `0008`); conteos después **idénticos**; `GET /dashboard?mes=<mes de la última lista>` → `200` con `piloto` y cifras registradas (para M04); **sin generar listas, gestiones ni datos**.
+  - Pruebas: registro en `.harness/tests.md`.
+
+- [x] **DOC-1** · doc-agent · `Documentation/mejoras/M04-indicadores-del-piloto.md` (definición exacta y fórmula de cada indicador, origen de cada dato —tablas y columnas—, verificación T+30 y corte de datos, sesgo de la precisión por la gestión, limitaciones —muestra ~25/mes, `fecha_contacto` registrada a mano, renovación según datos cargados—, por qué el grupo de control quedó como trabajo futuro y cómo se haría —asignación al azar por socio en el top 25, semilla registrada, comparación con IC de Newcombe—, cómo leer la sección, cifras de T9 y sección "Qué añadir/cambiar en el documento de la tesis") · `mejoras/README.md` · `03-casos-de-uso.md` §14 CU-11 · `06-como-funciona-la-lista.md` §10 · `docs/API_CONTRACT.md` (revisar lo de T4) · `docs/frontend/01-arquitectura.md` y `docs/backend/12` si citan el dashboard · este board.
+
+**Dependencias**
+- T1 → T2 → T3 → T4 (backend secuencial). T5 requiere el contrato de T4 (puede empezar con el contrato de T2); T5 → T6; T7 independiente de T5/T6. T8 tras T4 y T6–T7. SEC-1 tras T1–T8; T9 tras SEC-1; DOC-1 al final (usa cifras de T9).
+- Paralelos posibles: T1 ‖ T7.
+- Externas: Docker (stacks principal y `mtabolic-e2e`), PostgreSQL de pruebas (`app_db_test`).
+
+**Riesgos**
+1. **Falsos "no renovó" por datos no cargados:** si no hay carga posterior a T+30, la etiqueta marcaría no renovación y la precisión subiría artificialmente; mitigación: corte `corte_de_datos` (definición (c)) y pruebas con carga ausente → `PENDIENTE`.
+2. **Coherencia con la etiqueta del modelo:** una segunda implementación de la ventana podría divergir de `etiquetar_ciclos`; mitigación: reusar `clasificar` y constantes, y prueba de coherencia en T1.
+3. **Lectura sesgada de la precisión y muestras pequeñas (~25/mes):** el contacto reduce la no renovación y los `n` son bajos; mitigación: avisos fijos en pantalla, impresión y ayuda, `n` siempre visible y nada de "efecto" ni causalidad.
+
 ### R-017 — Mejora M03: SHAP en prueba, lista y entrenamiento (notebook) y "Motivos principales" con SHAP en el notebook y la app · **DONE** 2026-10-16
 
 **Cierre:** documento para la tesis [mejoras/M03](mejoras/M03-shap-prueba-y-motivos-en-la-app.md) · [ADR-015](adr/ADR-015-motivos-con-shap-en-la-app.md). Seguridad: clean; diferidos low S1 (transitivas de shap sin *lockfile*, como S10) y S2 (notebook §13.3/§13.8 con código HMAC junto a fecha, plan y monto por socio). Pruebas: pass (backend 2050+3 pytest, 863 Vitest, 10 E2E en 8081, `verificar_lista` 0 diferencias en 57 filas y 146 motivos SHAP). T10: principal reconstruido con respaldo previo, v2 `LISTO`, conteos idénticos, sin generar listas.
@@ -3291,6 +3412,8 @@ Lote B · app (backend)
 - 2026-10-16 · R-017 · M03: SHAP en prueba (277), lista (57) y entrenamiento (845, informativo); 10 de 11 conclusiones de M02 se mantienen (C3 no; C4 más débil) → [mejoras/M03](mejoras/M03-shap-prueba-y-motivos-en-la-app.md).
 - 2026-10-16 · R-017 · "Motivos principales" con SHAP en notebook y app (`shap==0.54.1` solo en infraestructura; sin numba ni llvmlite), sin reentrenar ni adoptar; el método lo decide el adaptador; listas guardadas sin cambios; pantalla y Excel sin número (ADR-007); segunda excepción al diferido "cambiar la lógica del notebook" → [ADR-015](adr/ADR-015-motivos-con-shap-en-la-app.md), [DEVELOPMENT_GUIDELINES](DEVELOPMENT_GUIDELINES.md).
 - 2026-10-16 · R-017 · Diferidos low: S1 transitivas de shap sin *lockfile* (como S10); S2 notebook §13.3/§13.8 con código HMAC junto a fecha, plan y monto por socio (valorar solo agregados) → [mejoras/M03 §5](mejoras/M03-shap-prueba-y-motivos-en-la-app.md#5-limitaciones).
+- 2026-10-16 · R-018 · M04 con alcance reducido (opción b del usuario): cinco indicadores descriptivos del top 25 de la última lista del mes en `GET /dashboard` (bloque `piloto` aditivo, sin migración), verificados en T+30 con `corte_de_datos`; grupo de control y A/B con IC como trabajo futuro, siguen fuera del proyecto → [mejoras/M04](mejoras/M04-indicadores-del-piloto.md), [API_CONTRACT](docs/API_CONTRACT.md).
+- 2026-10-16 · R-018 · Diferidos low: S1 `ciclos()` completo por petición y verificación 25×N; S2 cruce con `gestiones` dependiente de RN-08.1 → [mejoras/M04 §10](mejoras/M04-indicadores-del-piloto.md#10-limitaciones).
 
 ## PRÓXIMO
 

@@ -130,6 +130,16 @@ Sin cambios de backend, API ni esquema. Decisiones (a)–(h) en [ACTION_PLAN §D
 - **Dashboard.** `h1` "Dashboard" y debajo "Resultados de <mes en palabras>" (`hooks/presentacion.ts`: `nombreDelMes`, `porcentaje` con 1 decimal y coma, `resumenResultados`; funciones puras sin `Date` dependiente de zona). `useDashboard` expone `resumen` y `nombreMes`; la página no transforma datos. `EmbudoGestion`: barras redondeadas `bg-brand` ("Renovaron" `bg-ok`) con "número · % sobre asignadas" (asignadas 0 → "0 · 0,0 %"). `GraficoResultados` (nuevo): dona SVG propia (`circle` + `stroke-dasharray`) "Resultado de las gestiones del mes" calculada en el frontend con `porCampania` de `GET /dashboard`: Renovaron = Σ`renovaciones`, No renovaron = Σ(`gestionesCerradas` − `renovaciones`), Sin resultado = Σ(`gestiones` − `gestionesCerradas`) (abiertas o sin campaña); leyenda con número y %, total al centro; total 0 → "Sin gestiones en este mes". Ambos gráficos son `role="img"` con `aria-label` de las cifras y tienen debajo una tabla equivalente ("Datos del embudo", "Datos del gráfico de resultados"). Sin librería de gráficos.
 - **Impresión.** Botón "Imprimir / Guardar PDF" → `window.print()`, deshabilitado mientras no hay datos; no genera archivos desde la app ni llama a la API (RN-11.2 precisada en [03 §14](../../03-casos-de-uso.md)). Cabecera de `AppLayout`, botones, filtro de mes, ayuda y "Reintentar" llevan `print:hidden`.
 
+### Indicadores del piloto en el Dashboard (R-018, M04)
+
+Definiciones: [mejoras/M04](../../mejoras/M04-indicadores-del-piloto.md); contrato: bloque `piloto` de [API_CONTRACT](../API_CONTRACT.md#alertas-y-dashboard-cu-09-cu-11-r-011).
+
+- **`api/dashboard-api.ts`** mapea `piloto` a `IndicadoresPiloto` (`types.ts`, camelCase); `valor` y `total` siguen como `string` (sin `parseFloat`). Si la respuesta no trae `piloto`, `pilotoSinDatos()` devuelve el bloque en `SIN_DATOS`. El *handler* MSW cubre un caso completo, uno pendiente y uno sin datos según `mes`.
+- **`hooks/presentacion.ts`** añade funciones puras que redondean operando con los dígitos del texto, nunca con coma flotante: `porcentajeDecimal` ("0.41176471" → "41,2 %"), `decimalConComa` ("9.5" → "9,5"), `montoUsd` ("1234.5" → "$1.234,50") y `fechaEnPalabras`.
+- **`components/IndicadoresPiloto.tsx`** (presentacional, `Tarjeta` con `aria-labelledby="piloto-title"`): lista del mes y fecha de corte, aviso de `sinDato`, cinco indicadores en un `dl` (valor, "X de N", `n`, estado traducido —"Completo", "Parcial: faltan N por verificar (X de N verificados)", "Pendiente: aún no se puede verificar (se verifica 30 días después del vencimiento)", "Sin datos"— y "Pocos casos: léase con cuidado" con `0 < n < 10`); el monto dice "n = X contactados ya verificados". Avisos fijos de sesgo y de cifras no causales. Sin `print:hidden` y con `break-inside-avoid`: se imprime entera. Solo tokens.
+- **`pages/DashboardPage.tsx`** la compone antes de la tarjeta del modelo, también cuando el mes no tiene gestiones; **`AyudaDashboard.tsx`** añade la sección "Indicadores del piloto" (10 secciones).
+- E2E: `e2e/alertas-dashboard.spec.ts` comprueba la sección y la ayuda (solo 8081).
+
 ## `shared/ui`
 
 | Componente | Contrato |

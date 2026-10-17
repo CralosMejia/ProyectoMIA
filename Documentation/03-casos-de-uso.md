@@ -684,6 +684,8 @@ El dashboard muestra **resultados observados, no causalidad**. Se puede decir: *
 
 **Precisiones de la implementación (R-012, pedido del usuario).** El embudo muestra en cada barra el número y el % sobre asignadas. Se añade un gráfico de dona **"Resultado de las gestiones del mes"** calculado con los mismos datos de la tabla por campaña (incluida "Sin campaña"): Renovaron, No renovaron (cerradas con "¿Renovó?" No) y Sin resultado (abiertas o sin campaña), con número y %; no introduce tasas nuevas (RN-11.1 se mantiene en la tabla). Cada gráfico tiene una tabla equivalente. El título indica el mes en palabras ("Resultados de septiembre de 2026"), hay ayuda "¿Cómo funciona el dashboard?" y botón de impresión (RN-11.2).
 
+**Precisiones de la implementación (R-018, mejora M04 del tutor, alcance reducido).** Se añade un cuarto bloque, **"Indicadores del piloto"**, sobre los 25 primeros socios (prioridad ≤ 25) de la **última lista generada en el mes** filtrado: precisión del top 25 y renovación de los contactados (verificadas 30 días después del vencimiento, con el corte de los datos cargados, no con "hoy"), contactados antes del vencimiento, días de anticipación y monto retenido. Cada indicador muestra su número de casos y su estado (completo, parcial, pendiente o sin datos), sin mínimo de casos (RN-11.1 se cumple) y con "Pocos casos" bajo 10. Lleva los avisos de sesgo de la precisión por la gestión y de cifras no causales; se imprime con el resto (RN-11.2). El grupo de control y la comparación con intervalos de confianza **no** se implementan: la aclaración metodológica de arriba sigue vigente. Definiciones: [mejoras/M04](mejoras/M04-indicadores-del-piloto.md).
+
 ---
 
 ## 15. CU-12 · Descargar Excel de priorización

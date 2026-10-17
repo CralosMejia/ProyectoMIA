@@ -147,4 +147,14 @@ El **Dashboard** resume las gestiones del mes que elijas. Debajo del título se 
 
 Cada gráfico tiene debajo una tabla con los mismos números, para quien prefiera leerlos.
 
-**Imprimir o guardar en PDF.** El botón **"Imprimir / Guardar PDF"** abre la ventana de impresión del navegador; ahí puedes imprimir o elegir "Guardar como PDF". Se imprimen el título, el mes, los gráficos con sus tablas, la tabla por campaña, la tarjeta del modelo y el aviso; no salen el menú, los botones ni el filtro. El botón está desactivado mientras no hay datos. La aplicación no genera archivos por sí misma: es la impresión normal del navegador.
+**Indicadores del piloto.** Miden cómo le fue a la lista del mes y a las llamadas hechas con ella. Se fijan en los **25 primeros socios de la última lista generada en el mes** (si en el mes no hay lista, dice "Sin datos"). Arriba se lee qué lista es y hasta qué fecha hay datos cargados.
+
+- **Precisión del top 25.** De esos 25 socios, cuántos **no** renovaron.
+- **Contactados antes del vencimiento.** Qué porcentaje se llamó antes de que venciera su membresía. Llamar el mismo día del vencimiento ya no cuenta.
+- **Días de anticipación.** En promedio, cuántos días antes del vencimiento se llamó.
+- **Renovación de los contactados.** De los socios contactados, qué porcentaje renovó.
+- **Monto retenido.** Lo que se cobró en las renovaciones de los contactados (si no hay cobro, lo facturado). Las renovaciones sin ningún monto se cuentan aparte.
+
+Si un socio renovó solo se sabe **30 días después de su vencimiento** y cuando ya se cargaron los datos de esas fechas. Hasta entonces la cifra dice **"Pendiente"**; si solo falta una parte, **"Parcial"** con cuántos faltan. Cada cifra muestra su "n" (con cuántos socios se calculó); con menos de 10 aparece **"Pocos casos: léase con cuidado"**. Dos avisos: la precisión puede salir más baja que la real porque llamar a los socios hace que algunos renueven, y estas cifras describen lo que pasó, no prueban que el sistema cause la renovación.
+
+**Imprimir o guardar en PDF.** El botón **"Imprimir / Guardar PDF"** abre la ventana de impresión del navegador; ahí puedes imprimir o elegir "Guardar como PDF". Se imprimen el título, el mes, los gráficos con sus tablas, la tabla por campaña, los indicadores del piloto, la tarjeta del modelo y los avisos; no salen el menú, los botones ni el filtro. El botón está desactivado mientras no hay datos. La aplicación no genera archivos por sí misma: es la impresión normal del navegador.

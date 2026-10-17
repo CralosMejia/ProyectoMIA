@@ -7,6 +7,8 @@ Estado al cierre del día 7 (R-013, 2026-10-01). Resume qué se entregó, en qu�
 > **Mejora M02 (2026-10-16, R-016):** el notebook explica con SHAP el modelo M01 sobre los 247 casos de validación (§12.12): importancia global y por mes, aciertos y errores con top 25 por mes y umbral 0,32, y figuras sin datos personales. Solo análisis: el modelo, la lista y la app no cambian. Detalle: [mejoras/M02](mejoras/M02-explicabilidad-shap.md).
 >
 > **Mejora M03 (2026-10-16, R-017):** SHAP también en prueba, en la lista de septiembre y en entrenamiento (10 de 11 conclusiones de M02 se mantienen), y los "Motivos principales" se calculan con SHAP en el notebook y en la app (shap 0.54.1, sin reentrenar; probabilidades, orden y niveles iguales; listas guardadas sin cambios). Detalle: [mejoras/M03](mejoras/M03-shap-prueba-y-motivos-en-la-app.md), [ADR-015](adr/ADR-015-motivos-con-shap-en-la-app.md).
+>
+> **Mejora M04 (2026-10-16, R-018, alcance reducido):** el Dashboard añade "Indicadores del piloto" sobre el top 25 de la última lista del mes (precisión y renovación de los contactados verificadas en T+30 con el corte de los datos, contactados antes del vencimiento, días de anticipación y monto retenido), con `n`, estados y avisos de sesgo y no causalidad; cambio aditivo en `GET /dashboard`, sin migración. El grupo de control y el reporte A/B con IC quedan como trabajo futuro. Detalle: [mejoras/M04](mejoras/M04-indicadores-del-piloto.md).
 
 ## 1. Qué se entregó
 
