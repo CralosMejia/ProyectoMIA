@@ -181,6 +181,123 @@ describe('dashboard-api (contra MSW)', () => {
     expect((senal as AbortSignal | null)?.aborted).toBe(true)
   })
 
+  it('R-018: piloto del mes (parcial) mapeado a camelCase con los decimales como string', async () => {
+    const { piloto } = await obtenerDashboard('2026-09')
+
+    expect(piloto).toEqual({
+      estado: 'PARCIAL',
+      lista: { id: 12, nombre: 'Ejemplo: Lista septiembre', fechaGeneracion: '2026-09-01' },
+      corteVerificacion: '2026-10-28',
+      nTop: 25,
+      sinDato: 0,
+      precisionTop25: {
+        valor: '0.60000000',
+        numerador: 12,
+        denominador: 20,
+        n: 25,
+        pendientes: 5,
+        estado: 'PARCIAL',
+      },
+      contactadosAntesVencimiento: {
+        valor: '0.72000000',
+        numerador: 18,
+        denominador: 25,
+        n: 25,
+        pendientes: 0,
+        estado: 'COMPLETO',
+      },
+      diasAnticipacion: { valor: '4.5', n: 19, estado: 'COMPLETO' },
+      tasaRenovacionContactados: {
+        valor: '0.41176471',
+        numerador: 7,
+        denominador: 17,
+        n: 21,
+        pendientes: 4,
+        estado: 'PARCIAL',
+      },
+      montoRetenido: {
+        total: '312.50',
+        renovaciones: 7,
+        renovacionesSinMonto: 1,
+        n: 17,
+        pendientes: 4,
+        estado: 'PARCIAL',
+      },
+    })
+  })
+
+  it('R-018: el mock devuelve un mes completo, uno pendiente y uno sin datos', async () => {
+    const completo = (await obtenerDashboard('2026-08')).piloto
+    expect(completo.estado).toBe('COMPLETO')
+    expect(completo.precisionTop25).toMatchObject({ pendientes: 0, estado: 'COMPLETO' })
+
+    const pendiente = (await obtenerDashboard('2026-10')).piloto
+    expect(pendiente.estado).toBe('PENDIENTE')
+    expect(pendiente.precisionTop25).toMatchObject({ valor: null, estado: 'PENDIENTE' })
+    expect(pendiente.montoRetenido).toMatchObject({ total: null, estado: 'PENDIENTE' })
+
+    const sinDatos = (await obtenerDashboard('2026-12')).piloto
+    expect(sinDatos).toMatchObject({
+      estado: 'SIN_DATOS',
+      lista: null,
+      corteVerificacion: null,
+      nTop: 0,
+      sinDato: 0,
+      precisionTop25: { valor: null, n: 0, estado: 'SIN_DATOS' },
+      diasAnticipacion: { valor: null, n: 0, estado: 'SIN_DATOS' },
+      montoRetenido: { total: null, renovaciones: 0, renovacionesSinMonto: 0, estado: 'SIN_DATOS' },
+    })
+  })
+
+  it('R-018: los decimales del piloto conservan todas sus cifras', async () => {
+    const base = await obtenerDashboard('2026-09')
+    server.use(
+      http.get('*/api/v1/dashboard', () =>
+        HttpResponse.json({
+          mes: '2026-09',
+          embudo: { asignadas: 0, contactadas: 0, ofrecidas: 0, aceptadas: 0, renovaron: 0 },
+          por_campania: [],
+          estado_modelo: null,
+          piloto: {
+            estado: 'COMPLETO',
+            lista: { id: 1, nombre: 'L', fecha_generacion: '2026-09-01' },
+            corte_verificacion: '2026-10-28',
+            n_top: 3,
+            sin_dato: 0,
+            precision_top25: { valor: '0.33333333', numerador: 1, denominador: 3, n: 3, pendientes: 0, estado: 'COMPLETO' },
+            contactados_antes_vencimiento: { valor: '0.66666667', numerador: 2, denominador: 3, n: 3, pendientes: 0, estado: 'COMPLETO' },
+            dias_anticipacion: { valor: '-1.5', n: 2, estado: 'COMPLETO' },
+            tasa_renovacion_contactados: { valor: '0.50000000', numerador: 1, denominador: 2, n: 2, pendientes: 0, estado: 'COMPLETO' },
+            monto_retenido: { total: '1234567.89', renovaciones: 1, renovaciones_sin_monto: 0, n: 2, pendientes: 0, estado: 'COMPLETO' },
+          },
+        }),
+      ),
+    )
+
+    const { piloto } = await obtenerDashboard('2026-09')
+    expect(base.piloto.estado).toBe('PARCIAL')
+    expect(piloto.contactadosAntesVencimiento.valor).toBe('0.66666667')
+    expect(piloto.diasAnticipacion.valor).toBe('-1.5')
+    expect(piloto.montoRetenido.total).toBe('1234567.89')
+  })
+
+  it('R-018: una respuesta sin "piloto" se trata como mes sin datos', async () => {
+    server.use(
+      http.get('*/api/v1/dashboard', () =>
+        HttpResponse.json({
+          mes: '2026-09',
+          embudo: { asignadas: 0, contactadas: 0, ofrecidas: 0, aceptadas: 0, renovaron: 0 },
+          por_campania: [],
+          estado_modelo: null,
+        }),
+      ),
+    )
+
+    const { piloto } = await obtenerDashboard('2026-09')
+    expect(piloto).toMatchObject({ estado: 'SIN_DATOS', lista: null, nTop: 0 })
+    expect(piloto.tasaRenovacionContactados.estado).toBe('SIN_DATOS')
+  })
+
   it('no usa fetch directo ni convierte decimales a number', () => {
     expect(source).not.toMatch(/\bfetch\s*\(/)
     expect(source).not.toMatch(/parseFloat|Number\(/)

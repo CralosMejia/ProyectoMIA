@@ -4,7 +4,8 @@ import { BotonAyuda, SeccionAyuda } from '../../../shared/ui/Ayuda'
  * Ayuda "¿Cómo funciona el dashboard?" (R-012, T7): resumen de
  * `Documentation/03-casos-de-uso.md` §14 (CU-11, RN-11.1) y de
  * `Documentation/06-como-funciona-la-lista.md` §9 para el personal del gimnasio, sin terminos
- * tecnicos. El texto vive en el componente.
+ * tecnicos. El texto vive en el componente. R-018 (T7) añade "Indicadores del piloto"
+ * (definiciones (a)-(f) del plan de R-018).
  */
 export function AyudaDashboard() {
   return (
@@ -82,6 +83,50 @@ export function AyudaDashboard() {
           Muestra el modelo que calcula el riesgo de los socios: su versión, la fecha en que se
           entrenó, cuántos ciclos de membresía se usaron para entrenarlo, la fecha de la próxima
           revisión y cuántos ciclos nuevos hay desde entonces para volver a entrenarlo.
+        </p>
+      </SeccionAyuda>
+
+      <SeccionAyuda titulo="Indicadores del piloto">
+        <p>
+          Miden cómo le fue a la lista del mes y a las llamadas que se hicieron con ella. Se fijan en
+          los 25 primeros socios de la última lista del mes:
+        </p>
+        <ul className="flex list-disc flex-col gap-1 pl-5">
+          <li>
+            «Precisión del top 25»: de los 25 primeros socios de la lista del mes, cuántos no
+            renovaron. De cada socio solo se sabe si renovó 30 días después de que vence su
+            membresía; hasta entonces aparece «pendiente».
+          </li>
+          <li>
+            «Contactados antes del vencimiento»: qué porcentaje de esos 25 socios se contactó antes
+            de que venciera su membresía. Contactarlo el mismo día del vencimiento ya no cuenta.
+          </li>
+          <li>
+            «Días de anticipación»: en promedio, cuántos días antes del vencimiento se contactó a
+            los socios.
+          </li>
+          <li>
+            «Renovación de los contactados»: de los socios contactados, qué porcentaje renovó. Como
+            en la precisión, solo cuentan los socios que ya cumplieron los 30 días.
+          </li>
+          <li>
+            «Monto retenido»: la suma de lo que se cobró en las renovaciones de los socios
+            contactados. Si una renovación no tiene cobro registrado, se usa lo facturado; las
+            renovaciones que no tienen ningún monto se cuentan aparte.
+          </li>
+        </ul>
+        <p>
+          Cada cifra muestra cuántos casos tiene, para saber con cuántos socios se calculó. En
+          «Renovación de los contactados» el número de casos cuenta a todos los contactados; en
+          «Monto retenido» cuenta solo a los contactados ya verificados, los que cumplieron los 30
+          días. Por eso pueden ser distintos.
+        </p>
+        <p>
+          Un aviso: la precisión puede salir más baja que la real, porque contactar a los socios
+          hace que algunos que se iban a ir terminen renovando.
+        </p>
+        <p>
+          Estas cifras describen lo que ocurrió y no prueban que el sistema cause la renovación.
         </p>
       </SeccionAyuda>
 

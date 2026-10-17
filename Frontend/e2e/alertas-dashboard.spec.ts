@@ -364,3 +364,234 @@ test('alertas para hoy: registrar el resultado desde Seguimiento y verlo en el D
     await expect(page.getByText(`Versión ${versionVigente}`, { exact: true })).toBeVisible()
   })
 })
+
+// ------------------------------------------------------------------ R-018 (M04) · T8
+
+type EstadoIndicador = 'COMPLETO' | 'PARCIAL' | 'PENDIENTE' | 'SIN_DATOS'
+
+interface IndicadorApi {
+  n: number
+  estado: EstadoIndicador
+  pendientes?: number
+}
+
+interface PilotoApi {
+  estado: EstadoIndicador
+  lista: { id: number; nombre: string; fecha_generacion: string } | null
+  n_top: number
+  precision_top25: IndicadorApi
+  contactados_antes_vencimiento: IndicadorApi
+  dias_anticipacion: IndicadorApi
+  tasa_renovacion_contactados: IndicadorApi
+  monto_retenido: IndicadorApi
+}
+
+/** Nombre visible de cada indicador (el mismo de la ayuda) y su bloque en la respuesta. */
+const INDICADORES_PILOTO = [
+  ['Precisión del top 25', 'precision_top25'],
+  ['Contactados antes del vencimiento', 'contactados_antes_vencimiento'],
+  ['Días de anticipación', 'dias_anticipacion'],
+  ['Renovación de los contactados', 'tasa_renovacion_contactados'],
+  ['Monto retenido', 'monto_retenido'],
+] as const
+
+const TEXTO_PENDIENTE =
+  'Pendiente: aún no se puede verificar (se verifica 30 días después del vencimiento)'
+
+/** Estado traducido que debe ver el usuario (nunca el nombre interno). */
+function estadoVisible(estado: EstadoIndicador): string | RegExp {
+  switch (estado) {
+    case 'COMPLETO':
+      return 'Completo'
+    case 'PARCIAL':
+      return /^Parcial/
+    case 'PENDIENTE':
+      return TEXTO_PENDIENTE
+    case 'SIN_DATOS':
+      return 'Sin datos'
+  }
+}
+
+const CLAVES_PERSONALES = ['cedula', 'celular', 'correo', 'telefono', 'socio_id', 'membresia_id']
+
+function claves(valor: unknown): string[] {
+  if (Array.isArray(valor)) return valor.flatMap(claves)
+  if (valor !== null && typeof valor === 'object')
+    return Object.entries(valor).flatMap(([k, v]) => [k, ...claves(v)])
+  return []
+}
+
+/** GET /dashboard?mes= por el stack: 200, con `piloto` y sin claves personales. */
+async function leerPiloto(page: Page, mes: string): Promise<PilotoApi> {
+  const respuesta = await page.request.get(`/api/v1/dashboard?mes=${mes}`)
+  expect(respuesta.status()).toBe(200)
+  const cuerpo: unknown = await respuesta.json()
+  expect(claves(cuerpo).filter((k) => CLAVES_PERSONALES.includes(k))).toEqual([])
+  const piloto = (cuerpo as { piloto?: PilotoApi }).piloto
+  expect(piloto, '`piloto` en GET /dashboard').toBeDefined()
+  // El unico `nombre` dentro de `piloto` es el de la lista (nunca el de un socio).
+  const nombres = claves(piloto).filter((k) => k === 'nombre')
+  expect(nombres.length).toBe(piloto?.lista ? 1 : 0)
+  return piloto as PilotoApi
+}
+
+function seccionPiloto(page: Page): Locator {
+  return page.getByRole('region', { name: 'Indicadores del piloto' })
+}
+
+function tarjetaIndicador(seccion: Locator, nombre: string): Locator {
+  return seccion
+    .locator('dl > div')
+    .filter({ has: seccion.page().locator('dt').getByText(nombre, { exact: true }) })
+}
+
+/** Texto del `n` en pantalla: el del monto aclara que cuenta solo a los ya verificados. */
+function textoN(nombre: string, n: number): string {
+  return nombre === 'Monto retenido' ? `n = ${n} contactados ya verificados` : `n = ${n}`
+}
+
+/** Cada indicador de la pantalla con el `n` y el estado traducido de la respuesta. */
+async function comprobarIndicadores(seccion: Locator, piloto: PilotoApi) {
+  await expect(seccion.locator('dl > div')).toHaveCount(INDICADORES_PILOTO.length)
+  for (const [nombre, clave] of INDICADORES_PILOTO) {
+    const tarjeta = tarjetaIndicador(seccion, nombre)
+    await expect(tarjeta, nombre).toHaveCount(1)
+    await expect(tarjeta.getByText(textoN(nombre, piloto[clave].n), { exact: true }), nombre).toBeVisible()
+    const estado = estadoVisible(piloto[clave].estado)
+    await expect(
+      typeof estado === 'string'
+        ? tarjeta.getByText(estado, { exact: true })
+        : tarjeta.getByText(estado),
+      nombre,
+    ).toBeVisible()
+    // Nunca el nombre interno del estado.
+    await expect(tarjeta.getByText(/^(COMPLETO|PARCIAL|PENDIENTE|SIN_DATOS)$/)).toHaveCount(0)
+  }
+}
+
+test('indicadores del piloto: lista del mes pendiente, mes sin lista «Sin datos», impresión y ayuda', async ({
+  page,
+  baseURL,
+}) => {
+  test.skip(
+    !baseURL || baseURL.includes(PUERTO_PRINCIPAL),
+    'Puede generar una lista: solo contra el stack E2E aislado (E2E_BASE_URL=http://localhost:8081).',
+  )
+  test.setTimeout(180_000)
+  const mes = hoyLocal().slice(0, 7)
+
+  let piloto = await leerPiloto(page, mes)
+
+  if (piloto.lista === null) {
+    await test.step('el mes en curso aún no tiene lista: generarla', async () => {
+      await page.goto('/lista')
+      await expect(page.getByRole('heading', { level: 1, name: 'Lista priorizada' })).toBeVisible()
+      const creada = page.waitForResponse(
+        (r) => r.request().method() === 'POST' && /\/api\/v1\/listas$/.test(r.url()),
+      )
+      await page.getByRole('button', { name: 'Generar lista' }).click()
+      expect((await creada).status()).toBe(201)
+      piloto = await leerPiloto(page, mes)
+    })
+  }
+
+  await test.step('API: la lista del mes en curso tiene top y su precisión aún no se puede verificar', async () => {
+    expect(piloto.lista).not.toBeNull()
+    expect(piloto.n_top).toBeGreaterThan(0)
+    expect(piloto.n_top).toBeLessThanOrEqual(25)
+    // Vencimientos >= dia de generacion (este mes) -> T + 30 > hoy >= corte: nadie verificado.
+    expect(piloto.precision_top25.estado).toBe('PENDIENTE')
+    expect(piloto.precision_top25.pendientes).toBe(piloto.precision_top25.n)
+  })
+
+  const seccion = seccionPiloto(page)
+
+  await test.step('Dashboard: «Indicadores del piloto» con sus 5 indicadores, n y estado traducido', async () => {
+    await page.goto('/dashboard')
+    await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
+    await expect(page.getByLabel('Mes', { exact: true })).toHaveValue(mes)
+    await expect(seccion).toBeVisible({ timeout: 30_000 })
+    await expect(
+      seccion.getByRole('heading', { level: 2, name: 'Indicadores del piloto' }),
+    ).toBeVisible()
+    await expect(
+      seccion.getByText(`Lista del mes: ${piloto.lista?.nombre}, generada el `),
+    ).toBeVisible()
+    await comprobarIndicadores(seccion, piloto)
+    await expect(
+      tarjetaIndicador(seccion, 'Precisión del top 25').getByText(TEXTO_PENDIENTE, {
+        exact: true,
+      }),
+    ).toBeVisible()
+    await expect(
+      seccion.getByText(
+        'Los socios del top 25 se contactan; por eso la precisión observada puede quedar por debajo de la real.',
+      ),
+    ).toBeVisible()
+    await expect(seccion.getByText('Cifras observadas, no causales.')).toBeVisible()
+  })
+
+  await test.step('impresión: la sección no lleva print:hidden y se ve con el medio «print»', async () => {
+    const oculta = await seccion.evaluate((el) => {
+      for (let n: Element | null = el; n; n = n.parentElement) {
+        if (n.classList.contains('print:hidden')) return true
+      }
+      return false
+    })
+    expect(oculta).toBe(false)
+    await page.emulateMedia({ media: 'print' })
+    await expect(seccion).toBeVisible()
+    await expect(seccion.locator('dl > div')).toHaveCount(INDICADORES_PILOTO.length)
+    for (const [nombre] of INDICADORES_PILOTO) {
+      await expect(tarjetaIndicador(seccion, nombre)).toBeVisible()
+    }
+    // Lo que si se oculta al imprimir sigue oculto (el boton de imprimir).
+    await expect(page.getByRole('button', { name: 'Imprimir / Guardar PDF' })).toBeHidden()
+    await page.emulateMedia({ media: 'screen' })
+  })
+
+  await test.step('ayuda: sección «Indicadores del piloto» con los cinco, pendiente a los 30 días y sesgo', async () => {
+    const boton = page.getByRole('button', { name: '¿Cómo funciona el dashboard?' })
+    await boton.click()
+    const ayuda = page.getByRole('dialog', { name: '¿Cómo funciona el dashboard?' })
+    await expect(ayuda).toBeVisible()
+    await expect(
+      ayuda.getByRole('heading', { name: 'Indicadores del piloto', exact: true }),
+    ).toBeVisible()
+    // Una definicion (elemento de la lista) por indicador; el nombre tambien aparece citado
+    // en otros parrafos de la seccion, por eso se busca el elemento que empieza por «nombre»:.
+    for (const [nombre] of INDICADORES_PILOTO) {
+      const definicion = ayuda.getByRole('listitem').filter({ hasText: `«${nombre}»:` })
+      await expect(definicion, nombre).toHaveCount(1)
+      await expect(definicion, nombre).toBeVisible()
+    }
+    await expect(
+      ayuda.getByText(/«Monto retenido» cuenta solo a los contactados ya verificados/),
+    ).toBeVisible()
+    await expect(ayuda.getByText(/30 días después de que vence su\s+membresía/)).toBeVisible()
+    await expect(ayuda.getByText(/la precisión puede salir más baja que la real/)).toBeVisible()
+    await expect(ayuda.getByText(/no prueban que el sistema cause la renovación/)).toBeVisible()
+    await ayuda.getByRole('button', { name: 'Cerrar' }).click()
+    await expect(ayuda).toHaveCount(0)
+    await expect(boton).toBeFocused()
+  })
+
+  await test.step('mes sin lista (2000-01): «Sin datos» y n = 0 en los cinco', async () => {
+    const vacio = await leerPiloto(page, '2000-01')
+    expect(vacio.estado).toBe('SIN_DATOS')
+    expect(vacio.lista).toBeNull()
+    const pedido = page.waitForResponse(
+      (r) => r.request().method() === 'GET' && /\/api\/v1\/dashboard\?mes=2000-01$/.test(r.url()),
+    )
+    await page.getByLabel('Mes', { exact: true }).fill('2000-01')
+    expect((await pedido).status()).toBe(200)
+    await expect(seccion.getByText('No hay una lista generada en este mes.')).toBeVisible()
+    await comprobarIndicadores(seccion, vacio)
+    for (const [nombre] of INDICADORES_PILOTO) {
+      const tarjeta = tarjetaIndicador(seccion, nombre)
+      await expect(tarjeta.getByText('Sin datos', { exact: true })).toBeVisible()
+      await expect(tarjeta.getByText(textoN(nombre, 0), { exact: true })).toBeVisible()
+    }
+    await expect(seccion.getByText('Pocos casos: léase con cuidado')).toHaveCount(0)
+  })
+})

@@ -3,7 +3,15 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import type { ResultadoCampania } from '../types'
-import { nombreDelMes, porcentaje, resumenResultados } from './presentacion'
+import {
+  decimalConComa,
+  fechaEnPalabras,
+  montoUsd,
+  nombreDelMes,
+  porcentaje,
+  porcentajeDecimal,
+  resumenResultados,
+} from './presentacion'
 import presentacionSource from './presentacion.ts?raw'
 
 function fila(
@@ -76,6 +84,72 @@ describe('nombreDelMes', () => {
 
   it('no usa Date (no depende de la zona horaria del navegador)', () => {
     expect(presentacionSource).not.toMatch(/\bDate\b/)
+  })
+})
+
+describe('porcentajeDecimal (R-018, decimal 0..1 como texto)', () => {
+  it.each([
+    ['0.60000000', '60,0 %'],
+    ['0.41176471', '41,2 %'],
+    ['0.72000000', '72,0 %'],
+    ['0.33333333', '33,3 %'],
+    ['0.66666667', '66,7 %'],
+    ['0.00050000', '0,1 %'],
+    ['0.00049999', '0,0 %'],
+    ['0.99950000', '100,0 %'],
+    ['1', '100,0 %'],
+    ['1.00000000', '100,0 %'],
+    ['0', '0,0 %'],
+  ])('%s → %s', (texto, esperado) => {
+    expect(porcentajeDecimal(texto)).toBe(esperado)
+  })
+})
+
+describe('decimalConComa (R-018, dias de anticipacion)', () => {
+  it.each([
+    ['4.5', '4,5'],
+    ['3', '3,0'],
+    ['3.0', '3,0'],
+    ['4.45', '4,5'],
+    ['4.44', '4,4'],
+    ['9.96', '10,0'],
+    ['-1.5', '-1,5'],
+    ['-0.04', '0,0'],
+    ['0', '0,0'],
+  ])('%s → %s', (texto, esperado) => {
+    expect(decimalConComa(texto)).toBe(esperado)
+  })
+})
+
+describe('montoUsd (R-018, USD con coma decimal y punto de miles)', () => {
+  it.each([
+    ['312.50', '$312,50'],
+    ['1450.00', '$1.450,00'],
+    ['1234567.89', '$1.234.567,89'],
+    ['0', '$0,00'],
+    ['12.345', '$12,35'],
+    ['999.995', '$1.000,00'],
+    ['7.5', '$7,50'],
+  ])('%s → %s', (texto, esperado) => {
+    expect(montoUsd(texto)).toBe(esperado)
+  })
+})
+
+describe('fechaEnPalabras (R-018)', () => {
+  it.each([
+    ['2026-09-01', '1 de septiembre de 2026'],
+    ['2026-10-28', '28 de octubre de 2026'],
+    ['2027-01-15', '15 de enero de 2027'],
+  ])('%s → %s', (iso, esperado) => {
+    expect(fechaEnPalabras(iso)).toBe(esperado)
+  })
+
+  it.each(['', '2026-13-01', '2026-09', '01/09/2026'])('invalida %j → tal cual', (iso) => {
+    expect(fechaEnPalabras(iso)).toBe(iso)
+  })
+
+  it('no convierte decimales a coma flotante', () => {
+    expect(presentacionSource).not.toMatch(/parseFloat|Number\(|toFixed/)
   })
 })
 

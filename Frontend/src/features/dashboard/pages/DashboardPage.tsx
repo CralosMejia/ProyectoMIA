@@ -6,6 +6,7 @@ import { AyudaDashboard } from '../components/AyudaDashboard'
 import { EmbudoGestion } from '../components/EmbudoGestion'
 import { EstadoModeloCard } from '../components/EstadoModeloCard'
 import { GraficoResultados } from '../components/GraficoResultados'
+import { IndicadoresPiloto } from '../components/IndicadoresPiloto'
 import { TablaResultadosCampania } from '../components/TablaResultadosCampania'
 import { useDashboard } from '../hooks/useDashboard'
 
@@ -68,6 +69,7 @@ export default function DashboardPage() {
               <TablaResultadosCampania filas={datos.porCampania} />
             </>
           )}
+          <IndicadoresPiloto piloto={datos.piloto} />
           <EstadoModeloCard estadoModelo={datos.estadoModelo} />
         </>
       )}

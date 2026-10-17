@@ -323,6 +323,60 @@ describe('DashboardPage', () => {
     expect(pageSource).toMatch(/window\.print\(\)/)
   })
 
+  it('R-018: "Indicadores del piloto" del mes (parcial) con lista, n y estados traducidos', async () => {
+    render(<DashboardPage />)
+    await screen.findByRole('table', { name: 'Resultados por campaña' })
+
+    fireEvent.change(screen.getByLabelText('Mes'), { target: { value: '2026-09' } })
+
+    const region = await screen.findByRole('region', { name: 'Indicadores del piloto' })
+    expect(
+      await within(region).findByText(
+        'Lista del mes: Ejemplo: Lista septiembre, generada el 1 de septiembre de 2026.',
+      ),
+    ).toBeInTheDocument()
+    expect(within(region).getByText('60,0 %')).toBeInTheDocument()
+    expect(within(region).getByText('$312,50')).toBeInTheDocument()
+    expect(
+      within(region).getByText('Parcial: faltan 5 por verificar (20 de 25 verificados)'),
+    ).toBeInTheDocument()
+    // Cuatro n sin aclarar y el del monto, que cuenta solo a los contactados ya verificados.
+    expect(within(region).getAllByText(/^n = \d+$/)).toHaveLength(4)
+    expect(within(region).getAllByText(/^n = \d+ contactados ya verificados$/)).toHaveLength(1)
+    expect(within(region).queryByText(/PARCIAL|COMPLETO|PENDIENTE|SIN_DATOS/)).not.toBeInTheDocument()
+  })
+
+  it('R-018: mes sin gestiones ni lista → indicadores del piloto "Sin datos" visibles', async () => {
+    server.use(
+      http.get(DASHBOARD_PATH, ({ request }) =>
+        HttpResponse.json({ mes: new URL(request.url).searchParams.get('mes'), ...VACIO }),
+      ),
+    )
+
+    render(<DashboardPage />)
+
+    expect(await screen.findByText('No hay gestiones asignadas en este mes')).toBeInTheDocument()
+    const region = screen.getByRole('region', { name: 'Indicadores del piloto' })
+    expect(within(region).getByText('No hay una lista generada en este mes.')).toBeInTheDocument()
+    expect(within(region).getAllByText('Sin datos')).toHaveLength(5)
+  })
+
+  it('R-018: los indicadores del piloto se imprimen, con sus avisos, y no se cortan', async () => {
+    render(<DashboardPage />)
+    await screen.findByRole('table', { name: 'Resultados por campaña' })
+
+    const region = screen.getByRole('region', { name: 'Indicadores del piloto' })
+    expect(ocultoAlImprimir(region)).toBe(false)
+    expect(region.querySelector(OCULTO_AL_IMPRIMIR)).toBeNull()
+    expect(region.className).toMatch(/\bbreak-inside-avoid\b/)
+    for (const aviso of [
+      'Los socios del top 25 se contactan; por eso la precisión observada puede quedar por debajo de la real.',
+      'Cifras observadas, no causales.',
+    ]) {
+      expect(ocultoAlImprimir(within(region).getByText(aviso))).toBe(false)
+    }
+  })
+
   it('arquitectura: la pagina no importa api/ ni core/http ni usa fetch', () => {
     expect(pageSource).not.toMatch(/from\s+['"][^'"]*\/api\//)
     expect(pageSource).not.toMatch(/core\/http/)

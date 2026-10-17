@@ -35,7 +35,7 @@ describe('AyudaDashboard', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
-  it('al pulsar abre el dialogo con sus nueve secciones en orden', async () => {
+  it('al pulsar abre el dialogo con sus diez secciones en orden', async () => {
     const { dialogo } = await abrir()
 
     expect(
@@ -51,8 +51,38 @@ describe('AyudaDashboard', () => {
       'Casos insuficientes',
       'La fila «Sin campaña»',
       'La tarjeta del modelo',
+      'Indicadores del piloto',
       'Qué significan las cifras',
     ])
+  })
+
+  it('"Indicadores del piloto": los cinco indicadores, pendiente a los 30 días, casos, sesgo y no causa', async () => {
+    const { dialogo } = await abrir()
+    const texto = textoDeLaSeccion(dialogo, 'Indicadores del piloto')
+
+    // Precision del top 25 y verificacion a los 30 dias.
+    expect(texto).toMatch(/«Precisión del top 25»: de los 25 primeros socios de la lista del mes, cuántos no renovaron/)
+    expect(texto).toMatch(/30 días después de que vence su membresía/)
+    expect(texto).toMatch(/aparece «pendiente»/)
+    // Contacto antes del vencimiento y dias de anticipacion.
+    expect(texto).toMatch(/«Contactados antes del vencimiento»: qué porcentaje de esos 25 socios se contactó antes de que venciera su membresía/)
+    expect(texto).toMatch(/«Días de anticipación»: en promedio, cuántos días antes del vencimiento se contactó/)
+    // Tasa de renovacion de los contactados.
+    expect(texto).toMatch(/«Renovación de los contactados»: de los socios contactados, qué porcentaje renovó/)
+    // Monto retenido.
+    expect(texto).toMatch(/«Monto retenido»: la suma de lo que se cobró en las renovaciones de los socios contactados/)
+    expect(texto).toMatch(/Si una renovación no tiene cobro registrado, se usa lo facturado/)
+    expect(texto).toMatch(/se cuentan aparte/)
+    // Casos de cada cifra.
+    expect(texto).toMatch(/Cada cifra muestra cuántos casos tiene/)
+    // El n de la renovacion y el del monto no cuentan lo mismo.
+    expect(texto).toMatch(/En «Renovación de los contactados» el número de casos cuenta a todos los contactados/)
+    expect(texto).toMatch(/en «Monto retenido» cuenta solo a los contactados ya verificados, los que cumplieron los 30 días/)
+    // Sesgo de la precision por la gestion.
+    expect(texto).toMatch(/la precisión puede salir más baja que la real/)
+    expect(texto).toMatch(/contactar a los socios hace que algunos que se iban a ir terminen renovando/)
+    // No miden causa.
+    expect(texto).toMatch(/describen lo que ocurrió y no prueban que el sistema cause la renovación/)
   })
 
   it('"El filtro por mes": se cuentan las gestiones creadas en ese mes', async () => {

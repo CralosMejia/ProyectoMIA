@@ -64,3 +64,72 @@ export function nombreDelMes(mes: string): string {
   const [, anio = '', numero = ''] = partes
   return `${MESES[Number.parseInt(numero, 10) - 1]} de ${anio}`
 }
+
+const FECHA_VALIDA = /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/
+
+/** "2026-09-01" → "1 de septiembre de 2026", sin pasar por fechas. Invalida → tal cual. */
+export function fechaEnPalabras(iso: string): string {
+  const partes = FECHA_VALIDA.exec(iso)
+  if (!partes) return iso
+  const [, anio = '', numero = '', dia = ''] = partes
+  return `${Number.parseInt(dia, 10)} de ${MESES[Number.parseInt(numero, 10) - 1]} de ${anio}`
+}
+
+const DECIMAL = /^(-?)(\d+)(?:\.(\d*))?$/
+
+interface DecimalRedondeado {
+  negativo: boolean
+  entero: string
+  fraccion: string
+}
+
+/**
+ * Redondea un decimal en texto a `decimales` cifras (a la mitad, alejandose del cero) operando
+ * con sus digitos, nunca con coma flotante. `desplazar` multiplica por 10^desplazar antes
+ * (2 → porcentaje). Texto no decimal → null.
+ */
+function redondear(texto: string, decimales: number, desplazar = 0): DecimalRedondeado | null {
+  const partes = DECIMAL.exec(texto.trim())
+  if (!partes) return null
+  const [, signo = '', ent = '0', frac = ''] = partes
+  const fraccion = frac.padEnd(desplazar + decimales + 1, '0')
+  const cifras = `${ent}${fraccion.slice(0, desplazar + decimales)}`
+    .split('')
+    .map((c) => Number.parseInt(c, 10))
+  if ((fraccion[desplazar + decimales] ?? '0') >= '5') {
+    let i = cifras.length - 1
+    while (i >= 0 && cifras[i] === 9) {
+      cifras[i] = 0
+      i -= 1
+    }
+    if (i >= 0) cifras[i] = (cifras[i] ?? 0) + 1
+    else cifras.unshift(1)
+  }
+  const todas = cifras.join('')
+  const entero = todas.slice(0, todas.length - decimales).replace(/^0+(?=\d)/, '') || '0'
+  const decimalesTexto = decimales > 0 ? todas.slice(todas.length - decimales) : ''
+  const esCero = /^0*$/.test(todas)
+  return { negativo: signo === '-' && !esCero, entero, fraccion: decimalesTexto }
+}
+
+/** Decimal exacto 0..1 como texto → porcentaje con un decimal y coma: "0.41176471" → "41,2 %". */
+export function porcentajeDecimal(texto: string): string {
+  const r = redondear(texto, 1, 2)
+  if (!r) return texto
+  return `${r.negativo ? '-' : ''}${r.entero},${r.fraccion} %`
+}
+
+/** Decimal como texto → un decimal con coma: "4.5" → "4,5"; "-1.5" → "-1,5". */
+export function decimalConComa(texto: string): string {
+  const r = redondear(texto, 1)
+  if (!r) return texto
+  return `${r.negativo ? '-' : ''}${r.entero},${r.fraccion}`
+}
+
+/** Monto en USD como texto → formato es-EC: "1234567.89" → "$1.234.567,89". */
+export function montoUsd(texto: string): string {
+  const r = redondear(texto, 2)
+  if (!r) return texto
+  const miles = r.entero.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  return `${r.negativo ? '-' : ''}$${miles},${r.fraccion}`
+}
