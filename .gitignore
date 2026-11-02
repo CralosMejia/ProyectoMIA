@@ -4,6 +4,7 @@
 !.env.example
 !.env.e2e.example
 !.env.limpia.example
+!.env.demo.example
 *.pem
 *.key
 *.p12
