@@ -542,13 +542,14 @@ def test_dominio_del_modelo_solo_usa_libreria_estandar() -> None:
 # ---------------------------------------------------------------- periodo de referencia de factores
 
 
-def test_periodo_referencia_por_defecto_es_x_train_con_margen_de_30_dias() -> None:
-    # M01 (g): X_train del notebook = particion de entrenamiento = vencimiento < 2025-12-02
-    # (2026-01-01 - 30 d), sin limite inferior (asignar_particion de la seccion 7.3).
-    assert PeriodoReferencia(date.min, date(2025, 12, 2)) == PERIODO_REFERENCIA_FACTORES
+def test_periodo_referencia_por_defecto_es_x_train_de_la_particion_m05() -> None:
+    # M05: X_train del notebook = particion de entrenamiento = vencimiento <= 2025-10-31
+    # (Prototipo_Final_Mtabolic.ipynb, Parte 6), sin limite inferior.
+    assert PeriodoReferencia(date.min, date(2025, 11, 1)) == PERIODO_REFERENCIA_FACTORES
     assert PERIODO_REFERENCIA_FACTORES.contiene(ciclo(date(2024, 12, 2), date(2025, 1, 1)))
-    assert PERIODO_REFERENCIA_FACTORES.contiene(ciclo(date(2025, 11, 1), date(2025, 12, 1)))
-    assert not PERIODO_REFERENCIA_FACTORES.contiene(ciclo(date(2025, 11, 2), date(2025, 12, 2)))
+    assert PERIODO_REFERENCIA_FACTORES.contiene(ciclo(date(2025, 10, 1), date(2025, 10, 31)))
+    assert not PERIODO_REFERENCIA_FACTORES.contiene(ciclo(date(2025, 10, 2), date(2025, 11, 1)))
+    assert not PERIODO_REFERENCIA_FACTORES.contiene(ciclo(date(2025, 11, 1), date(2025, 12, 1)))
     assert not PERIODO_REFERENCIA_FACTORES.contiene(ciclo(date(2025, 12, 1), date(2025, 12, 31)))
     assert PERIODO_REFERENCIA_FACTORES.contiene(ciclo(date(2024, 12, 1), date(2024, 12, 31)))
     assert not PERIODO_REFERENCIA_FACTORES.contiene(ciclo(date(2025, 3, 1), None))

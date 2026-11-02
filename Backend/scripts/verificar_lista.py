@@ -1,4 +1,4 @@
-"""Verificacion local de la lista de septiembre frente al notebook M01/M03 (R-015, R-017).
+"""Verificacion local de la lista de septiembre frente al notebook oficial (R-015, R-017, M05).
 
 Fuera de la suite. Uso (desde ``Backend/``, con el entorno virtual activo)::
 
@@ -8,15 +8,19 @@ Fuera de la suite. Uso (desde ``Backend/``, con el entorno virtual activo)::
 Compone **en memoria y sin base de datos** el mismo camino que la app: ``LectorLibrosExcel``
 + ``ProcesarHistorico`` -> ``EntrenarModeloInicial`` (``RandomForestPredictor``, conjunto
 ``CONJUNTO_MODELO``) -> las membresias como las guarda la migracion -> ``GenerarLista`` sobre
-una unidad de trabajo en memoria. Lo compara con las salidas del notebook
-``Notebookes/MVP.ipynb`` (13.8), que se leen en tiempo de ejecucion de la carpeta git-ignorada
-``salidas/`` (nunca se copian a un archivo versionado):
+una unidad de trabajo en memoria. Lo compara con las salidas del notebook oficial
+``Notebookes/Prototipo_Final_Mtabolic.ipynb`` (Parte 13; M05), que se leen en tiempo de
+ejecucion de la carpeta git-ignorada ``salidas/`` (nunca se copian a un archivo versionado):
 
-- ``m01/despues/parametros_modelo_operativo.json``: conteos de la cartera, ciclos de
+- ``prototipo_final/parametros_modelo_operativo.json``: conteos de la cartera, ciclos de
   entrenamiento, variables del modelo, medianas de monto, metodo de los motivos
   (``metodo_factores``) y referencia de los factores;
-- ``mvp/lista_operativa_2026-09.xlsx`` (hoja ``cartera_completa``): la lista completa con la
-  probabilidad sin redondear, el nivel y los motivos de cada socio.
+- ``prototipo_final/lista_operativa_2026-09.xlsx`` (hoja ``cartera_completa``): la lista
+  completa con la probabilidad sin redondear, el nivel y los motivos de cada socio.
+
+Las salidas anteriores de ``Notebookes/MVP.ipynb`` (``m01/despues`` y ``mvp/``, version
+historica) tienen el mismo formato: se pueden seguir comparando copiandolas a otra carpeta con
+esa estructura y pasandola con ``--referencia``.
 
 Se comparan **todas** las filas de la lista: probabilidad a 8 decimales (la precision que
 guarda la app), nivel (cortes fijos 0,70 / 0,50 en ambos), motivos (texto exacto) y orden.
@@ -87,8 +91,8 @@ FECHA_GENERACION = date(2026, 8, 31)
 HORIZONTE_DIAS = 30
 TOP_K = 25
 CARPETA_SALIDAS = Path(__file__).resolve().parents[2] / "salidas"
-ARCHIVO_PARAMETROS = Path("m01") / "despues" / "parametros_modelo_operativo.json"
-ARCHIVO_LISTA = Path("mvp") / "lista_operativa_2026-09.xlsx"
+ARCHIVO_PARAMETROS = Path("prototipo_final") / "parametros_modelo_operativo.json"
+ARCHIVO_LISTA = Path("prototipo_final") / "lista_operativa_2026-09.xlsx"
 HOJA_LISTA = "cartera_completa"
 # Sal secreta de los codigos de socio: variable de entorno y, en su defecto, archivo en
 # ``salidas/`` (git-ignorada) que genera el notebook la primera vez.
@@ -99,7 +103,7 @@ SIN_FACTORES = "Sin factores de riesgo destacados"
 METODO_FACTORES = "shap"
 _OCHO_DECIMALES = Decimal("0.00000001")
 
-# Las salidas del notebook M01 se generaron con scikit-learn 1.8.0 (la version fijada en la
+# Las salidas del notebook oficial se generan con scikit-learn 1.8.0 (la version fijada en la
 # app); con otra version el bosque cambia y las probabilidades no coinciden.
 SKLEARN_NOTEBOOK = "1.8.0"
 
@@ -132,7 +136,7 @@ class FilaReferencia:
 
 @dataclass(frozen=True, slots=True)
 class Referencia:
-    """Salidas del notebook M01 con que se compara la app."""
+    """Salidas del notebook oficial con que se compara la app."""
 
     conteos: Mapping[str, int]
     variables: tuple[tuple[str, ...], tuple[str, ...]]
@@ -226,7 +230,7 @@ def cargar_referencia(carpeta: Path) -> Referencia:
     parametros_ruta = carpeta / ARCHIVO_PARAMETROS
     lista_ruta = carpeta / ARCHIVO_LISTA
     if not parametros_ruta.is_file() or not lista_ruta.is_file():
-        raise ReferenciaNoDisponibleError("No se encontraron las salidas del notebook M01.")
+        raise ReferenciaNoDisponibleError("No se encontraron las salidas del notebook oficial.")
     parametros = json.loads(parametros_ruta.read_text(encoding="utf-8"))
     try:
         cartera = parametros["cartera_septiembre"]
@@ -738,7 +742,9 @@ def _verificar(
     sal: bytes | None,
     salida: TextIO,
 ) -> int:
-    parser = argparse.ArgumentParser(description="Verifica la lista frente al notebook M01/M03.")
+    parser = argparse.ArgumentParser(
+        description="Verifica la lista frente al notebook oficial (Prototipo_Final_Mtabolic.ipynb)."
+    )
     parser.add_argument("carpeta", type=Path, help="carpeta con los libros Control Gym")
     parser.add_argument("--referencia", type=Path, default=CARPETA_SALIDAS)
     parser.add_argument("--fecha", type=date.fromisoformat, default=FECHA_GENERACION)

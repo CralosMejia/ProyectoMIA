@@ -137,10 +137,10 @@ class MedianasMonto:
 class PeriodoReferencia:
     """Periodo de vencimientos ``[desde, hasta)`` que sirve de referencia a los factores.
 
-    El notebook (13.3) toma como socio "tipico" las medianas y modas de ``X_train``: con los
-    margenes de M01, la particion de entrenamiento = vencimiento ``< 2026-01-01 - 30 d``
-    (hasta el 2025-12-01 inclusive) y sin limite inferior (``asignar_particion``, 7.3). Es un
-    parametro para que un reentrenamiento futuro pueda moverlo.
+    El notebook toma como socio "tipico" las medianas y modas de ``X_train``: con la particion
+    de M05 (``Prototipo_Final_Mtabolic.ipynb``, Parte 6), el entrenamiento son los vencimientos
+    hasta el 2025-10-31 inclusive, sin limite inferior (antes, con M01, hasta el 2025-12-01).
+    Es un parametro para que un reentrenamiento futuro pueda moverlo.
     """
 
     desde: date
@@ -155,7 +155,7 @@ class PeriodoReferencia:
         return vence is not None and self.desde <= vence < self.hasta
 
 
-PERIODO_REFERENCIA_FACTORES = PeriodoReferencia(desde=date.min, hasta=date(2025, 12, 2))
+PERIODO_REFERENCIA_FACTORES = PeriodoReferencia(desde=date.min, hasta=date(2025, 11, 1))
 
 
 def calcular_medianas(ciclos: Iterable[CicloModelo]) -> MedianasMonto:

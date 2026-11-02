@@ -4,6 +4,7 @@
 - **Origen:** [03 §5](../03-casos-de-uso.md) (CU-02) · decisiones (d)–(g) de R-011
 - **Detalla:** [ADR-003](ADR-003-reentrenamiento-y-versionado.md), que sigue vigente.
 - **Complementada por [ADR-014](ADR-014-modelo-m01-adopcion-y-cortes-de-riesgo.md) (R-015):** etiquetado al corte de los datos (no "hoy"), margen de 30 días entre el entrenamiento del candidato y la comparación, y comando `adoptar-modelo` fuera de los criterios.
+- **Ajustada en [M05](../mejoras/M05-correcciones-evaluacion-semana-10.md) (2026-11-02):** el margen del candidato pasa a 60 días (`vencimiento + 60 < primer vencimiento de la comparación`) para que cada etiqueta (T+30) se conozca antes de la primera predicción (T−30) de la comparación, igual que la partición del notebook oficial.
 
 ## Contexto
 

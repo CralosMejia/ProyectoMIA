@@ -1,0 +1,16 @@
+# Dependencias del notebook oficial Notebookes/Prototipo_Final_Mtabolic.ipynb (Python 3.12). Desde la raíz: pip install -r requirements.txt
+# Las versiones exactas importan: con otra versión de scikit-learn el Random Forest cambia
+# y las cifras dejan de coincidir con el informe y con la app (Backend/pyproject.toml usa las mismas).
+pandas==3.0.6
+numpy==2.5.3
+scikit-learn==1.8.0
+scipy==1.18.1
+shap==0.54.1
+openpyxl==3.1.5
+joblib==1.6.0
+matplotlib==3.11.2
+# Para ejecutar el notebook (Jupyter, VS Code o desde la terminal con nbconvert)
+ipykernel==7.4.0
+nbconvert==7.17.2
+nbclient==0.11.0
+nbformat==5.11.1

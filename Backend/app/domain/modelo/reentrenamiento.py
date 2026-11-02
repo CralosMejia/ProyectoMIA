@@ -6,8 +6,10 @@
 - Ciclo nuevo evaluable: evaluable al corte de los datos y con ``vencimiento + 30 > corte`` del
   modelo vigente, es decir, el modelo vigente aun no conocia su resultado.
 - Criterios 1 a 4 de CU-02, con umbrales configurables.
-- Ciclos del candidato (M01, decision (f)): sin los de comparacion ni los que vencen en los
-  30 dias previos al primer vencimiento de la comparacion (su etiqueta no se conoceria antes).
+- Ciclos del candidato (M01, decision (f); margen ampliado en M05): sin los de comparacion ni
+  los que vencen en los 60 dias previos al primer vencimiento de la comparacion. La etiqueta de
+  un ciclo del candidato (vencimiento + 30, T+30) debe conocerse antes de la primera prediccion
+  de la comparacion (primer vencimiento - 30, T-30), igual que en la particion del notebook.
 - Fecha programada: igual a hoy -> ejecutar; pasada -> omitir (no se recupera); si no, esperar.
 - Corte de los datos (R-015 T11, ``adoptar-modelo``): ultimo dia con datos = el mas reciente
   entre el corte del modelo vigente y el dia de la ultima carga por plantilla, sin pasar de
@@ -29,13 +31,19 @@ from app.domain.historico.ciclos import (
     DIAS_RENOVACION_ANTICIPADA,
     clasificar,
 )
-from app.domain.modelo.variables import VARIABLES_CATEGORICAS, VARIABLES_NUMERICAS, CicloModelo
+from app.domain.modelo.variables import (
+    DIAS_ANTES_PREDICCION,
+    VARIABLES_CATEGORICAS,
+    VARIABLES_NUMERICAS,
+    CicloModelo,
+)
 
 INTERVALO_MESES = 6
 """RN-02.1: meses de calendario entre dos reentrenamientos programados."""
 
-DIAS_MARGEN_CANDIDATO = DIAS_OBSERVACION
-"""M01 (f): dias entre el ultimo vencimiento del candidato y el primero de la comparacion."""
+DIAS_MARGEN_CANDIDATO = DIAS_OBSERVACION + DIAS_ANTES_PREDICCION
+"""M05 (antes M01 (f), 30 dias): un ciclo del candidato vence mas de 60 dias antes que el primero
+de la comparacion, para que su etiqueta (T+30) se conozca antes de la primera prediccion (T-30)."""
 
 _COLUMNAS_REQUERIDAS: frozenset[str] = frozenset(VARIABLES_NUMERICAS + VARIABLES_CATEGORICAS)
 _DOS_DECIMALES = Decimal("0.01")
@@ -114,7 +122,7 @@ def ciclos_para_candidato(
     """Evaluables con que se entrena el candidato de CU-02; conserva el orden.
 
     Fuera: los ciclos de ``comparacion`` (por identidad) y los que tienen
-    ``vencimiento + 30 >= min(vencimiento de la comparacion)``.
+    ``vencimiento + 60 >= min(vencimiento de la comparacion)`` (``DIAS_MARGEN_CANDIDATO``).
     """
     en_comparacion = {id(c) for c in comparacion}
     vencimientos = [c.fecha_vencimiento for c in comparacion if c.fecha_vencimiento is not None]

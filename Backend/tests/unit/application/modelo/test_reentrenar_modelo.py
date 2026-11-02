@@ -331,6 +331,7 @@ def escenario(
     ocupado: bool = False,
     reloj: RelojFijo | None = None,
     ultima_carga: datetime | None = AHORA,
+    criterios: CriteriosReentrenamiento | None = None,
 ) -> tuple[ReentrenarModelo, Almacen, BloqueoDoble, PredictorDoble]:
     vigente = modelo_vigente()
     almacen = Almacen(
@@ -349,7 +350,7 @@ def escenario(
         abrir_bloqueo=AbridorDoble(bloqueo),
         predictor=doble,
         clock=reloj or RelojFijo(),
-        criterios=CriteriosReentrenamiento(),
+        criterios=criterios or CriteriosReentrenamiento(),
     )
     return servicio, almacen, bloqueo, doble
 
@@ -399,9 +400,11 @@ def test_revisar_programado_entrenado_guarda_metadatos_y_ciclos_de_todo_el_histo
     assert nuevo.ciclos_entrenamiento == 200
 
 
-def test_revisar_programado_candidato_sin_comparacion_ni_margen_de_30_dias() -> None:
-    # M01 (f). Comparacion = vencimientos de 2026-06 a 2026-08 (el primero, 2026-06-05):
-    # el candidato no ve ciclos que vencen desde el 2026-05-06 (vencimiento + 30 >= 06-05).
+def test_revisar_programado_candidato_sin_comparacion_ni_margen_de_60_dias() -> None:
+    # M01 (f), margen M05. Comparacion = vencimientos de 2026-06 a 2026-08 (el primero,
+    # 2026-06-05): el candidato no ve ciclos que vencen desde el 2026-04-06
+    # (vencimiento + 60 >= 06-05), porque su etiqueta (T+30) no se conoceria antes de la primera
+    # prediccion de la comparacion (T-30).
     datos = membresias(100, 100)
     servicio, _, _, doble = escenario(datos=datos)
 
@@ -412,7 +415,7 @@ def test_revisar_programado_candidato_sin_comparacion_ni_margen_de_30_dias() -> 
     comparacion = meses_recientes_con_resultado(evaluables, 3)
     esperados = ciclos_para_candidato(evaluables, comparacion)
     vencimientos = sorted(c.fecha_vencimiento for c in esperados if c.fecha_vencimiento)
-    assert vencimientos[-1] == date(2026, 5, 5)
+    assert vencimientos[-1] == date(2026, 4, 5)
     assert min(c.fecha_vencimiento for c in comparacion if c.fecha_vencimiento) == date(2026, 6, 5)
     candidato, final = doble.filas_entrenadas
     assert len(candidato) == len(esperados) < len(evaluables) - len(comparacion)
@@ -441,7 +444,13 @@ def test_etiqueta_al_corte_de_los_datos_no_a_hoy(metodo: str) -> None:
     # vencen despues del 2026-06-15 aun no tienen su renovacion cargada: quedan pendientes, no
     # se cuentan como nuevos ni se entrena con ellos como "no renovo".
     datos = membresias(150, 150)
-    servicio, almacen, _, doble = escenario(datos=datos, ultima_carga=CARGA_JULIO)
+    # Con datos desde febrero de 2026 y el corte en julio, tres meses de comparacion (abril a
+    # junio) y el margen de 60 dias (M05) no dejarian ciclos al candidato: se compara con un mes.
+    servicio, almacen, _, doble = escenario(
+        datos=datos,
+        ultima_carga=CARGA_JULIO,
+        criterios=CriteriosReentrenamiento(meses_comparacion=1),
+    )
 
     resultado: ResultadoReentrenamientoDTO = getattr(servicio, metodo)()
 

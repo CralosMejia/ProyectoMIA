@@ -10,6 +10,8 @@ Estado al cierre del día 7 (R-013, 2026-10-01). Resume qué se entregó, en qu�
 >
 > **Mejora M04 (2026-10-16, R-018, alcance reducido):** el Dashboard añade "Indicadores del piloto" sobre el top 25 de la última lista del mes (precisión y renovación de los contactados verificadas en T+30 con el corte de los datos, contactados antes del vencimiento, días de anticipación y monto retenido), con `n`, estados y avisos de sesgo y no causalidad; cambio aditivo en `GET /dashboard`, sin migración. El grupo de control y el reporte A/B con IC quedan como trabajo futuro. Detalle: [mejoras/M04](mejoras/M04-indicadores-del-piloto.md).
 
+> **Mejora M05 (2026-11-02, correcciones de la evaluación de la semana 10):** partición con márgenes de más de 60 días para que cada etiqueta (T+30) se conozca antes de la primera predicción (T−30) del período siguiente, métricas recalculadas (entrenamiento 721, validación 180, prueba 277), Random Forest adoptado como desviación explícita de la regla (que elige la Regresión Logística por una diferencia no distinguible), reentrenamiento de la app con el mismo margen de 60 días, notebook oficial `Notebookes/Prototipo_Final_Mtabolic.ipynb` (antes `MVP_simple.ipynb`) con paridad exacta con la app y README de reproducción. Detalle: [mejoras/M05](mejoras/M05-correcciones-evaluacion-semana-10.md).
+
 ## 1. Qué se entregó
 
 Aplicación web local (FastAPI + PostgreSQL 16 + React) en Docker, accesible solo desde el propio PC, que cubre los casos de uso de [03](03-casos-de-uso.md) dentro del alcance de [DEVELOPMENT_GUIDELINES](DEVELOPMENT_GUIDELINES.md):

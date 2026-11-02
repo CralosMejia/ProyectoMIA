@@ -16,8 +16,8 @@ cuya renovacion aun no se ha cargado. Los ciclos nuevos (criterios 1 y 3) se mid
 y el modelo entrenado guarda ese corte como ``fecha_corte``; la cobertura (criterio 2) mira las
 membresias registradas despues del ultimo entrenamiento, que ya estan dentro del corte. La
 proxima fecha programada sigue contando desde hoy (calendario). Criterios 1 a 4; un
-candidato entrenado sin los evaluables de los meses de comparacion ni los que vencen en los 30
-dias previos al primer vencimiento de la comparacion (M01, ``ciclos_para_candidato``; esos
+candidato entrenado sin los evaluables de los meses de comparacion ni los que vencen en los 60
+dias previos al primer vencimiento de la comparacion (M01/M05, ``ciclos_para_candidato``; esos
 ciclos quedan en el historial como pendientes, con sus medianas propias); PR-AUC del candidato y
 del vigente sobre ese conjunto; si el candidato no es peor, modelo final con todo el
 historial evaluable. El modelo nuevo, su intento y la proxima fecha se guardan en **una**

@@ -188,7 +188,9 @@ def test_ejecutar_con_seis_evaluables_calcula_conteos_prevalencia_y_periodo() ->
     assert resultado.periodo_hasta == date(2026, 7, 10)
 
 
-def test_ejecutar_referencia_son_evaluables_con_vencimiento_en_2025() -> None:
+def test_ejecutar_referencia_son_evaluables_con_vencimiento_hasta_octubre_de_2025() -> None:
+    # M05: el periodo de referencia es el entrenamiento del notebook (vencimientos <= 2025-10-31);
+    # el evaluable que vence en diciembre de 2025 ya no entra.
     ciclos = [
         *seis_evaluables(),
         # Pendiente y excluido con vencimiento en 2025: no entran en la referencia.
@@ -199,8 +201,8 @@ def test_ejecutar_referencia_son_evaluables_con_vencimiento_en_2025() -> None:
 
     referencia = doble.train_llamadas[0]["referencia"]
     assert isinstance(referencia, list)
-    assert [f["mes_vencimiento"] for f in referencia] == ["2025-02", "2025-03", "2025-12"]
-    assert resultado.metadata_tecnica["ciclos_referencia_factores"] == 3
+    assert [f["mes_vencimiento"] for f in referencia] == ["2025-02", "2025-03"]
+    assert resultado.metadata_tecnica["ciclos_referencia_factores"] == 2
 
 
 def test_ejecutar_umbrales_fijos_y_reparticion_de_los_tres_meses_recientes() -> None:

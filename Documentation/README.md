@@ -2,6 +2,8 @@
 
 Registro del paso del notebook `MVP.ipynb` a una aplicación web. Sirve de insumo para el reporte final.
 
+> **Notebook oficial de la entrega final:** [`Notebookes/Prototipo_Final_Mtabolic.ipynb`](../Notebookes/Prototipo_Final_Mtabolic.ipynb) (versión v2, 2026-11-02). `MVP.ipynb` se conserva como registro histórico. Cambios de la versión v2: [mejoras/M05](mejoras/M05-correcciones-evaluacion-semana-10.md). Cómo reproducir el proyecto: [README de la raíz](../README.md).
+
 | # | Documento | Contenido | Fecha |
 |---|---|---|---|
 | 00 | [Descripción del proyecto](00-descripcion-del-proyecto.md) | Qué es la aplicación, problema que resuelve, objetivo general y específicos, funciones, usuarios, alcance y stack | 2026-09-29 |

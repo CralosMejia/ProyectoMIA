@@ -142,8 +142,8 @@ def test_separar_factores_del_texto_del_notebook() -> None:
 
 
 def _escribir_salidas(carpeta: Path) -> None:
-    (carpeta / "m01" / "despues").mkdir(parents=True)
-    (carpeta / "mvp").mkdir()
+    (carpeta / script.ARCHIVO_PARAMETROS).parent.mkdir(parents=True, exist_ok=True)
+    (carpeta / script.ARCHIVO_LISTA).parent.mkdir(parents=True, exist_ok=True)
     parametros = {
         "variables_numericas": ["ciclos_previos", "monto_actual"],
         "variables_categoricas": ["plan", "mes_vencimiento"],

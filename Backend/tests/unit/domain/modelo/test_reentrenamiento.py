@@ -404,21 +404,26 @@ def test_fechas_perdidas_terminan_justo_antes_de_la_proxima() -> None:
 # ---------------------------------------------------------------- ciclos_para_candidato (M01 f)
 
 
-def test_ciclos_para_candidato_excluye_comparacion_y_margen_de_30_dias() -> None:
-    assert DIAS_MARGEN_CANDIDATO == 30
+def test_ciclos_para_candidato_excluye_comparacion_y_margen_de_60_dias() -> None:
+    # M05: la etiqueta de un ciclo del candidato (vencimiento + 30, T+30) debe conocerse antes de
+    # la primera prediccion de la comparacion (primer vencimiento - 30, T-30), es decir,
+    # vencimiento + 60 < primer vencimiento de la comparacion.
+    assert DIAS_MARGEN_CANDIDATO == 60
     comparacion = [
         _ciclo("A", 1, date(2026, 5, 6), date(2026, 6, 5), no_renovo=True),
         _ciclo("B", 2, date(2026, 6, 10), date(2026, 7, 10), no_renovo=False),
     ]
-    a_31_dias = _ciclo("C", 3, date(2026, 4, 5), date(2026, 5, 5), no_renovo=True)
-    a_30_dias = _ciclo("D", 4, date(2026, 4, 6), date(2026, 5, 6), no_renovo=False)
+    a_61_dias = _ciclo("C", 3, date(2026, 3, 6), date(2026, 4, 5), no_renovo=True)
+    a_60_dias = _ciclo("D", 4, date(2026, 3, 7), date(2026, 4, 6), no_renovo=False)
+    a_31_dias = _ciclo("G", 7, date(2026, 4, 5), date(2026, 5, 5), no_renovo=True)
     dentro_del_margen = _ciclo("E", 5, date(2026, 5, 1), date(2026, 5, 31), no_renovo=True)
     antiguo = _ciclo("F", 6, date(2025, 1, 1), date(2025, 1, 31), no_renovo=False)
-    evaluables = [antiguo, a_31_dias, a_30_dias, dentro_del_margen, *comparacion]
+    evaluables = [antiguo, a_61_dias, a_60_dias, a_31_dias, dentro_del_margen, *comparacion]
 
     candidato = ciclos_para_candidato(evaluables, comparacion)
 
-    # vencimiento + 30 >= 2026-06-05 queda fuera: 2026-05-06 (30 d) fuera, 2026-05-05 (31 d) dentro.
+    # vencimiento + 60 >= 2026-06-05 queda fuera: 2026-04-06 (60 d) fuera, 2026-04-05 (61 d)
+    # dentro; 2026-05-05 (31 d), que entraba con el margen anterior de 30 dias, ahora queda fuera.
     assert [c.ref for c in candidato] == [6, 3]
 
 

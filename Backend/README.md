@@ -81,7 +81,7 @@ Imprime solo conteos "notebook vs obtenido" (nunca nombres, cédulas, contactos 
 python scripts/verificar_lista.py <carpeta con los libros Control Gym>
 ```
 
-Compone en memoria, sin base de datos, lectura + limpieza + entrenamiento + lista al 2026-08-31 (horizonte 30, top 25) y la compara con la lista de septiembre del notebook M01 (§13.8), cuyas salidas lee de `../salidas` (git-ignorada; otra carpeta con `--referencia`): **todas** las filas, con probabilidad a 8 decimales, nivel (0,70/0,50), factores y orden (los empates se comparan por grupo). Necesita la sal de los códigos anónimos en `MTABOLIC_SAL_CODIGOS` o en `salidas/.sal_codigos` (nunca se imprime). Sale con `0` sin diferencias, `1` con alguna y `2` si faltan libros, salidas o sal; ante un error solo imprime su tipo. Resultado de R-015 con scikit-learn 1.8.0: `0`, 0 diferencias en 57 filas (ALTO 2, MEDIO 39, BAJO 16). Desde R-017 (M03) los factores comparados son los motivos SHAP y `referencia_factores` es solo informativa; resultado con shap 0.54.1: `0`, 0 diferencias en 57 filas y 146 motivos. Detalle: `../Documentation/docs/backend/12-modelo-y-listas.md`.
+Compone en memoria, sin base de datos, lectura + limpieza + entrenamiento + lista al 2026-08-31 (horizonte 30, top 25) y la compara con la lista de septiembre del notebook oficial `Notebookes/Prototipo_Final_Mtabolic.ipynb` (Parte 13), cuyas salidas lee de `../salidas/prototipo_final/` (git-ignorada; otra carpeta con `--referencia`): **todas** las filas, con probabilidad a 8 decimales, nivel (0,70/0,50), factores y orden (los empates se comparan por grupo). Necesita la sal de los códigos anónimos en `MTABOLIC_SAL_CODIGOS` o en `salidas/.sal_codigos` (nunca se imprime). Sale con `0` sin diferencias, `1` con alguna y `2` si faltan libros, salidas o sal; ante un error solo imprime su tipo. Resultado de R-015 con scikit-learn 1.8.0: `0`, 0 diferencias en 57 filas (ALTO 2, MEDIO 39, BAJO 16). Desde R-017 (M03) los factores comparados son los motivos SHAP y `referencia_factores` es solo informativa; resultado con shap 0.54.1: `0`, 0 diferencias en 57 filas y 146 motivos. Desde M05 (2026-11-02), frente al notebook oficial: `0`, 0 diferencias y referencia de los factores igual. Detalle: `../Documentation/docs/backend/12-modelo-y-listas.md`.
 
 ## Docker
 
@@ -212,7 +212,7 @@ Imprime una línea con el resultado y el motivo (sin datos de socios). Códigos 
 
 Si resulta `ENTRENADO`, las listas que se generen desde ese momento usan el modelo nuevo (las ya generadas no cambian). Para probarlo sin afectar el modelo real, use el stack e2e: `docker compose -p mtabolic-e2e --env-file .env.e2e exec backend python -m app.cli reentrenar`.
 
-Desde R-015 los ciclos se etiquetan al **corte de los datos** (el más reciente entre el corte del modelo vigente y el día de la última carga por plantilla, sin pasar de hoy), y el candidato se entrena sin los ciclos que vencen en los 30 días previos al periodo de comparación.
+Desde R-015 los ciclos se etiquetan al **corte de los datos** (el más reciente entre el corte del modelo vigente y el día de la última carga por plantilla, sin pasar de hoy), y el candidato se entrena sin los ciclos que vencen en los 60 días previos al periodo de comparación (30 días hasta M05), para que su etiqueta se conozca antes de la primera predicción de la comparación.
 
 #### Adoptar un modelo nuevo sin criterios (`adoptar-modelo`, R-015)
 
