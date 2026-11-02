@@ -121,8 +121,50 @@ docker compose -p mtabolic-e2e --env-file .env.e2e down -v   # -v borra solo el 
 - `.env.e2e.example` incluye desde R-013 las variables de S23 con marcadores.
 - El `OMITIDO` del reentrenamiento y el comando manual se prueban solo aquí (`docker compose -p mtabolic-e2e --env-file .env.e2e exec backend python -m app.cli reentrenar`); en el stack principal no se ejecuta `reentrenar` sin decisión del usuario.
 
+### Stack demo (R-019)
+
+Stack para probar la app en cualquier computadora con un solo comando, solo con Docker Desktop y sin archivos confidenciales. Tiene base, volumen, red e imágenes propios y libros **inventados** de `datos-demo/`, generados por `Backend/scripts/generar_dataset_demo.py` sin leer ningún dato real. Pasos para quien clona: [GUIA-RAPIDA.md](../../../GUIA-RAPIDA.md). Las cifras de este stack no son las de la tesis.
+
+```bash
+bash scripts/levantar-demo.sh                                      # macOS, Linux o Git Bash
+powershell -ExecutionPolicy Bypass -File scripts\levantar-demo.ps1 # Windows
+# App en http://localhost:8083 · API en 127.0.0.1:8003 · PostgreSQL en 127.0.0.1:5435 · base app_db_demo
+docker compose -p mtabolic-demo --env-file .env.demo stop     # parar sin perder nada
+docker compose -p mtabolic-demo --env-file .env.demo down -v  # borra solo el volumen mtabolic-demo_pgdata
+```
+
+Variables de `.env.demo.example` (versionado, solo marcadores `CAMBIAR_...`):
+
+| Variable | Valor |
+|---|---|
+| `DB_PORT`, `BACKEND_PORT`, `FRONTEND_PORT` | `5435`, `8003`, `8083`; `compose.yaml` los publica solo en `127.0.0.1` |
+| `IMAGE_TAG` | `demo` |
+| `POSTGRES_DB` | `app_db_demo` |
+| `HISTORICO_DIR` | `./datos-demo` |
+| `CORS_ORIGINS` | `http://localhost:8083` |
+| `APP_ENV` | `development` |
+| `RED_INTERNA_SUBNET`, `FRONTEND_IP` | `172.29.0.0/24`, `172.29.0.10` |
+| `IPS_PERMITIDAS` | `127.0.0.1,::1,172.29.0.10` |
+| `APP_DB_USER`, `APP_DB_PASSWORD`, `MIGRATE_DATABASE_URL` | S23 activo: la app se conecta como `mtabolic_app` |
+
+Qué hace el comando:
+
+- **Comprobaciones previas:** con Docker sin instalar o apagado, o con 8083, 8003 o 5435 ocupados por otro programa, explica el motivo y sale con código 1 sin crear nada.
+- **Configuración:** si no existe `.env.demo` (ignorado por git), lo crea desde el ejemplo con dos contraseñas hex aleatorias, en UTF-8 sin BOM y con LF. Si existe, no lo cambia, porque esa contraseña ya está en el volumen. Nunca imprime contraseñas.
+- **Aislamiento:** el proyecto está fijo en `-p mtabolic-demo` y no admite argumentos. Limpia de la shell las variables que ganarían a `--env-file` y ninguna de sus rutas ejecuta `down -v`.
+- **Espera:** aguarda `LISTO` en `/api/v1/sistema/estado` hasta 15 min y muestra la URL. Si falla o se agota el tiempo, muestra el último estado y el comando de `logs`, y sale con código 1.
+
+**Vigencia de los datos.** Las listas dependen de la fecha de hoy ([ADR-006](../../adr/ADR-006-lista-desde-hoy-y-cedula-en-lugar-de-correo.md)), así que el dataset envejece. `datos-demo/vigencia.txt` guarda la última fecha con lista útil. Pasada esa fecha, el comando actúa según exista o no el volumen `mtabolic-demo_pgdata`:
+
+- **Sin volumen:** regenera `datos-demo/` con un contenedor `python:3.12.13-slim-bookworm` y `openpyxl==3.1.5`, con la fecha de hoy del host. No necesita Python en el equipo, y git mostrará esos archivos como modificados.
+- **Con volumen:** solo avisa, porque una base ya migrada no se rehace al regenerar los libros. Para renovar los datos hay que borrar el demo con `down -v` y repetir el comando.
+
+Probado en Windows 11 con PowerShell 5 y Git Bash. Sin probar en macOS o Linux nativos ni en un equipo sin imágenes en caché.
+
 ## Limitaciones conocidas y pendientes
 
+- **S1 de R-019 (low, diferido):** en Windows, `levantar-demo.ps1` no restringe los permisos de `.env.demo`, que hereda los de la carpeta. `levantar-demo.sh` lo crea con `umask 077`.
+- **S2 de R-019 (low, diferido):** la regeneración de `datos-demo/` instala `openpyxl` fijado por versión, sin verificar hashes.
 - **S24:** `frontend` espera a `backend` healthy y el health check del backend falla si la BD no responde; si la BD no está disponible al arrancar, el frontend no arranca.
 - **S21:** imágenes base fijadas por versión, aún no por digest.
 - **S18 / TLS futuro:** al poner TLS delante, propagar `X-Forwarded-Proto` real y configurar hosts de confianza; el filtro de `Origin` compara con `scope["scheme"]`, que pasaría a `https` ([ADR-013](../../adr/ADR-013-proteccion-host-y-origin.md)).

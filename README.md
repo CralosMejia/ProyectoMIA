@@ -2,6 +2,8 @@
 
 Superproyecto con `Backend/` (FastAPI), `Frontend/` (React) y `Documentation/` (fuente de verdad: [Documentation/README.md](Documentation/README.md)).
 
+**¿Solo quiere probar la aplicación?** Siga la [Guía rápida](GUIA-RAPIDA.md): un comando, solo Docker Desktop y datos inventados, sin ningún archivo confidencial.
+
 ## Levantar el stack
 
 Requisito: Docker con Compose v2.

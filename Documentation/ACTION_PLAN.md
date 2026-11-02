@@ -5,9 +5,106 @@
 
 ## ACTIVO
 
-Ninguno.
+Sin requerimientos activos.
 
 ## TERMINADOS RECIENTEMENTE
+
+### R-019 — Levantar el proyecto en cualquier computadora con un solo comando (solo Docker Desktop) y dataset sintético versionado · **DONE** 2026-11-02
+
+**Cierre:** stack `mtabolic-demo` (app en `8083`, API en `8003`, PostgreSQL en `5435`, solo en `127.0.0.1`) con `scripts/levantar-demo.{ps1,sh}`, dataset inventado en `datos-demo/` y [GUIA-RAPIDA](../GUIA-RAPIDA.md) → [backend/10 §Stack demo](docs/backend/10-docker.md). Seguridad: clean; diferidos low S1 (ACL de `.env.demo` en Windows) y S2 (regeneración sin hashes). Pruebas: pass con dos excepciones aceptadas por el usuario (ver T6). Probado: 8 corridas de punta a punta con ps1 y Git Bash; lista de 83 filas (31 MEDIO, 52 BAJO, sin ALTO). Son cifras del demo, no de la tesis. No probado: Linux y macOS nativos, ni un equipo sin imágenes en caché.
+
+**Objetivo:** quien clona el repositorio levanta la app en otra computadora con un comando, a la primera, sin archivos confidenciales ni configuración manual; el dataset sintético migra, entrena y permite generar una lista.
+
+**Fuente:** petición del usuario y su aclaración ("que sea sencillo levantar el proyecto en cualquier computadora") · [backend/10](docs/backend/10-docker.md) · [backend/11](docs/backend/11-historico.md) · [backend/12](docs/backend/12-modelo-y-listas.md) · [ADR-004](adr/ADR-004-migracion-datos-al-arrancar.md) · [ADR-006](adr/ADR-006-lista-desde-hoy-y-cedula-en-lugar-de-correo.md).
+
+**Notas de alcance del planner**
+- **Reproducir = levantar**, no repetir resultados: fuera de este requerimiento las cifras de la tesis, el notebook y `verificar_lista.py` (siguen en `README.md`). El dataset sintético **no** debe parecerse en cifras a los libros reales.
+- **Sin cambios en la app:** no se toca `Backend/app/**`, `Frontend/src/**` ni `compose.yaml`; todo entra por variables de entorno, como los stacks `mtabolic-e2e` y `mtabolic-limpia`. El alcance de [DEVELOPMENT_GUIDELINES](DEVELOPMENT_GUIDELINES.md) no cambia.
+- Los libros de `Backend/tests/fixtures/historico` **no sirven** para esto y no se tocan: 23 registros y fechas fijas (el E2E depende de sus conteos); con `min_samples_leaf=20` el modelo apenas discrimina y la lista queda vacía para vencimientos futuros.
+- `Backend/` y `Frontend/` están versionados **dentro** del repositorio (no hay `.gitmodules`, pese a lo que dicen `CLAUDE.md` y `rules/git.md`): la guía usa un `git clone` normal, sin `--recurse-submodules`.
+
+**Definiciones fijadas por el planner (reversibles; avisar al usuario)**
+- (a) **Stack propio `mtabolic-demo`**, no el principal: un clon en un equipo que ya tenga el stack `proyectofinal` compartiría su volumen con datos reales (`name:` fijo en `compose.yaml`). Puertos poco comunes para no chocar con un PostgreSQL local: BD `5435`, backend `8003`, app **`http://localhost:8083`**; subred `172.29.0.0/24`, frontend `172.29.0.10`; `IMAGE_TAG=demo`, base `app_db_demo`, S23 activo.
+- (b) **Un comando:** `scripts/levantar-demo.ps1` (Windows) y `scripts/levantar-demo.sh` (macOS/Linux/Git Bash). Crea `.env.demo` con contraseñas aleatorias si no existe, levanta el stack, espera `LISTO` y muestra la URL. Ninguna decisión del usuario, ninguna edición de archivos.
+- (c) **Dataset en `datos-demo/`** (raíz, versionado): `Control Gym 2025 demo.xlsx`, `Control Gym 2026 demo.xlsx`, `vigencia.txt`, `README.md`. Generado por `Backend/scripts/generar_dataset_demo.py` (determinista, semilla fija, `--fecha-base` obligatoria, sin leer ningún dato real). Valores del commit: `--fecha-base 2026-11-02`, hojas ENERO 2025 a OCTUBRE 2026, corte `2026-10-31`.
+- (d) **Las listas dependen de hoy** (`hoy < vencimiento ≤ hoy + horizonte`, ADR-006): un dataset fijo envejece. Se resuelve con planes anuales comprados en cada uno de los últimos 12 meses, para que haya vencimientos ~11 meses después del corte, y con `vigencia.txt` (última fecha con lista útil). Si el comando se lanza pasada esa fecha **y** el volumen del demo no existe, regenera los libros con un contenedor `python:3.12.13-slim-bookworm` (`openpyxl==3.1.5`, `--fecha-base` = hoy del host), sin Python en el equipo.
+- (e) **Anti-confidencialidad por construcción:** el generador no abre `plantillas/` ni `salidas/`, no importa pandas y no ajusta nada a los datos reales; distribuciones y precios escritos a mano. Nombres siempre con la marca `Demo` (`Lucia Demo Andrade`), cédulas `0999NNNNNN` (tercer dígito 9: no corresponde a persona natural), celulares `0900NNNNNN`, correos `socioNNNN@example.com`, transacciones `DEMO-NNNNN`.
+
+**Tareas** 🗄 = usa base de datos.
+
+- [x] **T1** · `infra` · Generador determinista del dataset sintético (TDD)
+  - Archivos: `Backend/scripts/generar_dataset_demo.py` (principal, nuevo), `Backend/tests/unit/scripts/test_generar_dataset_demo.py` (nuevo).
+  - Docs: [backend/11](docs/backend/11-historico.md) (`clasificar`, ventana `[T, T+30]`); [backend/12](docs/backend/12-modelo-y-listas.md); definiciones (c)–(e). Solo lectura: `Backend/tests/fixtures/generar_fixtures.py` (`ENCABEZADO_C`, `_COLUMNAS_C`, `_guardar_determinista`), `Backend/app/domain/historico/ciclos.py` (`fecha_corte`, `clasificar`, `etiquetar`), `Backend/app/domain/modelo/cartera.py` (`seleccionar_cartera`, `ya_renovo`), `Backend/app/domain/modelo/variables.py` (`PERIODO_REFERENCIA_FACTORES`), `Backend/app/infrastructure/historico/lector_libros.py`, `Backend/app/application/sistema/migrar_historico.py`.
+  - Aceptación:
+    - Solo librería estándar + `openpyxl`; **no importa** `app`, `tests` ni `pandas` (la imagen del paso (d) solo instala `openpyxl`); `Decimal` en montos; sin `date.today()` ni `datetime.now()`: la fecha llega por `--fecha-base AAAA-MM-DD`; `--salida <carpeta>` es lo único que escribe.
+    - Dos ejecuciones con la misma `--fecha-base` → mismos bytes (metadatos y fechas del zip fijos; autor del libro `generar_dataset_demo`).
+    - Con `--fecha-base 2026-11-02`: siempre desde ENERO 2025 (aunque la base sea posterior, para que `PERIODO_REFERENCIA_FACTORES` no quede vacío), un libro por año, hasta el último mes cerrado; `LocalizadorLibrosCarpeta` los encuentra y `fecha_corte` da `2026-10-31`.
+    - Con `LectorLibrosExcel` + `ProcesarHistorico` + `EntrenarModeloInicial` y el `RandomForestPredictor` real, sin BD: ≥ 500 ciclos evaluables, `no_renovo` entre 40 % y 70 %, entrena sin error.
+    - Con `seleccionar_cartera` + `ya_renovo` y el modelo entrenado: `fecha=2026-11-02`, horizonte 31 → ≥ 20 socios con cédula y al menos 2 niveles de riesgo distintos; **cada semana** desde `2026-11-02` hasta la fecha de `vigencia.txt`, horizonte 31 → ≥ 10 socios. Sin esto el demo enseña una lista vacía.
+    - Regeneración: `--fecha-base 2028-03-15` → cumple lo mismo sobre su propio corte (`2028-02-29`) y cuatro libros, uno por año (2025 a 2028).
+    - Todo nombre contiene `Demo`; toda cédula empieza por `0999`; todo correo termina en `@example.com`; ningún celular empieza por `096`–`099`.
+    - `ruff check`, `ruff format --check` y `pytest tests/unit/scripts/test_generar_dataset_demo.py` en verde.
+  - Pruebas: unitarias (sin BD), con la canalización real del histórico.
+
+- [x] **T2** · `infra` · Generar y documentar el dataset versionado
+  - Archivos: `datos-demo/README.md` (principal, nuevo), `datos-demo/Control Gym 2025 demo.xlsx`, `datos-demo/Control Gym 2026 demo.xlsx`, `datos-demo/vigencia.txt`.
+  - Docs: definiciones (c)–(e).
+  - Aceptación: los cuatro archivos salen de `python scripts/generar_dataset_demo.py --fecha-base 2026-11-02 --salida ../datos-demo` (desde `Backend/`), sin edición manual; volver a ejecutarlo no cambia ningún byte; `README.md` dice en lenguaje sencillo que son datos inventados, que no derivan de los reales, qué archivos contiene y cómo regenerarlo, sin citar filas, meses ni la fecha de vigencia (remite a `vigencia.txt`, para no desactualizarse al regenerar); `git check-ignore` no ignora ninguno; cada libro < 500 KB.
+  - Pruebas: comprobación de bytes, registrada en `.harness/tests.md`.
+
+- [x] **T3** · `infra-deploy` · Configuración del stack demo sin secretos
+  - Archivos: `.env.demo.example` (principal, nuevo), `.gitignore`, `.gitattributes`.
+  - Docs: [backend/10 §Stack E2E aislado](docs/backend/10-docker.md); `.env.limpia.example` como modelo; definición (a).
+  - Aceptación: valores de (a), `HISTORICO_DIR=./datos-demo`, `CORS_ORIGINS=http://localhost:8083`, `APP_ENV=development`, `RED_INTERNA_SUBNET`, `FRONTEND_IP` e `IPS_PERMITIDAS` explícitas; contraseñas solo como marcadores `CAMBIAR_...`; `.gitignore` añade `!.env.demo.example` y `.env.demo` sigue ignorado (`git check-ignore`); `.gitattributes` añade `*.xlsx binary`, y `*.ps1` no se fuerza; `docker compose -p mtabolic-demo --env-file .env.demo.example config` resuelve sin errores.
+  - Pruebas: comprobación manual con los comandos citados.
+
+- [x] **T4** · `infra-deploy` · Comando único `levantar-demo` (Windows y bash) 🗄
+  - Archivos: `scripts/levantar-demo.ps1` (principal, nuevo), `scripts/levantar-demo.sh` (nuevo).
+  - Docs: [backend/10 §Uso](docs/backend/10-docker.md); `scripts/reiniciar-base-historica.{ps1,sh}` como modelo (raíz resuelta desde el script, espera de `LISTO` en `/api/v1/sistema/estado`); definiciones (a), (b), (d).
+  - Aceptación:
+    - Funciona desde cualquier directorio y con espacios en la ruta (`C:\Users\Mi Usuario\...`).
+    - Docker sin instalar o Docker Desktop apagado → mensaje claro de qué abrir, código 1, sin crear nada.
+    - Sin `.env.demo`: lo crea desde `.env.demo.example` con dos contraseñas hex distintas de ≥ 32 caracteres de un generador criptográfico; **UTF-8 sin BOM y LF** también en PowerShell 5 (`Set-Content -Encoding UTF8` escribe BOM y rompe la primera variable); nunca imprime contraseñas.
+    - Con `.env.demo` existente: no lo cambia (la contraseña ya está en el volumen); segunda ejecución → termina bien sin rehacer datos.
+    - Proyecto siempre fijo `-p mtabolic-demo --env-file .env.demo`, sin aceptar otro: nunca toca `proyectofinal` ni `mtabolic-e2e`, y ninguna ruta del script ejecuta `down -v`.
+    - Puerto 8083, 8003 o 5435 ocupado → dice cuál y sale con código 1, sin dejar el stack a medias.
+    - Hoy > `vigencia.txt` y sin volumen `mtabolic-demo_pgdata` → regenera `datos-demo/` por (d) antes de levantar; en bash con `--user "$(id -u):$(id -g)"`, para no dejar archivos de root; con volumen existente, solo avisa.
+    - Espera `LISTO` con límite de 15 min e imprime `http://localhost:8083`; fallo o tiempo agotado → último estado y el comando de `logs`, código 1.
+  - Pruebas: las de T6; `bash -n` y análisis de sintaxis de PowerShell.
+
+- [x] **T5** · `infra-deploy` · Guía de inicio para quien clona
+  - Archivos: `GUIA-RAPIDA.md` (principal, nuevo), `README.md` (enlace al inicio, §2 `datos-demo/`, §4 y §9).
+  - Docs: `README.md` §6 y §9; definiciones (a)–(d).
+  - Aceptación: una página, para alguien sin conocimientos técnicos, en este orden: (1) instalar y abrir Docker Desktop, (2) clonar, (3) el comando de su sistema (`powershell -ExecutionPolicy Bypass -File scripts\levantar-demo.ps1` y `bash scripts/levantar-demo.sh`, siempre con `bash`, porque desde Windows el archivo no queda ejecutable), (4) abrir `http://localhost:8083`, (5) generar una lista y descargar el Excel. Después: qué ocurre por dentro en tres líneas (migración, modelo y que la primera vez tarda por la descarga y la construcción), parar y volver a levantar, borrar todo (`docker compose -p mtabolic-demo --env-file .env.demo down -v`, con la advertencia de ir siempre con `-p`) y tabla de problemas (Docker apagado, puerto ocupado, antivirus o WSL2, lista vacía). Advierte que los datos son inventados y que las cifras **no** son las de la tesis; `plantilla_valida.xlsx` de `Backend/tests/fixtures/plantillas/` para probar la carga. Sin `--recurse-submodules`. `README.md` deja claro que §5–§7 son para reproducir el análisis y que requieren los libros reales.
+  - Pruebas: T6 sigue la guía al pie de la letra.
+
+- [x] **SEC-1** · security-reviewer · Diff de R-019. `datos-demo/` sin datos reales: comprobación local con los libros reales de `plantillas/` que imprima **solo conteos**: 0 cédulas, 0 nombres normalizados, 0 celulares y 0 correos en común con el dataset. Metadatos de los `.xlsx` sin autor real. `.env.demo` ignorado, sin secretos en `.env.demo.example` ni en la salida de los scripts. Puertos solo en `127.0.0.1`. El `docker run` del paso (d) con imagen fijada y `openpyxl` fijado, y carpeta montada solo `datos-demo/` en escritura. Los scripts no pueden actuar sobre otro proyecto. Revisar que ningún archivo con datos reales entre al commit (`git status`, `git ls-files`).
+
+- [x] **T6** · `infra-deploy` · Prueba de instalación desde cero siguiendo la guía 🗄 · cerrada con dos excepciones aceptadas por el usuario (2026-11-02)
+  - Excepción 1: los conteos por tabla de `proyectofinal` y `mtabolic-e2e` no se midieron (consulta denegada, sin línea base); estado e `inspect` idénticos antes y después.
+  - Excepción 2: 3 carpetas temporales sin borrar (`rm` denegado), fuera del repositorio.
+  - Archivos: ninguno versionado.
+  - Docs: `GUIA-RAPIDA.md`; [backend/10 §Instalación limpia](docs/backend/10-docker.md).
+  - Aceptación:
+    - Copia limpia en una carpeta temporal **con espacios en la ruta**, solo con lo que irá al commit: `git ls-files -co --exclude-standard`, sin `plantillas/`, `salidas/`, `.env*` locales ni `node_modules`. Así se detecta cualquier archivo necesario que no esté versionado.
+    - Un solo comando → `LISTO`; `GET http://localhost:8083/api/v1/sistema/estado` → `200`; `POST /api/v1/listas` (con cabecera `Origin: http://localhost:8083`, S26) → `201` y ≥ 20 filas; `GET /api/v1/listas/{id}/excel` → `200`; la app abre en el navegador.
+    - Segunda ejecución del comando → sin errores y mismos conteos. Vencimiento simulado: `vigencia.txt` con fecha pasada y sin volumen → regenera y llega a `LISTO` con una lista no vacía.
+    - Sin regresiones: `pytest tests/unit/scripts`, stack `proyectofinal` y `mtabolic-e2e` con conteos y estado idénticos antes y después.
+    - Al terminar: `docker compose -p mtabolic-demo --env-file .env.demo down -v` (solo ese proyecto) y carpeta temporal borrada.
+    - Registro de tiempos y resultado en `.harness/tests.md`; si el equipo no permite macOS/Linux, se ejecuta `levantar-demo.sh` con Git Bash y se anota.
+  - Pruebas: manual de punta a punta. **Sin commit:** lo lanza el usuario.
+
+- [x] **DOC-1** · doc-agent · [backend/10](docs/backend/10-docker.md) (nueva sección "Stack demo" y variables) · [Documentation/README](README.md) (enlace a la guía) · `Backend/README.md` si cita los scripts (no los cita: sin cambios) · corrección de la mención a submódulos en `CLAUDE.md` y `rules/git.md` solo si el usuario lo aprueba (sin aprobar: pendiente en PRÓXIMO) · este board. Sin cifras de la tesis.
+
+**Dependencias**
+- T1 → T2. T3 → T4. T2 y T4 → T5 → SEC-1 → T6 → DOC-1.
+- Paralelos posibles: T1 ‖ T3.
+- Externas: Docker Desktop y conexión a internet (imágenes y dependencias). Los libros reales locales solo para el cruce de SEC-1, sin copiarlos ni imprimir valores.
+
+**Riesgos**
+1. **Fuga de datos personales al repositorio:** un libro real o un dato derivado acabaría en el historial, difícil de limpiar. Mitigación: generador sin acceso a datos reales, marcas ficticias verificadas por prueba, cruce de SEC-1 y revisión de `git status` antes de `/commit`.
+2. **Envejecimiento del dataset:** pasada la vigencia, la lista quedaría vacía y el demo parecería roto; además, una base ya migrada no se rehace al regenerar libros. Mitigación: vigencia probada semana a semana en T1, regeneración automática solo sin volumen y aviso con el comando de borrado si ya existe.
+3. **Fallos propios de otro equipo:** puertos ocupados, BOM o CRLF en `.env.demo`, rutas con espacios, script sin permiso de ejecución o archivo sin versionar. Mitigación: puertos propios con comprobación previa, escritura explícita UTF-8 sin BOM, `bash <script>` en la guía y T6 sobre copia limpia en ruta con espacios.
 
 ### R-018 — Mejora M04 (tutor), alcance reducido: sección "Indicadores del piloto" en el Dashboard · **DONE** 2026-10-16
 
@@ -3414,7 +3511,10 @@ Lote B · app (backend)
 - 2026-10-16 · R-017 · Diferidos low: S1 transitivas de shap sin *lockfile* (como S10); S2 notebook §13.3/§13.8 con código HMAC junto a fecha, plan y monto por socio (valorar solo agregados) → [mejoras/M03 §5](mejoras/M03-shap-prueba-y-motivos-en-la-app.md#5-limitaciones).
 - 2026-10-16 · R-018 · M04 con alcance reducido (opción b del usuario): cinco indicadores descriptivos del top 25 de la última lista del mes en `GET /dashboard` (bloque `piloto` aditivo, sin migración), verificados en T+30 con `corte_de_datos`; grupo de control y A/B con IC como trabajo futuro, siguen fuera del proyecto → [mejoras/M04](mejoras/M04-indicadores-del-piloto.md), [API_CONTRACT](docs/API_CONTRACT.md).
 - 2026-10-16 · R-018 · Diferidos low: S1 `ciclos()` completo por petición y verificación 25×N; S2 cruce con `gestiones` dependiente de RN-08.1 → [mejoras/M04 §10](mejoras/M04-indicadores-del-piloto.md#10-limitaciones).
+- 2026-11-02 · R-019 · Reproducir = levantar, no repetir cifras: stack propio `mtabolic-demo` (`8083`/`8003`/`5435`, solo `127.0.0.1`), comando único `scripts/levantar-demo.{ps1,sh}` y dataset inventado en `datos-demo/`; pasada `vigencia.txt`, regenera solo si no existe el volumen; con volumen, solo avisa → [backend/10 §Stack demo](docs/backend/10-docker.md).
+- 2026-11-02 · R-019 · Diferidos low: S1 ACL de `.env.demo` en Windows; S2 regeneración sin hashes → [backend/10 §Limitaciones](docs/backend/10-docker.md).
+- 2026-11-02 · R-019 · El usuario acepta dos excepciones de T6: conteos por tabla de `proyectofinal` y `mtabolic-e2e` sin medir; 3 carpetas temporales sin borrar.
 
 ## PRÓXIMO
 
-Entrega cerrada ([07-cierre](07-cierre.md)). Pendiente del usuario: revisión visual del rediseño (R-013 T21); ajustes pequeños → T21.n, cambios de comportamiento → requerimiento nuevo. Diferidos y riesgos residuales en [07 §3](07-cierre.md).
+Entrega cerrada ([07-cierre](07-cierre.md)). Pendiente del usuario: revisión visual del rediseño (R-013 T21); ajustes pequeños → T21.n, cambios de comportamiento → requerimiento nuevo. Diferidos y riesgos residuales en [07 §3](07-cierre.md). Pendiente de aprobación del usuario (R-019): corregir la mención a submódulos en `CLAUDE.md` y `rules/git.md`.
