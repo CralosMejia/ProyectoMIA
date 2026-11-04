@@ -51,11 +51,26 @@ export interface IndicadorProporcion {
   estado: EstadoIndicador
 }
 
-/** Promedio de dias de anticipacion: decimal como `string` (puede ser <= 0) o null. */
+/** Llamados por dias antes del vencimiento (R-022): >= 15, 8-14, 1-7 y <= 0; suman `n`. */
+export interface TramosAnticipacion {
+  quinceOMas: number
+  deOchoACatorce: number
+  deUnoASiete: number
+  mismoDiaODespues: number
+}
+
+/**
+ * Promedio de dias de anticipacion: decimal como `string` (puede ser <= 0) o null.
+ * `minimo`/`maximo` = llamada mas tardia y mas temprana en dias enteros (null sin llamados);
+ * `tramos` null si el backend no los envia (version anterior a R-022).
+ */
 export interface IndicadorDias {
   valor: string | null
   n: number
   estado: EstadoIndicador
+  minimo: number | null
+  maximo: number | null
+  tramos: TramosAnticipacion | null
 }
 
 /** Monto retenido en USD: decimal con 2 cifras como `string` o null. */

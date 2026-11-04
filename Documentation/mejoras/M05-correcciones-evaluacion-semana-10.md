@@ -6,7 +6,7 @@
 | **Origen** | Evaluación docente de la semana 10 (31-10-2026): 52/80 y seis no conformidades (NC1–NC6) |
 | **Alcance** | Notebook oficial, `requirements.txt` (raíz), README de la raíz, reentrenamiento de la app (margen del candidato), periodo de referencia de los factores, `verificar_lista.py`, pruebas unitarias y documentación |
 | **Notebook** | [`Notebookes/Prototipo_Final_Mtabolic.ipynb`](../../Notebookes/Prototipo_Final_Mtabolic.ipynb), versión v2 (antes `MVP_simple.ipynb`) |
-| **Modelo adoptado** | **Random Forest** (el de la app), como desviación explícita de la regla de selección (§5) |
+| **Modelo adoptado** | **Random Forest** (el de la app), como desviación explícita de la regla de selección (§5). **Sustituido por [M06](M06-regresion-logistica-modelo-adoptado.md) (2026-11-03): se adopta la Regresión Logística** |
 | **Datos fuente (fuera de git)** | `salidas/prototipo_final/` (tablas CSV, modelos `.joblib`, `parametros_modelo_operativo.json`, `lista_operativa_2026-09.xlsx`, `ejecucion.json`) |
 | **Correcciones del informe** | [M05-correcciones-del-informe.pdf](M05-correcciones-del-informe.pdf), página por página y con las cifras de esta versión |
 
@@ -115,6 +115,8 @@ En prueba los dos coinciden en los totales por coincidencia (Random Forest 19 + 
 Sin cambios: 57 socios (ALTO 2, MEDIO 39, BAJO 16), mismas probabilidades, niveles y motivos SHAP en el notebook, en `MVP.ipynb` y en la app. Con la Regresión Logística operativa, 23 de los 25 primeros socios serían los mismos.
 
 ## 5. Decisión sobre el modelo (2026-11-02)
+
+> **Sustituida por [M06](M06-regresion-logistica-modelo-adoptado.md) y [ADR-016](../adr/ADR-016-regresion-logistica-como-modelo-adoptado.md) (2026-11-03):** se adopta la Regresión Logística, la que elige la regla. Lo que sigue se conserva como registro histórico.
 
 Con la partición corregida, la regla fijada de antemano elige la Regresión Logística. **Decisión del equipo: adoptar el Random Forest como desviación explícita de la regla**, por estas razones:
 

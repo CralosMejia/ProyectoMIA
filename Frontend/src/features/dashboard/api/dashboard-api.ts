@@ -3,6 +3,7 @@ import type {
   Dashboard,
   Embudo,
   EstadoIndicador,
+  IndicadorDias,
   IndicadoresPiloto,
   IndicadorProporcion,
   ResultadoCampania,
@@ -42,6 +43,21 @@ interface IndicadorProporcionResponse {
   estado: EstadoIndicador
 }
 
+/** R-022: `minimo`, `maximo` y `tramos` son aditivos; un backend anterior no los envia. */
+interface IndicadorDiasResponse {
+  valor: string | null
+  n: number
+  estado: EstadoIndicador
+  minimo?: number | null
+  maximo?: number | null
+  tramos?: {
+    quince_o_mas: number
+    de_ocho_a_catorce: number
+    de_uno_a_siete: number
+    mismo_dia_o_despues: number
+  } | null
+}
+
 interface PilotoResponse {
   estado: EstadoIndicador
   lista: { id: number; nombre: string; fecha_generacion: string } | null
@@ -50,7 +66,7 @@ interface PilotoResponse {
   sin_dato: number
   precision_top25: IndicadorProporcionResponse
   contactados_antes_vencimiento: IndicadorProporcionResponse
-  dias_anticipacion: { valor: string | null; n: number; estado: EstadoIndicador }
+  dias_anticipacion: IndicadorDiasResponse
   tasa_renovacion_contactados: IndicadorProporcionResponse
   monto_retenido: {
     total: string | null
@@ -95,6 +111,23 @@ function toProporcion(raw: IndicadorProporcionResponse): IndicadorProporcion {
   }
 }
 
+function toDias(raw: IndicadorDiasResponse): IndicadorDias {
+  const tramos = raw.tramos ?? null
+  return {
+    valor: raw.valor ?? null,
+    n: raw.n,
+    estado: raw.estado,
+    minimo: raw.minimo ?? null,
+    maximo: raw.maximo ?? null,
+    tramos: tramos && {
+      quinceOMas: tramos.quince_o_mas,
+      deOchoACatorce: tramos.de_ocho_a_catorce,
+      deUnoASiete: tramos.de_uno_a_siete,
+      mismoDiaODespues: tramos.mismo_dia_o_despues,
+    },
+  }
+}
+
 function proporcionSinDatos(): IndicadorProporcion {
   return { valor: null, numerador: 0, denominador: 0, n: 0, pendientes: 0, estado: 'SIN_DATOS' }
 }
@@ -109,7 +142,14 @@ function pilotoSinDatos(): IndicadoresPiloto {
     sinDato: 0,
     precisionTop25: proporcionSinDatos(),
     contactadosAntesVencimiento: proporcionSinDatos(),
-    diasAnticipacion: { valor: null, n: 0, estado: 'SIN_DATOS' },
+    diasAnticipacion: {
+      valor: null,
+      n: 0,
+      estado: 'SIN_DATOS',
+      minimo: null,
+      maximo: null,
+      tramos: null,
+    },
     tasaRenovacionContactados: proporcionSinDatos(),
     montoRetenido: {
       total: null,
@@ -124,7 +164,7 @@ function pilotoSinDatos(): IndicadoresPiloto {
 
 /** `piloto` (R-018): los decimales (`valor`, `total`) se conservan como `string`. */
 function toPiloto(raw: PilotoResponse): IndicadoresPiloto {
-  const { dias_anticipacion: dias, monto_retenido: monto } = raw
+  const { monto_retenido: monto } = raw
   return {
     estado: raw.estado,
     lista: raw.lista && {
@@ -137,7 +177,7 @@ function toPiloto(raw: PilotoResponse): IndicadoresPiloto {
     sinDato: raw.sin_dato,
     precisionTop25: toProporcion(raw.precision_top25),
     contactadosAntesVencimiento: toProporcion(raw.contactados_antes_vencimiento),
-    diasAnticipacion: { valor: dias.valor ?? null, n: dias.n, estado: dias.estado },
+    diasAnticipacion: toDias(raw.dias_anticipacion),
     tasaRenovacionContactados: toProporcion(raw.tasa_renovacion_contactados),
     montoRetenido: {
       total: monto.total ?? null,

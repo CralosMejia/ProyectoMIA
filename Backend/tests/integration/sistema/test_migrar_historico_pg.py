@@ -1,4 +1,4 @@
-"""MigrarHistorico real: PostgreSQL de pruebas + libros sinteticos + RandomForestPredictor.
+"""MigrarHistorico real: PostgreSQL de pruebas + libros sinteticos + PredictorAdoptado (RL).
 
 Cubre CU-03: migracion completa y atomica, fallo forzado del entrenamiento (rollback total),
 dos migraciones simultaneas y segunda ejecucion sin cambios. Cada prueba parte de una base
@@ -16,7 +16,7 @@ from sqlalchemy import Engine, text
 from app.application.sistema.ports import ResultadoMigracion
 from app.domain.common.predictor import FeatureRow, TrainedModel
 from app.infrastructure.historico.localizador_libros import LocalizadorLibrosCarpeta
-from app.infrastructure.ml.random_forest import RandomForestPredictor
+from app.infrastructure.ml.predictor_adoptado import PredictorAdoptado
 from app.infrastructure.persistence.repositories.modelo import PgBloqueoMigracion
 from tests.fixtures import esperado
 from tests.integration.sistema.migracion_sintetica import (
@@ -56,7 +56,7 @@ def estado_migracion(engine: Engine) -> str:
         return valor
 
 
-class PredictorQueFalla(RandomForestPredictor):
+class PredictorQueFalla(PredictorAdoptado):
     def train(
         self,
         features: Sequence[FeatureRow],
@@ -68,7 +68,7 @@ class PredictorQueFalla(RandomForestPredictor):
         raise RuntimeError("fallo forzado del entrenamiento")
 
 
-class PredictorQueEspera(RandomForestPredictor):
+class PredictorQueEspera(PredictorAdoptado):
     """Retiene el entrenamiento hasta que ``soltar`` se activa (o vence el plazo)."""
 
     def __init__(self, soltar: threading.Event) -> None:
@@ -114,7 +114,8 @@ def test_migrar_arranque_en_limpio_completa_con_los_conteos_esperados(
         modelo = conexion.execute(
             text(
                 "SELECT version, vigente, length(artefacto) AS bytes, ciclos_entrenamiento, "
-                "prevalencia FROM modelos"
+                "prevalencia, metadata_tecnica->>'algoritmo' AS algoritmo, "
+                "metadata_tecnica->>'metodo_factores' AS metodo FROM modelos"
             )
         ).one()
         intento = conexion.execute(
@@ -133,6 +134,7 @@ def test_migrar_arranque_en_limpio_completa_con_los_conteos_esperados(
     assert sin_actividad == 0
     assert modelo.version == 1
     assert modelo.vigente is True
+    assert (modelo.algoritmo, modelo.metodo) == ("LogisticRegression", "shap_lineal")
     assert modelo.bytes > 0
     assert modelo.ciclos_entrenamiento == esperado.EVALUABLES
     assert modelo.prevalencia == esperado.PREVALENCIA

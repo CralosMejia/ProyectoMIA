@@ -13,7 +13,7 @@ casos y siempre con su ``n``:
 1. ``precision_top25`` = no renovaron / verificados.
 2. ``contactados_antes_vencimiento`` = contactados con ``fecha_contacto < T`` / casos con dato.
 3. ``dias_anticipacion`` = promedio de ``T - fecha_contacto`` de los contactados con fecha
-   (1 decimal; puede ser <= 0).
+   (1 decimal; puede ser <= 0), con su rango (``minimo``/``maximo``) y tramos (R-022).
 4. ``tasa_renovacion_contactados`` = renovaron / contactados verificados.
 5. ``monto_retenido`` = suma del monto (cobrado, si no facturado) de la membresia de renovacion
    de los contactados verificados que renovaron (2 decimales); sin ningun monto -> se cuenta
@@ -101,10 +101,26 @@ class IndicadorProporcion:
 
 
 @dataclass(frozen=True, slots=True)
+class TramosAnticipacion:
+    """Reparto de ``d = T - fecha_contacto`` (dias enteros): ``>= 15``, ``8-14``, ``1-7`` y
+    ``<= 0``. Los tres primeros son los llamados antes del vencimiento."""
+
+    quince_o_mas: int = 0
+    de_ocho_a_catorce: int = 0
+    de_uno_a_siete: int = 0
+    mismo_dia_o_despues: int = 0
+
+
+@dataclass(frozen=True, slots=True)
 class IndicadorDias:
+    """``minimo``/``maximo`` = menor y mayor ``T - fecha_contacto`` (``None`` si ``n = 0``)."""
+
     valor: Decimal | None
     n: int
     estado: EstadoIndicador
+    minimo: int | None = None
+    maximo: int | None = None
+    tramos: TramosAnticipacion = TramosAnticipacion()
 
 
 @dataclass(frozen=True, slots=True)
@@ -201,6 +217,15 @@ def _monto(monto: MontoMembresia | None) -> Decimal | None:
     return monto.monto_cobrado if monto.monto_cobrado is not None else monto.monto_facturado
 
 
+def _tramos(anticipaciones: Sequence[int]) -> TramosAnticipacion:
+    return TramosAnticipacion(
+        quince_o_mas=sum(1 for d in anticipaciones if d >= 15),
+        de_ocho_a_catorce=sum(1 for d in anticipaciones if 8 <= d <= 14),
+        de_uno_a_siete=sum(1 for d in anticipaciones if 1 <= d <= 7),
+        mismo_dia_o_despues=sum(1 for d in anticipaciones if d <= 0),
+    )
+
+
 def calcular_indicadores(
     casos: Sequence[CasoPiloto],
     resultados: Mapping[Hashable, Verificacion],
@@ -249,6 +274,9 @@ def calcular_indicadores(
         ),
         n=len(anticipaciones),
         estado=EstadoIndicador.COMPLETO if anticipaciones else EstadoIndicador.SIN_DATOS,
+        minimo=min(anticipaciones) if anticipaciones else None,
+        maximo=max(anticipaciones) if anticipaciones else None,
+        tramos=_tramos(anticipaciones),
     )
 
     contactados_verificados = [x for x in contactados if x[2] in _VERIFICADOS]

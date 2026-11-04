@@ -46,7 +46,7 @@ from app.infrastructure.clock.system_clock import SystemClock
 from app.infrastructure.exportacion.excel_lista import ExcelListaOpenpyxl
 from app.infrastructure.historico.lector_libros import LectorLibrosExcel
 from app.infrastructure.historico.localizador_libros import LocalizadorLibrosCarpeta
-from app.infrastructure.ml.random_forest import RandomForestPredictor
+from app.infrastructure.ml.predictor_adoptado import PredictorAdoptado
 from app.infrastructure.persistence.database_probe import SqlAlchemyDatabaseProbe
 from app.infrastructure.persistence.repositories.dashboard import SqlAlchemyLectorDashboard
 from app.infrastructure.persistence.repositories.seguimiento import SqlAlchemyLectorSeguimiento
@@ -120,7 +120,7 @@ def get_confirmar_carga(
 
 
 def get_predictor() -> PredictorModel:
-    return RandomForestPredictor()
+    return PredictorAdoptado()
 
 
 def get_unidad_de_trabajo_listas(
@@ -268,7 +268,7 @@ def crear_migracion_historica(
         unidad_de_trabajo=FabricaUnidadDeTrabajoSqlAlchemy(engine, clock),
         localizador=LocalizadorLibrosCarpeta(settings.HISTORICO_PATH),
         lector=LectorLibrosExcel(),
-        predictor=predictor if predictor is not None else RandomForestPredictor(),
+        predictor=predictor if predictor is not None else PredictorAdoptado(),
         clock=clock,
         registro=registro,
     )
@@ -318,7 +318,7 @@ def crear_reentrenamiento(
     return ReentrenarModelo(
         unidad_de_trabajo=SqlAlchemyUnidadDeTrabajoReentrenamiento(engine, reloj),
         abrir_bloqueo=AbridorBloqueoReentrenamiento(engine),
-        predictor=predictor if predictor is not None else RandomForestPredictor(),
+        predictor=predictor if predictor is not None else PredictorAdoptado(),
         clock=reloj,
         criterios=criterios_reentrenamiento(settings),
     )
@@ -334,6 +334,6 @@ def crear_adopcion(
     return AdoptarModelo(
         unidad_de_trabajo=SqlAlchemyUnidadDeTrabajoReentrenamiento(engine, reloj),
         abrir_bloqueo=AbridorBloqueoReentrenamiento(engine),
-        predictor=predictor if predictor is not None else RandomForestPredictor(),
+        predictor=predictor if predictor is not None else PredictorAdoptado(),
         clock=reloj,
     )

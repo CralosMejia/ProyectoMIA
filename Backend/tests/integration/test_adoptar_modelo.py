@@ -160,7 +160,7 @@ def test_adoptar_modelo_pone_en_uso_v2_y_conserva_listas_predicciones_y_gestione
 
     salida = capsys.readouterr()
     assert codigo == 0
-    assert salida.out.strip() == "v2 en uso (Adopción del modelo M01)."
+    assert salida.out.strip() == "v2 en uso (Adopción del modelo de Regresión Logística (M06))."
     textos = salida.out + salida.err + caplog.text
     assert "Socio Sintetico" not in textos
     assert "SOCIO SINTETICO" not in textos
@@ -180,7 +180,13 @@ def test_adoptar_modelo_pone_en_uso_v2_y_conserva_listas_predicciones_y_gestione
         "SELECT disparador, resultado, motivo, modelo_id, fecha_programada "
         "FROM intentos_reentrenamiento ORDER BY id DESC LIMIT 1",
     )[0]
-    assert intento == ("MANUAL", "ENTRENADO", "Adopción del modelo M01", v2_id, None)
+    assert intento == (
+        "MANUAL",
+        "ENTRENADO",
+        "Adopción del modelo de Regresión Logística (M06)",
+        v2_id,
+        None,
+    )
     assert proxima_fecha(base) == PROGRAMADA
     # R-015 T11: etiqueta y entrena al corte de los datos (ultima carga por plantilla, el
     # 2026-09-01; el vigente tiene corte 2026-02-28), no a hoy (2026-09-30).
@@ -188,6 +194,10 @@ def test_adoptar_modelo_pone_en_uso_v2_y_conserva_listas_predicciones_y_gestione
         base, "SELECT metadata_tecnica->>'fecha_corte' FROM modelos WHERE version = 2"
     )
     assert corte_v2 == [("2026-09-01",)]
+    algoritmo_v2 = _filas(
+        base, "SELECT metadata_tecnica->>'algoritmo' FROM modelos WHERE version = 2"
+    )
+    assert algoritmo_v2 == [("LogisticRegression",)]
 
     # La lista de v1 sigue mostrando v1; una lista nueva usa v2.
     vieja = cliente.get(f"{LISTAS}/{lista_v1.json()['id']}")
@@ -218,7 +228,10 @@ def test_adoptar_modelo_dos_veces_crea_v3_vigente_y_conserva_v1_v2_y_lo_anterior
     codigo = main(["adoptar-modelo"], clock=Reloj())
 
     assert codigo == 0
-    assert capsys.readouterr().out.strip() == "v3 en uso (Adopción del modelo M01)."
+    assert (
+        capsys.readouterr().out.strip()
+        == "v3 en uso (Adopción del modelo de Regresión Logística (M06))."
+    )
     assert _instantanea(base) == antes
     assert _conteos(base) == {
         **conteos_antes,

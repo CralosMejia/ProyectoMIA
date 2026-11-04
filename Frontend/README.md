@@ -29,6 +29,8 @@ Confirma una carga de socios ficticios, así que **solo** se ejecuta contra el s
 cp .env.e2e.example .env.e2e     # la primera vez; poner una contraseña de prueba
 docker compose -p mtabolic-e2e --env-file .env.e2e up -d --build
 curl http://localhost:8081/api/v1/sistema/estado   # esperar LISTO (por el frontend; el 8001 da 403)
+# o, si 8081 quedó en el estado de grabación (R-022): bash scripts/preparar-8081.sh e2e
+# (borra 8081 y lo deja como espera la E2E; ver Documentation/comandos/preparar-8081.md)
 
 # desde Frontend/
 E2E_BASE_URL=http://localhost:8081 npx playwright test

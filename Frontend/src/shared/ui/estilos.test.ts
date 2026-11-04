@@ -24,10 +24,11 @@ const PALETA_TAILWIND =
 const ESTILO_INLINE = /\bstyle=\{/
 const RECURSO_EXTERNO = /(?:https?:)?\/\/[a-z0-9.-]+\.[a-z]{2,}/i
 
-/** Unicos archivos con `style`: anchos de barra que dependen del dato. */
+/** Unicos archivos con `style`: anchos de barra y posiciones que dependen del dato. */
 const CON_STYLE_PERMITIDO = [
   'features/dashboard/components/EmbudoGestion.tsx',
   'features/dashboard/components/GraficoResultados.tsx',
+  'features/dashboard/components/IndicadoresPiloto.tsx',
 ]
 
 const archivos = Object.entries(FUENTES).map(
@@ -72,6 +73,24 @@ describe('guardia global de estilos (src/**/*.tsx)', () => {
     const ayuda = archivos.find(([r]) => r === 'shared/ui/Ayuda.tsx')?.[1] ?? ''
     expect(ayuda).not.toMatch(/border-ink\/20/)
     expect(ayuda).toMatch(/\bBoton\b/)
+  })
+})
+
+describe('contraste de "¿Con cuánta anticipación?" (R-022)', () => {
+  const piloto = archivos.find(([r]) => r === 'features/dashboard/components/IndicadoresPiloto.tsx')?.[1] ?? ''
+  const forzados = /@media\s*\(forced-colors:\s*active\)\s*\{([\s\S]*?)\n\}/.exec(indexCss)?.[1] ?? ''
+
+  it('la linea base no usa opacidad (bg-ink/20 se aplana en el oscuro automatico)', () => {
+    expect(piloto).not.toMatch(/bg-ink\/20/)
+    expect(piloto).toMatch(/data-linea-anticipacion/)
+  })
+
+  it('index.css pinta linea, marcas y tramos con colores de sistema en colores forzados', () => {
+    expect(forzados).toMatch(/\[data-linea-anticipacion\]/)
+    expect(forzados).toMatch(/\[data-forma-anticipacion\]/)
+    expect(forzados).toMatch(/\[data-tramo\]/)
+    expect(forzados).toMatch(/CanvasText/)
+    expect(forzados).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|oklch\(/)
   })
 })
 

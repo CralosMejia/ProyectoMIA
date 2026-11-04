@@ -16,7 +16,7 @@ from app.application.sistema.ports import RegistroMigracion, ResultadoMigracion
 from app.domain.common.predictor import PredictorModel
 from app.infrastructure.historico.lector_libros import LectorLibrosExcel
 from app.infrastructure.historico.localizador_libros import LocalizadorLibrosCarpeta
-from app.infrastructure.ml.random_forest import RandomForestPredictor
+from app.infrastructure.ml.predictor_adoptado import PredictorAdoptado
 from app.infrastructure.persistence.unit_of_work import (
     AbridorBloqueoMigracion,
     FabricaUnidadDeTrabajoSqlAlchemy,
@@ -70,12 +70,12 @@ def crear_migracion(
         unidad_de_trabajo=FabricaUnidadDeTrabajoSqlAlchemy(engine, reloj),
         localizador=LocalizadorLibrosCarpeta(carpeta),
         lector=LectorLibrosExcel(),
-        predictor=predictor if predictor is not None else RandomForestPredictor(),
+        predictor=predictor if predictor is not None else PredictorAdoptado(),
         clock=reloj,
         registro=registro if registro is not None else RegistroMigracion(),
     )
 
 
 def migrar_sintetico(engine: Engine) -> ResultadoMigracion:
-    """Migra los libros sinteticos con el ``RandomForestPredictor`` real."""
+    """Migra los libros sinteticos con el predictor real del composition root (RL, M06)."""
     return crear_migracion(engine).ejecutar()

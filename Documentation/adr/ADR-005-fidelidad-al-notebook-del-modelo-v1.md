@@ -7,6 +7,8 @@
 
 ## Contexto
 
+> Nota (2026-11-03, R-020): el algoritmo adoptado es ahora la Regresión Logística ([ADR-016](ADR-016-regresion-logistica-como-modelo-adoptado.md)); la fidelidad al notebook y scikit-learn 1.8.0 siguen vigentes.
+
 El Random Forest (`random_state=42`) depende de la versión de scikit-learn y del orden de las filas. Con scikit-learn 1.9.1 la conciliación (`scripts/verificar_lista.py`) daba 24/25 del top iguales y probabilidades desplazadas entre 0,001 y 0,016. Además, los factores de §13.3 se calculan contra las medianas y modas de `X_train`; con la referencia "todo el entrenamiento" los factores no coincidían.
 
 ## Decisión

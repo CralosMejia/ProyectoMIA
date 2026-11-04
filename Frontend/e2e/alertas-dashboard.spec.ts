@@ -365,52 +365,81 @@ test('alertas para hoy: registrar el resultado desde Seguimiento y verlo en el D
   })
 })
 
-// ------------------------------------------------------------------ R-018 (M04) · T8
+// ------------------------------------------------------------------ R-018 (M04) · T8 / R-021 · T4
 
 type EstadoIndicador = 'COMPLETO' | 'PARCIAL' | 'PENDIENTE' | 'SIN_DATOS'
 
-interface IndicadorApi {
+interface ProporcionApi {
+  valor: string | null
+  numerador: number
+  denominador: number
   n: number
+  pendientes: number
   estado: EstadoIndicador
-  pendientes?: number
 }
 
 interface PilotoApi {
   estado: EstadoIndicador
   lista: { id: number; nombre: string; fecha_generacion: string } | null
   n_top: number
-  precision_top25: IndicadorApi
-  contactados_antes_vencimiento: IndicadorApi
-  dias_anticipacion: IndicadorApi
-  tasa_renovacion_contactados: IndicadorApi
-  monto_retenido: IndicadorApi
+  sin_dato: number
+  precision_top25: ProporcionApi
+  contactados_antes_vencimiento: ProporcionApi
+  dias_anticipacion: {
+    valor: string | null
+    n: number
+    estado: EstadoIndicador
+    minimo: number | null
+    maximo: number | null
+    tramos: TramosApi
+  }
+  tasa_renovacion_contactados: ProporcionApi
 }
 
-/** Nombre visible de cada indicador (el mismo de la ayuda) y su bloque en la respuesta. */
-const INDICADORES_PILOTO = [
-  ['Precisión del top 25', 'precision_top25'],
-  ['Contactados antes del vencimiento', 'contactados_antes_vencimiento'],
-  ['Días de anticipación', 'dias_anticipacion'],
-  ['Renovación de los contactados', 'tasa_renovacion_contactados'],
-  ['Monto retenido', 'monto_retenido'],
+/** R-022: reparto de las llamadas por dias antes del vencimiento (suman `n`). */
+interface TramosApi {
+  quince_o_mas: number
+  de_ocho_a_catorce: number
+  de_uno_a_siete: number
+  mismo_dia_o_despues: number
+}
+
+const ETIQUETAS_TRAMOS = [
+  ['15 días o más antes', 'quince_o_mas'],
+  ['Entre 8 y 14 días antes', 'de_ocho_a_catorce'],
+  ['Entre 1 y 7 días antes', 'de_uno_a_siete'],
+  ['El mismo día o después', 'mismo_dia_o_despues'],
 ] as const
 
-const TEXTO_PENDIENTE =
-  'Pendiente: aún no se puede verificar (se verifica 30 días después del vencimiento)'
-
-/** Estado traducido que debe ver el usuario (nunca el nombre interno). */
-function estadoVisible(estado: EstadoIndicador): string | RegExp {
-  switch (estado) {
-    case 'COMPLETO':
-      return 'Completo'
-    case 'PARCIAL':
-      return /^Parcial/
-    case 'PENDIENTE':
-      return TEXTO_PENDIENTE
-    case 'SIN_DATOS':
-      return 'Sin datos'
-  }
+function momento(d: number, completo: boolean): string {
+  if (d === 0) return completo ? 'el mismo día del vencimiento' : 'el mismo día'
+  const cifra = Math.abs(d)
+  return `${cifra} ${cifra === 1 ? 'día' : 'días'} ${d > 0 ? 'antes' : 'después'}${completo ? ' del vencimiento' : ''}`
 }
+
+/** Frases de conteo y rango (R-022) con las cifras de la respuesta; null si no aplican. */
+function frasesAnticipacion(p: PilotoApi): { conteo: string | null; rango: string | null } {
+  const d = p.dias_anticipacion
+  if (d.n === 0) return { conteo: null, rango: null }
+  const antes = p.contactados_antes_vencimiento.numerador
+  const conteo = `${antes} ${antes === 1 ? 'socio se llamó' : 'socios se llamaron'} antes del vencimiento y ${Math.max(0, d.n - antes)} el mismo día o después`
+  let rango: string | null = null
+  if (d.minimo !== null && d.maximo !== null) {
+    rango =
+      d.minimo === d.maximo
+        ? `${d.n === 1 ? 'La única llamada fue' : 'Todas las llamadas fueron'} ${momento(d.maximo, true)}`
+        : `La llamada más temprana fue ${momento(d.maximo, true)} y la más tardía, ${momento(d.minimo, false)}`
+  }
+  return { conteo, rango }
+}
+
+const TITULO_PILOTO = '¿Cómo le fue a la lista del mes?'
+const GRAFICOS_PILOTO = [
+  '¿Cuántos contactamos y cuántos renovaron?',
+  '¿Con cuánta anticipación?',
+] as const
+const SIN_DATOS_MES = 'Sin datos este mes'
+const DINERO = /\$|USD|monto|cobr|factur/i
 
 const CLAVES_PERSONALES = ['cedula', 'celular', 'correo', 'telefono', 'socio_id', 'membresia_id']
 
@@ -436,40 +465,63 @@ async function leerPiloto(page: Page, mes: string): Promise<PilotoApi> {
 }
 
 function seccionPiloto(page: Page): Locator {
-  return page.getByRole('region', { name: 'Indicadores del piloto' })
+  return page.getByRole('region', { name: TITULO_PILOTO })
 }
 
-function tarjetaIndicador(seccion: Locator, nombre: string): Locator {
-  return seccion
-    .locator('dl > div')
-    .filter({ has: seccion.page().locator('dt').getByText(nombre, { exact: true }) })
+function contar(n: number, singular: string, plural: string): string {
+  return `${n} ${n === 1 ? singular : plural}`
 }
 
-/** Texto del `n` en pantalla: el del monto aclara que cuenta solo a los ya verificados. */
-function textoN(nombre: string, n: number): string {
-  return nombre === 'Monto retenido' ? `n = ${n} contactados ya verificados` : `n = ${n}`
+function socios(n: number): string {
+  return contar(n, 'socio', 'socios')
 }
 
-/** Cada indicador de la pantalla con el `n` y el estado traducido de la respuesta. */
-async function comprobarIndicadores(seccion: Locator, piloto: PilotoApi) {
-  await expect(seccion.locator('dl > div')).toHaveCount(INDICADORES_PILOTO.length)
-  for (const [nombre, clave] of INDICADORES_PILOTO) {
-    const tarjeta = tarjetaIndicador(seccion, nombre)
-    await expect(tarjeta, nombre).toHaveCount(1)
-    await expect(tarjeta.getByText(textoN(nombre, piloto[clave].n), { exact: true }), nombre).toBeVisible()
-    const estado = estadoVisible(piloto[clave].estado)
-    await expect(
-      typeof estado === 'string'
-        ? tarjeta.getByText(estado, { exact: true })
-        : tarjeta.getByText(estado),
-      nombre,
-    ).toBeVisible()
-    // Nunca el nombre interno del estado.
-    await expect(tarjeta.getByText(/^(COMPLETO|PARCIAL|PENDIENTE|SIN_DATOS)$/)).toHaveCount(0)
+/** Dias del API (texto con un decimal) → "4,5" sin signo; solo para comparar con la pantalla. */
+function diasConComa(valor: string): string {
+  const [entero = '0', fraccion = '0'] = valor.replace(/^-/, '').split('.')
+  return `${entero},${fraccion.padEnd(1, '0').slice(0, 1)}`
+}
+
+/** `aria-label` esperado de cada grafico, con las cifras de la respuesta. */
+function etiquetasGraficos(p: PilotoApi): [string, string] {
+  const tasa = p.tasa_renovacion_contactados
+  const embudo = `${socios(p.n_top)} en la lista del mes, ${contar(tasa.n, 'contactado', 'contactados')}, ${p.contactados_antes_vencimiento.numerador} antes del vencimiento, ${contar(tasa.numerador, 'renovó', 'renovaron')} y ${tasa.pendientes} por confirmar`
+  const valor = p.dias_anticipacion.valor
+  let linea = 'Todavía no hay llamadas registradas'
+  if (valor !== null) {
+    const cifra = diasConComa(valor)
+    linea =
+      cifra === '0,0'
+        ? 'En promedio, llamamos el mismo día del vencimiento'
+        : `En promedio, llamamos ${cifra} días ${valor.startsWith('-') ? 'después' : 'antes'} del vencimiento`
   }
+  const { conteo, rango } = frasesAnticipacion(p)
+  const resumen = [linea, conteo, rango]
+    .filter((parte): parte is string => parte !== null)
+    .map((parte) => `${parte}.`)
+    .join(' ')
+  return [embudo, resumen]
 }
 
-test('indicadores del piloto: lista del mes pendiente, mes sin lista «Sin datos», impresión y ayuda', async ({
+/** Los dos graficos con su `h3` y su `aria-label` con las cifras; sin dinero ni estados internos. */
+async function comprobarGraficos(seccion: Locator, piloto: PilotoApi) {
+  await expect(seccion.getByRole('heading', { level: 3 })).toHaveText([...GRAFICOS_PILOTO])
+  const etiquetas = etiquetasGraficos(piloto)
+  for (const [i, titulo] of GRAFICOS_PILOTO.entries()) {
+    const grafico = seccion.getByRole('region', { name: titulo })
+    await expect(
+      grafico.getByRole('img', { name: etiquetas[i], exact: true }),
+      titulo,
+    ).toBeVisible()
+  }
+  const texto = (await seccion.textContent()) ?? ''
+  expect(texto).not.toMatch(DINERO)
+  expect(texto).not.toMatch(/n = /)
+  expect(texto).not.toMatch(/precisi[oó]n/i)
+  expect(texto).not.toMatch(/COMPLETO|PARCIAL|PENDIENTE|SIN_DATOS/)
+}
+
+test('indicadores del piloto: dos gráficos, lista del mes por confirmar, mes sin lista, impresión y ayuda', async ({
   page,
   baseURL,
 }) => {
@@ -495,7 +547,7 @@ test('indicadores del piloto: lista del mes pendiente, mes sin lista «Sin datos
     })
   }
 
-  await test.step('API: la lista del mes en curso tiene top y su precisión aún no se puede verificar', async () => {
+  await test.step('API: la lista del mes en curso tiene top y su acierto aún no se puede confirmar', async () => {
     expect(piloto.lista).not.toBeNull()
     expect(piloto.n_top).toBeGreaterThan(0)
     expect(piloto.n_top).toBeLessThanOrEqual(25)
@@ -506,32 +558,58 @@ test('indicadores del piloto: lista del mes pendiente, mes sin lista «Sin datos
 
   const seccion = seccionPiloto(page)
 
-  await test.step('Dashboard: «Indicadores del piloto» con sus 5 indicadores, n y estado traducido', async () => {
+  await test.step('Dashboard: los dos gráficos con las cifras de la respuesta y el estado en palabras', async () => {
     await page.goto('/dashboard')
     await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
     await expect(page.getByLabel('Mes', { exact: true })).toHaveValue(mes)
     await expect(seccion).toBeVisible({ timeout: 30_000 })
-    await expect(
-      seccion.getByRole('heading', { level: 2, name: 'Indicadores del piloto' }),
-    ).toBeVisible()
+    await expect(seccion.getByRole('heading', { level: 2, name: TITULO_PILOTO })).toBeVisible()
     await expect(
       seccion.getByText(`Lista del mes: ${piloto.lista?.nombre}, generada el `),
     ).toBeVisible()
-    await comprobarIndicadores(seccion, piloto)
-    await expect(
-      tarjetaIndicador(seccion, 'Precisión del top 25').getByText(TEXTO_PENDIENTE, {
-        exact: true,
-      }),
-    ).toBeVisible()
+    await comprobarGraficos(seccion, piloto)
+    // Cambio del usuario: el grafico «¿La lista acertó?» y su aviso ya no se pintan.
+    await expect(seccion.getByRole('region', { name: '¿La lista acertó?' })).toHaveCount(0)
+    await expect(seccion.locator('[data-punto]')).toHaveCount(0)
+    await expect(seccion.getByText(/cuenta de aciertos/)).toHaveCount(0)
     await expect(
       seccion.getByText(
-        'Los socios del top 25 se contactan; por eso la precisión observada puede quedar por debajo de la real.',
+        'Estas cifras cuentan lo que pasó; no prueban que la llamada haya causado la renovación.',
       ),
     ).toBeVisible()
-    await expect(seccion.getByText('Cifras observadas, no causales.')).toBeVisible()
   })
 
-  await test.step('impresión: la sección no lleva print:hidden y se ve con el medio «print»', async () => {
+  await test.step('R-022: tramos de la API suman n y la pantalla muestra el mismo conteo y tramos', async () => {
+    const d = piloto.dias_anticipacion
+    const t = d.tramos
+    expect(t.quince_o_mas + t.de_ocho_a_catorce + t.de_uno_a_siete + t.mismo_dia_o_despues).toBe(d.n)
+    expect(t.quince_o_mas + t.de_ocho_a_catorce + t.de_uno_a_siete).toBe(
+      piloto.contactados_antes_vencimiento.numerador,
+    )
+    const grafico = seccion.getByRole('region', { name: '¿Con cuánta anticipación?' })
+    for (const marca of ['30 días', 'Vence']) {
+      await expect(grafico.getByRole('img').getByText(marca, { exact: true })).toBeVisible()
+    }
+    const { conteo, rango } = frasesAnticipacion(piloto)
+    const lista = grafico.getByRole('list', { name: 'Llamadas según los días antes del vencimiento' })
+    if (conteo === null) {
+      await expect(lista).toHaveCount(0)
+    } else {
+      await expect(grafico.getByText(`${conteo}.`, { exact: true })).toBeVisible()
+      if (rango !== null) await expect(grafico.getByText(`${rango}.`, { exact: true })).toBeVisible()
+      const items = lista.getByRole('listitem')
+      await expect(items).toHaveCount(4)
+      for (const [i, [etiqueta, clave]] of ETIQUETAS_TRAMOS.entries()) {
+        await expect(items.nth(i)).toContainText(etiqueta)
+        await expect(items.nth(i).locator('span').nth(1)).toHaveText(String(t[clave]))
+      }
+    }
+    const texto = (await grafico.textContent()) ?? ''
+    expect(texto).not.toMatch(DINERO)
+    expect(texto).not.toMatch(/al menos una semana/i)
+  })
+
+  await test.step('impresión: los dos gráficos se ven y «¿Cómo se calcula?» no', async () => {
     const oculta = await seccion.evaluate((el) => {
       for (let n: Element | null = el; n; n = n.parentElement) {
         if (n.classList.contains('print:hidden')) return true
@@ -541,42 +619,57 @@ test('indicadores del piloto: lista del mes pendiente, mes sin lista «Sin datos
     expect(oculta).toBe(false)
     await page.emulateMedia({ media: 'print' })
     await expect(seccion).toBeVisible()
-    await expect(seccion.locator('dl > div')).toHaveCount(INDICADORES_PILOTO.length)
-    for (const [nombre] of INDICADORES_PILOTO) {
-      await expect(tarjetaIndicador(seccion, nombre)).toBeVisible()
+    await expect(seccion.getByRole('img')).toHaveCount(GRAFICOS_PILOTO.length)
+    for (const titulo of GRAFICOS_PILOTO) {
+      await expect(seccion.getByRole('region', { name: titulo }).getByRole('img')).toBeVisible()
     }
-    // Lo que si se oculta al imprimir sigue oculto (el boton de imprimir).
+    const anticipacion = seccion.getByRole('region', { name: '¿Con cuánta anticipación?' })
+    await expect(anticipacion.getByRole('img').getByText('Vence', { exact: true })).toBeVisible()
+    if (piloto.dias_anticipacion.n > 0) {
+      await expect(
+        anticipacion.getByRole('list', { name: 'Llamadas según los días antes del vencimiento' }),
+      ).toBeVisible()
+    }
+    await expect(seccion.getByRole('button', { name: '¿Cómo se calcula?' })).toBeHidden()
     await expect(page.getByRole('button', { name: 'Imprimir / Guardar PDF' })).toBeHidden()
     await page.emulateMedia({ media: 'screen' })
   })
 
-  await test.step('ayuda: sección «Indicadores del piloto» con los cinco, pendiente a los 30 días y sesgo', async () => {
+  await test.step('«¿Cómo se calcula?»: definiciones exactas, sin dinero; Cerrar devuelve el foco', async () => {
+    const boton = seccion.getByRole('button', { name: '¿Cómo se calcula?' })
+    await boton.click()
+    const ventana = page.getByRole('dialog', { name: '¿Cómo se calcula?' })
+    await expect(ventana).toBeVisible()
+    await expect(ventana.getByText(/«n» es el número de socios/)).toBeVisible()
+    await expect(ventana.getByText(/30 días después del\s+vencimiento/)).toBeVisible()
+    expect((await ventana.textContent()) ?? '').not.toMatch(/precisi[oó]n|¿La lista acertó\?/)
+    await expect(ventana.getByText(/no prueban que la llamada cause la renovación/)).toBeVisible()
+    expect((await ventana.textContent()) ?? '').not.toMatch(DINERO)
+    await ventana.getByRole('button', { name: 'Cerrar' }).click()
+    await expect(ventana).toHaveCount(0)
+    await expect(boton).toBeFocused()
+  })
+
+  await test.step('ayuda: la sección del piloto explica los dos gráficos y repite las definiciones', async () => {
     const boton = page.getByRole('button', { name: '¿Cómo funciona el dashboard?' })
     await boton.click()
     const ayuda = page.getByRole('dialog', { name: '¿Cómo funciona el dashboard?' })
     await expect(ayuda).toBeVisible()
-    await expect(
-      ayuda.getByRole('heading', { name: 'Indicadores del piloto', exact: true }),
-    ).toBeVisible()
-    // Una definicion (elemento de la lista) por indicador; el nombre tambien aparece citado
-    // en otros parrafos de la seccion, por eso se busca el elemento que empieza por «nombre»:.
-    for (const [nombre] of INDICADORES_PILOTO) {
-      const definicion = ayuda.getByRole('listitem').filter({ hasText: `«${nombre}»:` })
-      await expect(definicion, nombre).toHaveCount(1)
-      await expect(definicion, nombre).toBeVisible()
+    await expect(ayuda.getByRole('heading', { name: TITULO_PILOTO, exact: true })).toBeVisible()
+    for (const titulo of GRAFICOS_PILOTO) {
+      await expect(
+        ayuda.getByRole('listitem').filter({ hasText: `«${titulo}»:` }),
+        titulo,
+      ).toHaveCount(1)
     }
-    await expect(
-      ayuda.getByText(/«Monto retenido» cuenta solo a los contactados ya verificados/),
-    ).toBeVisible()
-    await expect(ayuda.getByText(/30 días después de que vence su\s+membresía/)).toBeVisible()
-    await expect(ayuda.getByText(/la precisión puede salir más baja que la real/)).toBeVisible()
-    await expect(ayuda.getByText(/no prueban que el sistema cause la renovación/)).toBeVisible()
+    await expect(ayuda.getByText('Cómo se calcula cada cifra', { exact: true })).toBeVisible()
+    expect((await ayuda.textContent()) ?? '').not.toMatch(DINERO)
     await ayuda.getByRole('button', { name: 'Cerrar' }).click()
     await expect(ayuda).toHaveCount(0)
     await expect(boton).toBeFocused()
   })
 
-  await test.step('mes sin lista (2000-01): «Sin datos» y n = 0 en los cinco', async () => {
+  await test.step('mes sin lista (2000-01): los dos gráficos en «Sin datos este mes»', async () => {
     const vacio = await leerPiloto(page, '2000-01')
     expect(vacio.estado).toBe('SIN_DATOS')
     expect(vacio.lista).toBeNull()
@@ -586,12 +679,12 @@ test('indicadores del piloto: lista del mes pendiente, mes sin lista «Sin datos
     await page.getByLabel('Mes', { exact: true }).fill('2000-01')
     expect((await pedido).status()).toBe(200)
     await expect(seccion.getByText('No hay una lista generada en este mes.')).toBeVisible()
-    await comprobarIndicadores(seccion, vacio)
-    for (const [nombre] of INDICADORES_PILOTO) {
-      const tarjeta = tarjetaIndicador(seccion, nombre)
-      await expect(tarjeta.getByText('Sin datos', { exact: true })).toBeVisible()
-      await expect(tarjeta.getByText(textoN(nombre, 0), { exact: true })).toBeVisible()
+    await comprobarGraficos(seccion, vacio)
+    for (const titulo of GRAFICOS_PILOTO) {
+      await expect(
+        seccion.getByRole('region', { name: titulo }).getByText(SIN_DATOS_MES, { exact: true }),
+      ).toBeVisible()
     }
-    await expect(seccion.getByText('Pocos casos: léase con cuidado')).toHaveCount(0)
+    await expect(seccion.getByText('Son pocos socios todavía: tómalo con cuidado')).toHaveCount(0)
   })
 })

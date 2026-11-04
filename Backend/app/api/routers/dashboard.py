@@ -77,7 +77,19 @@ DASHBOARD_EXAMPLE = {
             "pendientes": 0,
             "estado": "COMPLETO",
         },
-        "dias_anticipacion": {"valor": "4.5", "n": 19, "estado": "COMPLETO"},
+        "dias_anticipacion": {
+            "valor": "4.5",
+            "n": 19,
+            "estado": "COMPLETO",
+            "minimo": -1,
+            "maximo": 16,
+            "tramos": {
+                "quince_o_mas": 1,
+                "de_ocho_a_catorce": 4,
+                "de_uno_a_siete": 13,
+                "mismo_dia_o_despues": 1,
+            },
+        },
         "tasa_renovacion_contactados": {
             "valor": "0.41176471",
             "numerador": 7,
@@ -116,7 +128,19 @@ DASHBOARD_PILOTO_SIN_DATOS_EXAMPLE = {
         "sin_dato": 0,
         "precision_top25": _PROPORCION_SIN_DATOS,
         "contactados_antes_vencimiento": _PROPORCION_SIN_DATOS,
-        "dias_anticipacion": {"valor": None, "n": 0, "estado": "SIN_DATOS"},
+        "dias_anticipacion": {
+            "valor": None,
+            "n": 0,
+            "estado": "SIN_DATOS",
+            "minimo": None,
+            "maximo": None,
+            "tramos": {
+                "quince_o_mas": 0,
+                "de_ocho_a_catorce": 0,
+                "de_uno_a_siete": 0,
+                "mismo_dia_o_despues": 0,
+            },
+        },
         "tasa_renovacion_contactados": _PROPORCION_SIN_DATOS,
         "monto_retenido": {
             "total": None,
@@ -140,7 +164,8 @@ _DASHBOARD_RESPONSES: OpenApiResponses = {
             "``piloto``: indicadores observados (no causales) del top 25 (prioridad <= 25) de "
             "la ultima lista generada en el mes, verificados 30 dias despues del vencimiento "
             "con ``corte_verificacion`` (ultimo dia con datos); proporciones como texto con 8 "
-            "decimales, ``dias_anticipacion`` con 1 y ``monto_retenido.total`` con 2; estados "
+            "decimales, ``dias_anticipacion`` con 1 (con ``minimo``, ``maximo`` y ``tramos`` en "
+            "dias enteros) y ``monto_retenido.total`` con 2; estados "
             "COMPLETO, PARCIAL, PENDIENTE o SIN_DATOS (mes sin lista), siempre con su ``n``."
         ),
         "content": {

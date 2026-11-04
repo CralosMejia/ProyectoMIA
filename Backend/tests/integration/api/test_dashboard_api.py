@@ -301,7 +301,19 @@ def test_get_dashboard_piloto_del_mes_calcula_indicadores(piloto: None, client: 
         "estado": "COMPLETO",
     }
     assert p["contactados_antes_vencimiento"]["valor"] == "0.33333333"
-    assert p["dias_anticipacion"] == {"valor": "2.5", "n": 2, "estado": "COMPLETO"}
+    assert p["dias_anticipacion"] == {
+        "valor": "2.5",
+        "n": 2,
+        "estado": "COMPLETO",
+        "minimo": 0,
+        "maximo": 5,
+        "tramos": {
+            "quince_o_mas": 0,
+            "de_ocho_a_catorce": 0,
+            "de_uno_a_siete": 1,
+            "mismo_dia_o_despues": 1,
+        },
+    }
     assert p["tasa_renovacion_contactados"]["valor"] == "0.50000000"
     assert (
         p["tasa_renovacion_contactados"]["n"],

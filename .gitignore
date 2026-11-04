@@ -49,6 +49,9 @@ plantillas/Control Gym*.xlsx
 
 Documentation/claude/
 
+# Datos sinteticos para grabar el demo (generar_dataset_demo.py --perfil grabacion): se regeneran
+/datos-grabacion/
+
 # Salidas del notebook (listas, modelos y tablas derivadas de los libros con datos personales)
 /salidas/
 

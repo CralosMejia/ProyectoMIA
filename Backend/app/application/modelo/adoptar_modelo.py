@@ -1,4 +1,4 @@
-"""Caso de uso ``AdoptarModelo`` (R-015, decision (e)): pone en uso el modelo M01.
+"""Caso de uso ``AdoptarModelo`` (R-015, decision (e); R-020): pone en uso el modelo adoptado.
 
 Comando manual ``python -m app.cli adoptar-modelo``. Con el sistema listo (migracion
 ``COMPLETADA`` y un modelo vigente):
@@ -49,7 +49,7 @@ from app.domain.modelo.variables import CONJUNTO_MODELO, ConjuntoVariables
 
 logger = logging.getLogger(__name__)
 
-MOTIVO_ADOPCION = "Adopción del modelo M01"
+MOTIVO_ADOPCION = "Adopción del modelo de Regresión Logística (M06)"
 
 
 class AdoptarModelo:

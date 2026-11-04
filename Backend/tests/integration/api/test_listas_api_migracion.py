@@ -1,7 +1,7 @@
 """API de listas sobre la migracion sintetica real de T12 (CU-03 -> CU-04) y contrato del frontend.
 
 La base se prepara con ``MigrarHistorico`` real (libros de ``tests/fixtures/historico`` +
-``RandomForestPredictor``), no con datos sembrados. El contrato comprobado es el de
+``PredictorAdoptado``, Regresion Logistica), no con datos sembrados. El contrato comprobado es el de
 ``.harness/contrato_listas.md``.
 
 Aislamiento entre usuarios: NO APLICA (RT-12, sin login; acceso restringido por IP, CU-00).

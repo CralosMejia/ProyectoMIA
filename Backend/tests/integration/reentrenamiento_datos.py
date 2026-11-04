@@ -2,7 +2,8 @@
 
 Escenario (hoy = 2026-09-30 en Ecuador):
 
-- Modelo v1 vigente entrenado el 2026-03-01 con corte 2026-02-28 por ``RandomForestPredictor``
+- Modelo v1 vigente entrenado el 2026-03-01 con corte 2026-02-28 por ``PredictorAdoptado`` (RL;
+  ``predictor_v1`` permite sembrar un v1 Random Forest heredado, R-020)
   con la senal **invertida** (aprende que los ``MENSUAL`` renuevan): sobre los datos nuevos
   puntua al reves, asi que un candidato bien entrenado no es peor y se entrena la v2.
 - ``nuevas=True``: 200 socios con un ciclo cada uno vencido de febrero a agosto de 2026,
@@ -33,9 +34,9 @@ from app.domain.common.enums import (
     ResultadoReentrenamiento,
     TipoCarga,
 )
-from app.domain.common.predictor import FeatureRow
+from app.domain.common.predictor import FeatureRow, PredictorModel
 from app.domain.modelo.variables import VARIABLES_CATEGORICAS, VARIABLES_NUMERICAS
-from app.infrastructure.ml.random_forest import RandomForestPredictor
+from app.infrastructure.ml.predictor_adoptado import PredictorAdoptado
 from app.infrastructure.persistence.repositories.historial import (
     SqlAlchemyCargaRepository,
     SqlAlchemyMembresiaRepository,
@@ -94,11 +95,9 @@ def _filas_invertidas() -> tuple[list[FeatureRow], list[int]]:
     return filas, etiquetas
 
 
-def _modelo_v1() -> NuevoModelo:
+def _modelo_v1(predictor: PredictorModel) -> NuevoModelo:
     filas, etiquetas = _filas_invertidas()
-    entrenado = RandomForestPredictor().train(
-        filas, etiquetas, VARIABLES_NUMERICAS, VARIABLES_CATEGORICAS
-    )
+    entrenado = predictor.train(filas, etiquetas, VARIABLES_NUMERICAS, VARIABLES_CATEGORICAS)
     return NuevoModelo(
         version=1,
         fecha_entrenamiento=ENTRENAMIENTO_V1,
@@ -168,8 +167,17 @@ def _membresias_antiguas(socio_ids: list[int], carga_id: int) -> list[NuevaMembr
     ]
 
 
-def sembrar(engine: Engine, *, programada: date | None, nuevas: bool = True) -> None:
-    """Limpia la base ``*_test`` y siembra v1, sus membresias y el estado ``COMPLETADA``."""
+def sembrar(
+    engine: Engine,
+    *,
+    programada: date | None,
+    nuevas: bool = True,
+    predictor_v1: PredictorModel | None = None,
+) -> None:
+    """Limpia la base ``*_test`` y siembra v1, sus membresias y el estado ``COMPLETADA``.
+
+    ``predictor_v1`` entrena el v1 (por defecto ``PredictorAdoptado``, RL).
+    """
     limpiar_base(engine)
     socios = NO_RENUEVAN + RENUEVAN if nuevas else 10
     registro = Reloj(REGISTRO_NUEVAS if nuevas else ANTES_DE_V1)
@@ -203,7 +211,9 @@ def sembrar(engine: Engine, *, programada: date | None, nuevas: bool = True) -> 
         SqlAlchemyMembresiaRepository(session, registro).insertar_en_bloque(membresias)
 
         reloj_v1 = Reloj(ENTRENAMIENTO_V1)
-        modelo_id = SqlAlchemyModeloRepository(session, reloj_v1).crear(_modelo_v1())
+        modelo_id = SqlAlchemyModeloRepository(session, reloj_v1).crear(
+            _modelo_v1(predictor_v1 if predictor_v1 is not None else PredictorAdoptado())
+        )
         SqlAlchemyIntentoRepository(session, reloj_v1).crear(
             NuevoIntento(
                 fecha=ENTRENAMIENTO_V1,

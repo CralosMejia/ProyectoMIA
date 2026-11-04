@@ -25,6 +25,8 @@ const PUERTO_PRINCIPAL = ':8080'
 const NIVELES = ['Alto', 'Medio', 'Bajo'] as const
 const PLANES = ['Mensual', 'Trimestral', 'Semestral', 'Anual', 'Otro'] as const
 const MS_POR_DIA = 86_400_000
+/** Prioritarios de la lista de esta prueba: menos que los 10 socios cargados (ver la carga). */
+const TOP_K_ANCHOS = 3
 
 const ESCRITORIO = [
   { width: 1366, height: 768 },
@@ -254,8 +256,14 @@ test.describe('anchos de las tablas (R-014)', () => {
       return generadas
     })
 
-    await test.step('generar la lista de hoy (valores por defecto)', async () => {
+    await test.step(`generar la lista de hoy con ${TOP_K_ANCHOS} prioritarios (deja "Otros socios por vencer")`, async () => {
       await page.goto('/lista')
+      // Con el top por defecto, en datos recien preparados todos los socios por vencer caben en
+      // los prioritarios y la tabla "Otros socios por vencer" no se pinta. Un top menor que los
+      // socios cargados aqui garantiza las dos tablas sin depender de datos de corridas previas.
+      const top = page.getByRole('spinbutton', { name: 'Socios prioritarios a contactar' })
+      await top.fill(String(TOP_K_ANCHOS))
+      await expect(top).toHaveValue(String(TOP_K_ANCHOS))
       const creada = page.waitForResponse(
         (r) => r.request().method() === 'POST' && /\/api\/v1\/listas$/.test(r.url()),
       )
@@ -264,6 +272,7 @@ test.describe('anchos de las tablas (R-014)', () => {
       await expect(
         page.getByRole('cell', { name: new RegExp(`^(${cedulas.join('|')})$`) }).first(),
       ).toBeVisible({ timeout: 30_000 })
+      await expect(page.getByRole('table', { name: 'Otros socios por vencer' })).toBeVisible()
     })
 
     const filasNuevas = page

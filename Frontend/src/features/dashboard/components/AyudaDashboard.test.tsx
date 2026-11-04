@@ -1,7 +1,7 @@
 import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
-import { AyudaDashboard } from './AyudaDashboard'
+import { AyudaDashboard, DefinicionesPiloto } from './AyudaDashboard'
 import source from './AyudaDashboard.tsx?raw'
 
 const BOTON = '¿Cómo funciona el dashboard?'
@@ -51,38 +51,100 @@ describe('AyudaDashboard', () => {
       'Casos insuficientes',
       'La fila «Sin campaña»',
       'La tarjeta del modelo',
-      'Indicadores del piloto',
+      '¿Cómo le fue a la lista del mes?',
       'Qué significan las cifras',
     ])
   })
 
-  it('"Indicadores del piloto": los cinco indicadores, pendiente a los 30 días, casos, sesgo y no causa', async () => {
+  it('"¿Cómo le fue a la lista del mes?": los dos graficos con las palabras de la pantalla y luego las definiciones', async () => {
     const { dialogo } = await abrir()
-    const texto = textoDeLaSeccion(dialogo, 'Indicadores del piloto')
+    const texto = textoDeLaSeccion(dialogo, '¿Cómo le fue a la lista del mes?')
 
-    // Precision del top 25 y verificacion a los 30 dias.
-    expect(texto).toMatch(/«Precisión del top 25»: de los 25 primeros socios de la lista del mes, cuántos no renovaron/)
-    expect(texto).toMatch(/30 días después de que vence su membresía/)
-    expect(texto).toMatch(/aparece «pendiente»/)
-    // Contacto antes del vencimiento y dias de anticipacion.
-    expect(texto).toMatch(/«Contactados antes del vencimiento»: qué porcentaje de esos 25 socios se contactó antes de que venciera su membresía/)
-    expect(texto).toMatch(/«Días de anticipación»: en promedio, cuántos días antes del vencimiento se contactó/)
-    // Tasa de renovacion de los contactados.
-    expect(texto).toMatch(/«Renovación de los contactados»: de los socios contactados, qué porcentaje renovó/)
-    // Monto retenido.
-    expect(texto).toMatch(/«Monto retenido»: la suma de lo que se cobró en las renovaciones de los socios contactados/)
-    expect(texto).toMatch(/Si una renovación no tiene cobro registrado, se usa lo facturado/)
-    expect(texto).toMatch(/se cuentan aparte/)
-    // Casos de cada cifra.
-    expect(texto).toMatch(/Cada cifra muestra cuántos casos tiene/)
-    // El n de la renovacion y el del monto no cuentan lo mismo.
-    expect(texto).toMatch(/En «Renovación de los contactados» el número de casos cuenta a todos los contactados/)
-    expect(texto).toMatch(/en «Monto retenido» cuenta solo a los contactados ya verificados, los que cumplieron los 30 días/)
-    // Sesgo de la precision por la gestion.
-    expect(texto).toMatch(/la precisión puede salir más baja que la real/)
-    expect(texto).toMatch(/contactar a los socios hace que algunos que se iban a ir terminen renovando/)
-    // No miden causa.
-    expect(texto).toMatch(/describen lo que ocurrió y no prueban que el sistema cause la renovación/)
+    expect(texto).toMatch(/25 primeros socios/)
+    for (const palabra of [
+      '«¿Cuántos contactamos y cuántos renovaron?»',
+      '«Lista del mes»',
+      '«Los contactamos»',
+      '«Renovaron»',
+      '«Por confirmar»',
+      '«¿Con cuánta anticipación?»',
+    ]) {
+      expect(texto).toContain(palabra)
+    }
+    expect(texto).toMatch(/cuántos días antes del vencimiento se llamó/)
+    expect(texto).toMatch(/30 días después de su vencimiento/)
+    // Despues de la explicacion, las mismas definiciones exactas que "¿Cómo se calcula?".
+    expect(texto.indexOf('«¿Con cuánta anticipación?»')).toBeLessThan(
+      texto.indexOf('Cómo se calcula cada cifra'),
+    )
+    expect(texto).toMatch(/Renovación de los contactados: contactados que renovaron ÷ contactados ya verificados/)
+    expect(texto).toMatch(/«n» es el número de socios/)
+    // Cambio del usuario: sin el grafico «¿La lista acertó?» ni su precision.
+    expect(texto).not.toMatch(/¿La lista acertó\?|Estaba por irse|precisi[oó]n/)
+    expect(texto).toMatch(/dos gráficos/)
+    expect(texto).toMatch(/no prueban que la llamada cause la renovación/)
+  })
+
+  it('R-022: la ayuda explica la escala, «Vence», el promedio, el conteo, el rango y los tramos', async () => {
+    const { dialogo } = await abrir()
+    const texto = textoDeLaSeccion(dialogo, '¿Cómo le fue a la lista del mes?')
+    const explicacion = texto.slice(0, texto.indexOf('Cómo se calcula cada cifra'))
+
+    for (const palabra of [
+      '«30 días»',
+      '«15 días»',
+      '«7 días»',
+      '«Vence»',
+      '«Promedio»',
+      'antes del vencimiento',
+      'el mismo día o después',
+      'más temprana',
+      'más tardía',
+      '«15 días o más antes»',
+      '«Entre 8 y 14 días antes»',
+      '«Entre 1 y 7 días antes»',
+      '«El mismo día o después»',
+    ]) {
+      expect(explicacion).toContain(palabra)
+    }
+  })
+
+  it('R-022: las definiciones dan la mas temprana, la mas tardia y los limites de los tramos', () => {
+    render(<DefinicionesPiloto />)
+    const texto = (document.body.textContent ?? '').replace(/\s+/g, ' ')
+
+    expect(texto).toMatch(
+      /La llamada más temprana es la de mayor \(fecha de vencimiento − fecha del contacto\) y la más tardía, la de menor/,
+    )
+    expect(texto).toMatch(/15 días o más \(≥ 15\)/)
+    expect(texto).toMatch(/entre 8 y 14 días \(8–14\)/)
+    expect(texto).toMatch(/entre 1 y 7 días \(1–7\)/)
+    expect(texto).toMatch(/el mismo día o después \(≤ 0\)/)
+    expect(texto).toMatch(/los mismos socios que el promedio/)
+  })
+
+  it('R-022: sin "al menos una semana" ni palabras tecnicas en la ayuda ni en las definiciones', async () => {
+    const { dialogo } = await abrir()
+    const textos = [dialogo.textContent ?? '']
+    cleanup()
+    render(<DefinicionesPiloto />)
+    textos.push(document.body.textContent ?? '')
+
+    for (const texto of textos) {
+      expect(texto).not.toMatch(/al menos una semana/i)
+      for (const prohibida of ['API', 'endpoint', 'null', 'COMPLETO', 'PARCIAL', 'PENDIENTE', 'SIN_DATOS']) {
+        expect(texto).not.toContain(prohibida)
+      }
+    }
+  })
+
+  it('sin dinero: ni la ayuda ni las definiciones mencionan monto, cobro, facturado, $ ni USD', async () => {
+    const { dialogo } = await abrir()
+    expect(dialogo.textContent ?? '').not.toMatch(/monto|cobr|factur|\$|USD/i)
+
+    cleanup()
+    render(<DefinicionesPiloto />)
+    expect(document.body.textContent ?? '').not.toMatch(/monto|cobr|factur|\$|USD/i)
   })
 
   it('"El filtro por mes": se cuentan las gestiones creadas en ese mes', async () => {

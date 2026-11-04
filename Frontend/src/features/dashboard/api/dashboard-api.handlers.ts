@@ -36,7 +36,14 @@ const PILOTOS: Record<string, unknown> = {
       pendientes: 0,
       estado: 'COMPLETO',
     },
-    dias_anticipacion: { valor: '6.2', n: 20, estado: 'COMPLETO' },
+    dias_anticipacion: {
+      valor: '6.2',
+      n: 20,
+      estado: 'COMPLETO',
+      minimo: 1,
+      maximo: 18,
+      tramos: { quince_o_mas: 4, de_ocho_a_catorce: 6, de_uno_a_siete: 10, mismo_dia_o_despues: 0 },
+    },
     tasa_renovacion_contactados: {
       valor: '0.45000000',
       numerador: 9,
@@ -76,7 +83,14 @@ const PILOTOS: Record<string, unknown> = {
       pendientes: 0,
       estado: 'COMPLETO',
     },
-    dias_anticipacion: { valor: '4.5', n: 19, estado: 'COMPLETO' },
+    dias_anticipacion: {
+      valor: '4.5',
+      n: 19,
+      estado: 'COMPLETO',
+      minimo: -1,
+      maximo: 16,
+      tramos: { quince_o_mas: 1, de_ocho_a_catorce: 4, de_uno_a_siete: 13, mismo_dia_o_despues: 1 },
+    },
     tasa_renovacion_contactados: {
       valor: '0.41176471',
       numerador: 7,
@@ -116,7 +130,14 @@ const PILOTOS: Record<string, unknown> = {
       pendientes: 0,
       estado: 'COMPLETO',
     },
-    dias_anticipacion: { valor: '3.0', n: 8, estado: 'COMPLETO' },
+    dias_anticipacion: {
+      valor: '3.0',
+      n: 8,
+      estado: 'COMPLETO',
+      minimo: 1,
+      maximo: 8,
+      tramos: { quince_o_mas: 0, de_ocho_a_catorce: 2, de_uno_a_siete: 6, mismo_dia_o_despues: 0 },
+    },
     tasa_renovacion_contactados: {
       valor: null,
       numerador: 0,
@@ -145,7 +166,14 @@ const PILOTO_SIN_DATOS = {
   sin_dato: 0,
   precision_top25: SIN_DATOS,
   contactados_antes_vencimiento: SIN_DATOS,
-  dias_anticipacion: { valor: null, n: 0, estado: 'SIN_DATOS' },
+  dias_anticipacion: {
+    valor: null,
+    n: 0,
+    estado: 'SIN_DATOS',
+    minimo: null,
+    maximo: null,
+    tramos: { quince_o_mas: 0, de_ocho_a_catorce: 0, de_uno_a_siete: 0, mismo_dia_o_despues: 0 },
+  },
   tasa_renovacion_contactados: SIN_DATOS,
   monto_retenido: {
     total: null,

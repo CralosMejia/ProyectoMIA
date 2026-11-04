@@ -1,9 +1,10 @@
 """Datos sinteticos confirmados en ``app_db_test`` para las pruebas de API de listas.
 
 Sustituye a la migracion sintetica de T12 (en curso por otro developer): siembra una carga,
-30 socios con historial, un modelo v1 real (``RandomForestPredictor`` entrenado con filas
-sinteticas) y el estado ``COMPLETADA``. Cada prueba trunca las tablas al empezar y al
-terminar (la base se llama ``*_test``, lo garantiza ``test_database_url``).
+30 socios con historial, un modelo v1 real (``PredictorAdoptado``, Regresion Logistica,
+entrenado con filas sinteticas; ``base_migrada_rf`` siembra un v1 Random Forest heredado) y el
+estado ``COMPLETADA``. Cada prueba trunca las tablas al empezar y al terminar (la base se llama
+``*_test``, lo garantiza ``test_database_url``).
 Datos 100 % sinteticos: ningun nombre, celular ni correo real.
 
 ``fijar_reloj_api`` sobrescribe ``get_clock`` con un reloj fijo el 2026-08-31 (tambien en
@@ -29,8 +30,9 @@ from app.domain.common.enums import (
     Plan,
     TipoCarga,
 )
-from app.domain.common.predictor import FeatureRow
+from app.domain.common.predictor import FeatureRow, PredictorModel
 from app.domain.modelo.variables import VARIABLES_CATEGORICAS, VARIABLES_NUMERICAS
+from app.infrastructure.ml.predictor_adoptado import PredictorAdoptado
 from app.infrastructure.ml.random_forest import RandomForestPredictor
 from app.infrastructure.persistence.repositories.historial import (
     SqlAlchemyCargaRepository,
@@ -105,9 +107,14 @@ def _filas_entrenamiento() -> tuple[list[FeatureRow], list[int]]:
     return filas, etiquetas
 
 
-def nuevo_modelo(version: int, alto: str = "0.60000000", medio: str = "0.40000000") -> NuevoModelo:
+def nuevo_modelo(
+    version: int,
+    alto: str = "0.60000000",
+    medio: str = "0.40000000",
+    predictor: PredictorModel | None = None,
+) -> NuevoModelo:
     filas, etiquetas = _filas_entrenamiento()
-    entrenado = RandomForestPredictor().train(
+    entrenado = (predictor if predictor is not None else PredictorAdoptado()).train(
         filas, etiquetas, VARIABLES_NUMERICAS, VARIABLES_CATEGORICAS
     )
     return NuevoModelo(
@@ -128,7 +135,7 @@ def nuevo_modelo(version: int, alto: str = "0.60000000", medio: str = "0.4000000
     )
 
 
-def sembrar(engine: Engine) -> None:
+def sembrar(engine: Engine, predictor_v1: PredictorModel | None = None) -> None:
     reloj = RelojFijo()
     with Session(engine) as session, session.begin():
         carga_id = SqlAlchemyCargaRepository(session, reloj).crear(
@@ -182,7 +189,7 @@ def sembrar(engine: Engine) -> None:
             agregar(i, inicio, inicio + timedelta(days=30))  # vence 09-01..09-25
         agregar(0, date(2026, 8, 28), date(2026, 11, 28), Plan.TRIMESTRAL)  # ya renovo
         SqlAlchemyMembresiaRepository(session, reloj).insertar_en_bloque(membresias)
-        SqlAlchemyModeloRepository(session, reloj).crear(nuevo_modelo(1))
+        SqlAlchemyModeloRepository(session, reloj).crear(nuevo_modelo(1, predictor=predictor_v1))
         SqlAlchemyEstadoSistemaRepository(session, reloj).fijar_migracion(
             EstadoMigracion.COMPLETADA
         )
@@ -208,4 +215,11 @@ def base_limpia(migrated_engine: Engine) -> Iterator[Engine]:
 @pytest.fixture
 def base_migrada(base_limpia: Engine) -> Engine:
     sembrar(base_limpia)
+    return base_limpia
+
+
+@pytest.fixture
+def base_migrada_rf(base_limpia: Engine) -> Engine:
+    """Como ``base_migrada`` pero con un v1 Random Forest heredado (artefacto formato 1)."""
+    sembrar(base_limpia, predictor_v1=RandomForestPredictor())
     return base_limpia

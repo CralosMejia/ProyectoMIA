@@ -56,6 +56,10 @@ def _referencia(res: script.ResultadoApp) -> script.Referencia:
         medianas=dict(res.medianas),
         referencia_factores=dict(res.referencia_factores),
         metodo_factores=res.metodo_factores,
+        algoritmo=res.algoritmo,
+        hiperparametros=dict(res.hiperparametros),
+        umbral_alto=res.umbral_alto,
+        umbral_medio=res.umbral_medio,
         lista=tuple(
             script.FilaReferencia(f.codigo, f.score, f.nivel, f.factores) for f in res.filas
         ),
@@ -150,7 +154,11 @@ def _escribir_salidas(carpeta: Path) -> None:
         "ciclos_entrenamiento_operativo": 1564,
         "medianas_monto_operativo": {"por_plan": {"ANUAL": 237.5, "MENSUAL": 39.0}, "general": 39},
         "referencia_factores": {"ciclos_previos": 0.0, "plan": "MENSUAL"},
-        "metodo_factores": "shap",
+        "metodo_factores": "shap_lineal",
+        "algoritmo": "LogisticRegression",
+        "hiperparametros": {"class_weight": "balanced", "max_iter": 2000, "random_state": 42},
+        "umbral_alto": 0.7,
+        "umbral_medio": 0.5,
         "cartera_septiembre": {
             "Ciclos que vencen entre el 01-09-2026 y el 30-09-2026": 59,
             "ya registraron una membresía posterior (renovación anticipada)": 2,
@@ -213,7 +221,10 @@ def test_cargar_referencia_lee_parametros_y_lista_completa(tmp_path: Path) -> No
         "general": Decimal("39"),
     }
     assert ref.referencia_factores == {"ciclos_previos": 0.0, "plan": "MENSUAL"}
-    assert ref.metodo_factores == "shap"
+    assert ref.metodo_factores == "shap_lineal"
+    assert ref.algoritmo == "LogisticRegression"
+    assert ref.hiperparametros == {"class_weight": "balanced", "max_iter": 2000, "random_state": 42}
+    assert (ref.umbral_alto, ref.umbral_medio) == (Decimal("0.7"), Decimal("0.5"))
     assert ref.lista == (
         script.FilaReferencia(
             "MTB-AAAAAAAA", Decimal("0.71019972"), "ALTO", ("Plan: ANUAL (+0,04)",)
@@ -391,7 +402,8 @@ def test_main_con_una_probabilidad_distinta_sale_con_uno(resultado: script.Resul
 
 def test_main_con_nivel_o_factores_distintos_sale_con_uno(resultado: script.ResultadoApp) -> None:
     ref = _referencia(resultado)
-    otra = replace(ref.lista[0], nivel="ALTO", factores=("Plan: OTRO (+0,50)",))
+    distinto = "BAJO" if ref.lista[0].nivel != "BAJO" else "ALTO"
+    otra = replace(ref.lista[0], nivel=distinto, factores=("Plan: OTRO (+0,50)",))
     ref = replace(ref, lista=(otra, *ref.lista[1:]))
 
     codigo, texto = _ejecutar(ref)
@@ -460,11 +472,33 @@ def test_main_con_referencia_de_factores_distinta_es_informativo(
 
 
 def test_main_informa_el_metodo_de_los_motivos(resultado: script.ResultadoApp) -> None:
-    assert resultado.metodo_factores == "shap"
+    assert resultado.metodo_factores == "shap_lineal"
 
-    _, texto = _ejecutar(replace(_referencia(resultado), metodo_factores="shap"))
+    _, texto = _ejecutar(replace(_referencia(resultado), metodo_factores="shap_lineal"))
 
-    assert "metodo de los motivos: notebook shap | app shap" in texto
+    assert "metodo de los motivos: notebook shap_lineal | app shap_lineal" in texto
+
+
+def test_ejecutar_en_memoria_entrena_la_regresion_logistica(resultado: script.ResultadoApp) -> None:
+    assert resultado.algoritmo == "LogisticRegression"
+    assert resultado.hiperparametros == {
+        "class_weight": "balanced",
+        "max_iter": 2000,
+        "random_state": 42,
+    }
+
+
+def test_main_con_salidas_del_random_forest_cuenta_el_metodo_y_el_algoritmo(
+    resultado: script.ResultadoApp,
+) -> None:
+    # Salidas del notebook v2 (Random Forest, motivos con TreeExplainer): no son comparables.
+    ref = replace(_referencia(resultado), metodo_factores="shap", algoritmo=None)
+
+    codigo, texto = _ejecutar(ref)
+
+    assert codigo == 1
+    assert "metodo_factores 1" in texto
+    assert "algoritmo 1" in texto
 
 
 def test_main_con_metodo_de_motivos_distinto_sale_con_uno(
@@ -477,7 +511,9 @@ def test_main_con_metodo_de_motivos_distinto_sale_con_uno(
     assert "metodo_factores 1" in texto
 
 
-@pytest.mark.parametrize("apartado", ["variables", "medianas"])
+@pytest.mark.parametrize(
+    "apartado", ["variables", "medianas", "algoritmo", "hiperparametros", "cortes"]
+)
 def test_main_con_el_modelo_distinto_sale_con_uno(
     resultado: script.ResultadoApp, apartado: str
 ) -> None:
@@ -485,6 +521,9 @@ def test_main_con_el_modelo_distinto_sale_con_uno(
     cambios: dict[str, object] = {
         "variables": {"variables": (ref.variables[0], ("plan", "forma_pago"))},
         "medianas": {"medianas": {**ref.medianas, "general": Decimal("999")}},
+        "algoritmo": {"algoritmo": "RandomForestClassifier"},
+        "hiperparametros": {"hiperparametros": {**ref.hiperparametros, "max_iter": 100}},
+        "cortes": {"umbral_alto": Decimal("0.75")},
     }[apartado]
     assert isinstance(cambios, dict)
 
@@ -506,10 +545,15 @@ def test_main_socio_ausente_de_la_lista_sale_con_uno(resultado: script.Resultado
 
 
 def test_main_empates_en_otro_orden_se_comparan_como_conjunto(
-    resultado: script.ResultadoApp,
+    resultado: script.ResultadoApp, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    ref = _referencia(resultado)
-    assert ref.lista[0].probabilidad == ref.lista[1].probabilidad  # los sinteticos empatan
+    # Con la Regresion Logistica los sinteticos no empatan (con el Random Forest si): la app
+    # devuelve sus dos primeras filas con la misma probabilidad.
+    primera, segunda, *resto = resultado.filas
+    empatada = replace(resultado, filas=(primera, replace(segunda, score=primera.score), *resto))
+    monkeypatch.setattr(script, "ejecutar_en_memoria", lambda *_: empatada)
+    ref = _referencia(empatada)
+    assert ref.lista[0].probabilidad == ref.lista[1].probabilidad
     ref = replace(ref, lista=(ref.lista[1], ref.lista[0], *ref.lista[2:]))
 
     codigo, _ = _ejecutar(ref)

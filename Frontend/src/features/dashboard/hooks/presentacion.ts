@@ -1,4 +1,4 @@
-import type { ResultadoCampania } from '../types'
+import type { EstadoIndicador, IndicadoresPiloto, ResultadoCampania } from '../types'
 
 /** Cifras del grafico "Resultado de las gestiones del mes" (decision (b) de R-012). */
 export interface ResumenResultados {
@@ -132,4 +132,295 @@ export function montoUsd(texto: string): string {
   if (!r) return texto
   const miles = r.entero.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
   return `${r.negativo ? '-' : ''}$${miles},${r.fraccion}`
+}
+
+/** Porcentaje entero 0..100 de `parte` sobre `total` (redondeo a la mitad hacia arriba); total 0 → 0. */
+function anchoSobre(parte: number, total: number): number {
+  if (total <= 0 || parte <= 0) return 0
+  return Math.min(100, Math.floor((parte * 200 + total) / (2 * total)))
+}
+
+export interface EtapaListaDelMes {
+  etapa: 'Lista del mes'
+  numero: number
+  /** Ancho de la barra, entero 0..100 sobre `nTop`. */
+  ancho: number
+}
+
+export interface EtapaContactamos {
+  etapa: 'Los contactamos'
+  numero: number
+  ancho: number
+  /** Cuantos de los contactados se llamaron antes del vencimiento. */
+  antesVencimiento: number
+}
+
+export interface EtapaRenovaron {
+  etapa: 'Renovaron'
+  numero: number
+  ancho: number
+  /** Contactados cuyo resultado aun no se conoce (tramo rayado). */
+  porConfirmar: number
+  anchoPorConfirmar: number
+  /** Porcentaje sobre los contactados ya confirmados ("41,2 %"); null sin cifra. */
+  porcentaje: string | null
+}
+
+export type EmbudoPiloto = [EtapaListaDelMes, EtapaContactamos, EtapaRenovaron]
+
+/**
+ * Embudo del piloto (R-021, definicion (a)): Lista del mes = nTop; Los contactamos = n de la
+ * renovacion de los contactados; Renovaron = su numerador, con los pendientes "por confirmar".
+ */
+export function embudoPiloto(piloto: IndicadoresPiloto): EmbudoPiloto {
+  const { nTop, tasaRenovacionContactados: tasa } = piloto
+  return [
+    { etapa: 'Lista del mes', numero: nTop, ancho: anchoSobre(nTop, nTop) },
+    {
+      etapa: 'Los contactamos',
+      numero: tasa.n,
+      ancho: anchoSobre(tasa.n, nTop),
+      antesVencimiento: piloto.contactadosAntesVencimiento.numerador,
+    },
+    {
+      etapa: 'Renovaron',
+      numero: tasa.numerador,
+      ancho: anchoSobre(tasa.numerador, nTop),
+      porConfirmar: tasa.pendientes,
+      anchoPorConfirmar: anchoSobre(tasa.pendientes, nTop),
+      porcentaje: tasa.valor === null ? null : porcentajeDecimal(tasa.valor),
+    },
+  ]
+}
+
+/** Estado en lenguaje simple (R-021, definicion (b)); nunca el nombre interno. */
+export function textoEstadoPiloto(estado: EstadoIndicador, pendientes: number): string {
+  switch (estado) {
+    case 'COMPLETO':
+      return 'Resultado final'
+    case 'PARCIAL':
+      return pendientes === 1
+        ? 'Falta 1 socio por confirmar: lo sabremos 30 días después de su vencimiento'
+        : `Faltan ${pendientes} socios por confirmar: lo sabremos 30 días después de su vencimiento`
+    case 'PENDIENTE':
+      return 'Todavía es pronto: el resultado se conoce 30 días después del vencimiento'
+    case 'SIN_DATOS':
+      return 'Sin datos este mes'
+  }
+}
+
+export interface AnticipacionPiloto {
+  /** "9,5 días antes del vencimiento" / "… después …" / "el mismo día …" / sin llamadas. */
+  texto: string
+  /** Frase completa para pantalla: "En promedio, llamamos …". */
+  frase: string
+  momento: 'antes' | 'despues' | 'mismoDia' | null
+  /** Posicion 0..100 de la marca "Llamada"; null sin llamadas. */
+  posicionLlamada: number | null
+  /** Posicion 0..100 de la marca "Vencimiento" (100 si la llamada va antes; 0 si va despues). */
+  posicionVencimiento: number
+}
+
+const SIN_LLAMADAS = 'Todavía no hay llamadas registradas'
+/** Escala minima de la linea de tiempo, en decimas de dia (30 dias). */
+const ESCALA_MINIMA_DECIMAS = 300
+
+/**
+ * Linea de tiempo de "¿Con cuánta anticipación?" (R-021, definicion (a)). Todo con decimas de
+ * dia enteras sacadas de los digitos del decimal (sin coma flotante); el texto, con coma.
+ */
+export function anticipacionPiloto(dias: string | null): AnticipacionPiloto {
+  const r = dias === null ? null : redondear(dias, 1)
+  if (r === null) {
+    return {
+      texto: SIN_LLAMADAS,
+      frase: SIN_LLAMADAS,
+      momento: null,
+      posicionLlamada: null,
+      posicionVencimiento: 100,
+    }
+  }
+  const decimas = Number.parseInt(`${r.entero}${r.fraccion}`, 10)
+  // Texto visible: decimalConComa sobre el valor absoluto (el sentido lo dice "antes"/"después").
+  const cifra = decimalConComa((dias ?? '').trim().replace(/^-/, ''))
+  const escala = Math.max(ESCALA_MINIMA_DECIMAS, decimas)
+  const distancia = anchoSobre(decimas, escala)
+  let texto: string
+  let momento: AnticipacionPiloto['momento']
+  let posicionLlamada: number
+  let posicionVencimiento: number
+  if (decimas === 0) {
+    texto = 'el mismo día del vencimiento'
+    momento = 'mismoDia'
+    posicionLlamada = 100
+    posicionVencimiento = 100
+  } else if (r.negativo) {
+    texto = `${cifra} días después del vencimiento`
+    momento = 'despues'
+    posicionLlamada = distancia
+    posicionVencimiento = 0
+  } else {
+    texto = `${cifra} días antes del vencimiento`
+    momento = 'antes'
+    posicionLlamada = 100 - distancia
+    posicionVencimiento = 100
+  }
+  return {
+    texto,
+    frase: `En promedio, llamamos ${texto}`,
+    momento,
+    posicionLlamada,
+    posicionVencimiento,
+  }
+}
+
+/** Marca de la escala en dias de "¿Con cuánta anticipación?"; `posicion` entera 0..100. */
+export interface MarcaEscala {
+  etiqueta: string
+  posicion: number
+  /** La marca del dia del vencimiento ("Vence"). */
+  vence: boolean
+}
+
+export interface TramoAnticipacionTexto {
+  etiqueta: string
+  numero: number
+  /** Ancho de la barra, entero 0..100 sobre los llamados con fecha. */
+  ancho: number
+}
+
+export interface DetalleAnticipacion {
+  /** "30 días", "15 días", "7 días" (las que no se solapan) y "Vence". */
+  marcas: MarcaEscala[]
+  /** "Promedio: 4,5 días antes"; null sin llamadas. */
+  etiquetaPromedio: string | null
+  /** Posicion 0..100 del promedio en la misma escala; null sin llamadas. */
+  posicionPromedio: number | null
+  antes: number
+  mismoDiaODespues: number
+  /** "15 socios se llamaron antes del vencimiento y 4 el mismo día o después"; null sin llamadas. */
+  fraseConteo: string | null
+  /** La mas temprana y la mas tardia; null sin rango (sin llamadas o backend anterior). */
+  fraseRango: string | null
+  /** Los cuatro tramos; null si el backend no los envia. */
+  tramos: TramoAnticipacionTexto[] | null
+  lectura: string
+  /** Promedio, conteo y rango en una sola frase (para lectores de pantalla). */
+  resumen: string
+}
+
+export const LECTURA_ANTICIPACION =
+  'Solo cuentan como «antes del vencimiento» las llamadas hechas antes del día en que vence la membresía.'
+
+const MARCAS_DIAS = [30, 15, 7] as const
+/** Separacion minima (puntos de 0..100) entre marcas para que sus etiquetas no se solapen. */
+const SEPARACION_MINIMA = 16
+
+function dias(cantidad: number): string {
+  return `${cantidad} ${cantidad === 1 ? 'día' : 'días'}`
+}
+
+/** Dias antes del vencimiento (puede ser <= 0) en palabras; `completo` añade "del vencimiento". */
+function momentoEnDias(d: number, completo: boolean): string {
+  if (d === 0) return completo ? 'el mismo día del vencimiento' : 'el mismo día'
+  const sentido = d > 0 ? 'antes' : 'después'
+  return `${dias(Math.abs(d))} ${sentido}${completo ? ' del vencimiento' : ''}`
+}
+
+function fraseRango(minimo: number | null, maximo: number | null, n: number): string | null {
+  if (minimo === null || maximo === null) return null
+  if (minimo === maximo) {
+    const sujeto = n === 1 ? 'La única llamada fue' : 'Todas las llamadas fueron'
+    return `${sujeto} ${momentoEnDias(maximo, true)}`
+  }
+  return `La llamada más temprana fue ${momentoEnDias(maximo, true)} y la más tardía, ${momentoEnDias(minimo, false)}`
+}
+
+/** Decimas de dia (enteras) de un decimal en texto; null si no es decimal. */
+function decimasDe(texto: string | null): number | null {
+  const r = texto === null ? null : redondear(texto, 1)
+  if (r === null) return null
+  const decimas = Number.parseInt(`${r.entero}${r.fraccion}`, 10)
+  return r.negativo ? -decimas : decimas
+}
+
+/** Dias enteros que cubren `decimas` hacia arriba (sin coma flotante). */
+function diasHaciaArriba(decimas: number): number {
+  return decimas <= 0 ? 0 : Math.trunc((decimas + 9) / 10)
+}
+
+/**
+ * Detalle de "¿Con cuánta anticipación?" (R-022, definiciones (b) y (c)). Escala en dias: a la
+ * izquierda `max(30, maximo)` dias antes, a la derecha del vencimiento `|minimo|` dias despues si
+ * hubo llamadas tarde; posiciones enteras con `anchoSobre`. Antes = llamados antes del
+ * vencimiento; el resto de los llamados con fecha, el mismo dia o despues.
+ */
+export function detalleAnticipacion(piloto: IndicadoresPiloto): DetalleAnticipacion {
+  const { diasAnticipacion: d } = piloto
+  const decimas = decimasDe(d.valor)
+  const antes = piloto.contactadosAntesVencimiento.numerador
+  const mismoDiaODespues = Math.max(0, d.n - antes)
+
+  const izquierda = Math.max(30, d.maximo ?? 0, diasHaciaArriba(decimas ?? 0))
+  const derecha = Math.max(0, -(d.minimo ?? 0), diasHaciaArriba(-(decimas ?? 0)))
+  const total = izquierda + derecha
+  const posicion = (diasAntes: number) => anchoSobre(izquierda - diasAntes, total)
+  const posicionVence = posicion(0)
+
+  const marcas: MarcaEscala[] = []
+  for (const dia of MARCAS_DIAS) {
+    const lugar = posicion(dia)
+    const anterior = marcas.at(-1)
+    const libre =
+      (anterior === undefined || lugar - anterior.posicion >= SEPARACION_MINIMA) &&
+      posicionVence - lugar >= SEPARACION_MINIMA
+    if (libre) marcas.push({ etiqueta: dias(dia), posicion: lugar, vence: false })
+  }
+  marcas.push({ etiqueta: 'Vence', posicion: posicionVence, vence: true })
+
+  let etiquetaPromedio: string | null = null
+  let posicionPromedio: number | null = null
+  if (decimas !== null) {
+    const cifra = decimalConComa((d.valor ?? '').trim().replace(/^-/, ''))
+    etiquetaPromedio =
+      decimas === 0
+        ? 'Promedio: el mismo día'
+        : `Promedio: ${cifra} días ${decimas > 0 ? 'antes' : 'después'}`
+    posicionPromedio = anchoSobre(izquierda * 10 - decimas, total * 10)
+  }
+
+  const conteo =
+    d.n > 0
+      ? `${antes} ${antes === 1 ? 'socio se llamó' : 'socios se llamaron'} antes del vencimiento y ${mismoDiaODespues} el mismo día o después`
+      : null
+  const rango = d.n > 0 ? fraseRango(d.minimo, d.maximo, d.n) : null
+
+  const t = d.tramos
+  const tramos =
+    t === null
+      ? null
+      : [
+          { etiqueta: '15 días o más antes', numero: t.quinceOMas },
+          { etiqueta: 'Entre 8 y 14 días antes', numero: t.deOchoACatorce },
+          { etiqueta: 'Entre 1 y 7 días antes', numero: t.deUnoASiete },
+          { etiqueta: 'El mismo día o después', numero: t.mismoDiaODespues },
+        ].map((tramo) => ({ ...tramo, ancho: anchoSobre(tramo.numero, d.n) }))
+
+  const resumen = [anticipacionPiloto(d.valor).frase, conteo, rango]
+    .filter((parte): parte is string => parte !== null)
+    .map((parte) => `${parte}.`)
+    .join(' ')
+
+  return {
+    marcas,
+    etiquetaPromedio,
+    posicionPromedio,
+    antes,
+    mismoDiaODespues,
+    fraseConteo: conteo,
+    fraseRango: rango,
+    tramos,
+    lectura: LECTURA_ANTICIPACION,
+    resumen,
+  }
 }

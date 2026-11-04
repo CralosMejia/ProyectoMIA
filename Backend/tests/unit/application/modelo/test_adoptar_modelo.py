@@ -117,7 +117,7 @@ def test_ejecutar_sistema_listo_crea_version_siguiente_vigente_y_conserva_la_ant
     (intento,) = almacen.intentos
     assert intento.disparador is DisparadorReentrenamiento.MANUAL
     assert intento.resultado is ResultadoReentrenamiento.ENTRENADO
-    assert intento.motivo == MOTIVO_ADOPCION == "Adopción del modelo M01"
+    assert intento.motivo == MOTIVO_ADOPCION == "Adopción del modelo de Regresión Logística (M06)"
     assert intento.modelo_id == almacen.vigente.id
     assert intento.fecha == AHORA
     assert intento.fecha_programada is None
@@ -300,7 +300,7 @@ def test_ejecutar_logs_y_resultado_solo_con_cifras_del_modelo(
         resultado = servicio.ejecutar()
 
     assert caplog.messages == ["adopcion: version 2 en uso (ciclos=20); la version 1 se conserva"]
-    assert resultado.motivo == "v2 en uso (Adopción del modelo M01)."
+    assert resultado.motivo == "v2 en uso (Adopción del modelo de Regresión Logística (M06))."
 
 
 def test_ejecutar_no_modifica_al_vigente_anterior() -> None:

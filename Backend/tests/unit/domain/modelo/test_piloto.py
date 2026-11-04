@@ -15,7 +15,9 @@ from app.domain.modelo.piloto import (
     CasoPiloto,
     EstadoIndicador,
     EstadoVerificacion,
+    IndicadorDias,
     MontoMembresia,
+    TramosAnticipacion,
     Verificacion,
     calcular_indicadores,
     verificar_renovacion,
@@ -366,3 +368,65 @@ def test_calcular_indicadores_sin_casos_todo_sin_datos() -> None:
         None,
         EstadoIndicador.SIN_DATOS,
     )
+
+
+# ---------------------------------------------------------------- rango y tramos (R-022)
+
+
+def test_calcular_indicadores_rango_y_tramos_de_la_anticipacion() -> None:
+    dias = [20, 15, 14, 8, 7, 1, 0, -3]
+    casos = [_caso(i, contactado=True, dias_antes=d) for i, d in enumerate(dias)]
+    resultados = {i: Verificacion(_R.PENDIENTE) for i in range(len(dias))}
+
+    ind = calcular_indicadores(casos, resultados, {})
+
+    d = ind.dias_anticipacion
+    assert (d.minimo, d.maximo, d.n) == (-3, 20, 8)
+    assert d.tramos == TramosAnticipacion(
+        quince_o_mas=2, de_ocho_a_catorce=2, de_uno_a_siete=2, mismo_dia_o_despues=2
+    )
+    t = d.tramos
+    assert t.quince_o_mas + t.de_ocho_a_catorce + t.de_uno_a_siete + t.mismo_dia_o_despues == d.n
+    antes = t.quince_o_mas + t.de_ocho_a_catorce + t.de_uno_a_siete
+    assert antes == ind.contactados_antes_vencimiento.numerador == 6
+
+
+def test_calcular_indicadores_sin_contactados_con_fecha_rango_nulo_y_tramos_en_cero() -> None:
+    casos = [_caso(0), _caso(1, contactado=True)]
+    resultados = {0: Verificacion(_R.NO_RENOVO), 1: Verificacion(_R.RENOVO, 5)}
+
+    ind = calcular_indicadores(casos, resultados, {})
+
+    d = ind.dias_anticipacion
+    assert (d.minimo, d.maximo, d.valor, d.n) == (None, None, None, 0)
+    assert d.estado is EstadoIndicador.SIN_DATOS
+    assert d.tramos == TramosAnticipacion(0, 0, 0, 0)
+
+
+def test_calcular_indicadores_sin_fecha_o_sin_dato_fuera_de_rango_y_tramos() -> None:
+    casos = [
+        _caso(0, contactado=True, dias_antes=5),
+        _caso(1, contactado=True),  # sin fecha de contacto
+        _caso(2, contactado=True, dias_antes=40),  # sin dato (resultado ausente)
+        _caso(3, contactado=True, dias_antes=-9),  # sin dato (SIN_DATO)
+        _caso(4, contactado=False, dias_antes=30),  # no contactado
+    ]
+    resultados = {
+        0: Verificacion(_R.PENDIENTE),
+        1: Verificacion(_R.PENDIENTE),
+        3: Verificacion(_R.SIN_DATO),
+        4: Verificacion(_R.PENDIENTE),
+    }
+
+    ind = calcular_indicadores(casos, resultados, {})
+
+    d = ind.dias_anticipacion
+    assert (d.minimo, d.maximo, d.n) == (5, 5, 1)
+    assert d.tramos == TramosAnticipacion(0, 0, 1, 0)
+
+
+def test_indicador_dias_rango_y_tramos_tienen_valores_por_defecto() -> None:
+    d = IndicadorDias(valor=None, n=0, estado=EstadoIndicador.SIN_DATOS)
+
+    assert (d.minimo, d.maximo) == (None, None)
+    assert d.tramos == TramosAnticipacion(0, 0, 0, 0)

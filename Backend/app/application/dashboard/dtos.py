@@ -86,14 +86,32 @@ class IndicadorProporcionDTO(BaseModel):
         return _decimal_fijo(valor)
 
 
+class TramosAnticipacionDTO(BaseModel):
+    """Llamados por dias antes del vencimiento: ``>= 15``, ``8-14``, ``1-7`` y ``<= 0``."""
+
+    model_config = ConfigDict(frozen=True, from_attributes=True)
+
+    quince_o_mas: int = Field(default=0, ge=0)
+    de_ocho_a_catorce: int = Field(default=0, ge=0)
+    de_uno_a_siete: int = Field(default=0, ge=0)
+    mismo_dia_o_despues: int = Field(default=0, ge=0)
+
+
 class IndicadorDiasDTO(BaseModel):
-    """Promedio de dias entre el contacto y el vencimiento (1 decimal; puede ser <= 0)."""
+    """Promedio de dias entre el contacto y el vencimiento (1 decimal; puede ser <= 0).
+
+    ``minimo``/``maximo`` = llamada mas tardia y mas temprana en dias (nulos si ``n = 0``);
+    la suma de ``tramos`` es ``n`` (R-022, aditivo).
+    """
 
     model_config = ConfigDict(frozen=True)
 
     valor: Decimal | None = None
     n: int = Field(ge=0)
     estado: EstadoIndicador
+    minimo: int | None = None
+    maximo: int | None = None
+    tramos: TramosAnticipacionDTO = Field(default_factory=TramosAnticipacionDTO)
 
     @field_serializer("valor")
     def _serializar_valor(self, valor: Decimal | None) -> str | None:

@@ -3,6 +3,10 @@
 - Cortes fijos del notebook MVP (seccion 13.2), decision del usuario en R-015: ALTO si
   ``score >= 0,70``; MEDIO si ``score >= 0,50``; si no, BAJO. Sustituyen a los percentiles
   20/30/50 sobre los 3 meses recientes (decision (d) de R-004), que dejan de calcularse.
+- M06 (R-020): los mismos cortes se aplican a la Regresion Logistica, el modelo adoptado.
+  Decision del usuario: no se ajustan con validacion (la regla por precision >= 0,90 / >= 0,80
+  no daba un nivel ALTO); el notebook oficial solo describe cada banda en validacion y prueba.
+  Las listas ya guardadas conservan sus umbrales en ``listas``/``modelos``.
 - ``porcentajes`` es informativo: el porcentaje (entero, redondeo bancario) de los scores
   recibidos (los evaluables de los 3 meses de vencimiento mas recientes) que cae en cada
   nivel con esos cortes. Se guarda en ``modelos.porcentajes_umbral`` (misma forma que antes:

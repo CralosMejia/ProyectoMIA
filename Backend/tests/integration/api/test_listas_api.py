@@ -19,18 +19,21 @@ from sqlalchemy import Engine, text
 from app.api.dependencies import get_clock, get_predictor
 from app.application.listas.generar_lista import MENSAJE_FECHA_PASADA
 from app.domain.common.predictor import FeatureRow, Prediction, TrainedModel
+from app.infrastructure.ml.predictor_adoptado import PredictorAdoptado
 from app.infrastructure.ml.random_forest import (
     APORTE_MINIMO,
     MAX_FACTORES,
     NOMBRE_VARIABLE,
-    RandomForestPredictor,
     _a_frame,  # mismo DataFrame que el adaptador, para recalcular SHAP fuera de la API
-    aportes_shap,
-    cargar_artefacto,
     formatear_aporte,
 )
+from app.infrastructure.ml.regresion_logistica import aportes_lineales, cargar_artefacto
 from tests.integration.api.contract_helpers import assert_operation_contract, json_example
-from tests.integration.api.listas_datos import FILAS_ESPERADAS, fijar_reloj_api
+from tests.integration.api.listas_datos import (
+    FILAS_ESPERADAS,
+    crear_modelo_vigente,
+    fijar_reloj_api,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -392,12 +395,12 @@ class PredictorMetodoAnterior:
     def predict(self, artefacto: bytes, features: Sequence[FeatureRow]) -> list[Prediction]:
         return [
             Prediction(score=p.score, factores_principales=MOTIVOS_ANTIGUOS)
-            for p in RandomForestPredictor().predict(artefacto, features)
+            for p in PredictorAdoptado().predict(artefacto, features)
         ]
 
 
 class PredictorEspia:
-    """El adaptador real (SHAP) sin cambios; guarda lo que recibe para recalcular SHAP aparte."""
+    """El predictor real sin cambios; guarda lo que recibe para recalcular SHAP aparte."""
 
     def __init__(self) -> None:
         self.llamadas: list[tuple[bytes, list[FeatureRow]]] = []
@@ -407,16 +410,16 @@ class PredictorEspia:
 
     def predict(self, artefacto: bytes, features: Sequence[FeatureRow]) -> list[Prediction]:
         self.llamadas.append((artefacto, list(features)))
-        return RandomForestPredictor().predict(artefacto, features)
+        return PredictorAdoptado().predict(artefacto, features)
 
 
 def _motivos_shap_esperados(artefacto: bytes, features: Sequence[FeatureRow]) -> Counter[str]:
-    """Regla (e) de R-017 aplicada a mano sobre SHAP: (nombre, aporte) de cada motivo."""
+    """Regla (e) de R-017 a mano sobre SHAP lineal (M06): (nombre, aporte) de cada motivo."""
     modelo = cargar_artefacto(artefacto)
     frame = _a_frame(features, modelo.numericas, modelo.categoricas)
-    aportes = aportes_shap(modelo, frame)
-    probabilidades = modelo.pipeline.predict_proba(frame)[:, 1]
-    assert abs(aportes.valor_base + aportes.valores.sum(axis=1) - probabilidades).max() < 1e-6
+    aportes = aportes_lineales(modelo, frame)
+    decision = modelo.pipeline.decision_function(frame)
+    assert abs(aportes.valor_base + aportes.valores.sum(axis=1) - decision).max() < 1e-9
     candidatas = [v for v in NOMBRE_VARIABLE if v in aportes.variables]
     assert "mes_vencimiento" in aportes.variables  # se explica, pero no es candidata
     esperados: Counter[str] = Counter()
@@ -429,10 +432,10 @@ def _motivos_shap_esperados(artefacto: bytes, features: Sequence[FeatureRow]) ->
     return esperados
 
 
-def test_lista_previa_conserva_sus_motivos_y_la_nueva_sale_con_motivos_shap(
+def test_lista_previa_conserva_sus_motivos_y_la_nueva_sale_con_motivos_shap_lineal(
     contract_app: FastAPI, contract_client: TestClient, base_migrada: Engine
 ) -> None:
-    """R-017 T7: los motivos guardados no se recalculan; una lista nueva los calcula con SHAP."""
+    """R-017 T7 y M06: los motivos guardados no se recalculan; una lista nueva usa SHAP lineal."""
     contract_app.dependency_overrides[get_predictor] = PredictorMetodoAnterior
     try:
         previa = contract_client.post(LISTAS, json=BODY)
@@ -477,7 +480,7 @@ def test_lista_previa_conserva_sus_motivos_y_la_nueva_sale_con_motivos_shap(
         obtenidos.update(f"{p['nombre']} ({p['aporte']})" for p in partes if p)
     assert sum(obtenidos.values()) > 0  # el modelo sintetico da motivos que comparar
 
-    # Los motivos de la lista nueva son los aportes SHAP del modelo vigente (regla (e)).
+    # Los motivos de la lista nueva son los aportes SHAP lineales del modelo vigente (regla (e)).
     assert len(espia.llamadas) == 1
     artefacto, features = espia.llamadas[0]
     assert obtenidos == _motivos_shap_esperados(artefacto, features)
@@ -485,4 +488,35 @@ def test_lista_previa_conserva_sus_motivos_y_la_nueva_sale_con_motivos_shap(
         metodo = conexion.execute(
             text("SELECT metadata_tecnica->>'metodo_factores' FROM modelos WHERE version = 1")
         ).scalar_one()
-    assert metodo == "shap"
+    assert metodo == "shap_lineal"
+
+
+def test_lista_con_modelo_rf_heredado_se_sigue_consultando_y_la_siguiente_usa_rl(
+    contract_client: TestClient, base_migrada_rf: Engine
+) -> None:
+    """R-020 (d): con un v1 Random Forest (formato 1) la lista se genera y se relee igual."""
+    previa = contract_client.post(LISTAS, json=BODY)
+    assert previa.status_code == 201
+    assert len(previa.json()["items"]) == FILAS_ESPERADAS
+    with base_migrada_rf.connect() as conexion:
+        v1 = conexion.execute(
+            text(
+                "SELECT metadata_tecnica->>'algoritmo', metadata_tecnica->>'metodo_factores' "
+                "FROM modelos WHERE version = 1"
+            )
+        ).one()
+    assert tuple(v1) == ("RandomForestClassifier", "shap")
+
+    crear_modelo_vigente(base_migrada_rf, 2)  # v2 Regresion Logistica (formato 2)
+    nueva = contract_client.post(LISTAS, json=BODY)
+
+    releida = contract_client.get(f"{LISTAS}/{previa.json()['id']}")
+    assert releida.status_code == 200
+    assert releida.json() == previa.json()
+    assert releida.json()["modelo_version"] == "v1"
+    assert nueva.status_code == 201
+    assert nueva.json()["modelo_version"] == "v2"
+    assert (nueva.json()["umbral_alto"], nueva.json()["umbral_medio"]) == (
+        "0.01000000",
+        "0.00500000",
+    )

@@ -4,8 +4,8 @@ import { BotonAyuda, SeccionAyuda } from '../../../shared/ui/Ayuda'
  * Ayuda "¿Cómo funciona el dashboard?" (R-012, T7): resumen de
  * `Documentation/03-casos-de-uso.md` §14 (CU-11, RN-11.1) y de
  * `Documentation/06-como-funciona-la-lista.md` §9 para el personal del gimnasio, sin terminos
- * tecnicos. El texto vive en el componente. R-018 (T7) añade "Indicadores del piloto"
- * (definiciones (a)-(f) del plan de R-018).
+ * tecnicos. El texto vive en el componente. R-018 (T7) añadio los indicadores del piloto y
+ * R-021 (T3) los explica con las palabras de sus graficos, sin dinero.
  */
 export function AyudaDashboard() {
   return (
@@ -86,48 +86,36 @@ export function AyudaDashboard() {
         </p>
       </SeccionAyuda>
 
-      <SeccionAyuda titulo="Indicadores del piloto">
+      <SeccionAyuda titulo="¿Cómo le fue a la lista del mes?">
         <p>
-          Miden cómo le fue a la lista del mes y a las llamadas que se hicieron con ella. Se fijan en
-          los 25 primeros socios de la última lista del mes:
+          Esta parte cuenta cómo le fue a la última lista del mes y a las llamadas que se hicieron
+          con ella. Se fija en los 25 primeros socios de esa lista y lo muestra en dos gráficos:
         </p>
         <ul className="flex list-disc flex-col gap-1 pl-5">
           <li>
-            «Precisión del top 25»: de los 25 primeros socios de la lista del mes, cuántos no
-            renovaron. De cada socio solo se sabe si renovó 30 días después de que vence su
-            membresía; hasta entonces aparece «pendiente».
+            «¿Cuántos contactamos y cuántos renovaron?»: tres barras. «Lista del mes» son los 25
+            socios; «Los contactamos», a cuántos de ellos se llamó o se escribió, y cuántos fueron
+            antes del vencimiento; «Renovaron», cuántos de los contactados renovaron. La parte
+            rayada son los contactados que aún están «Por confirmar».
           </li>
           <li>
-            «Contactados antes del vencimiento»: qué porcentaje de esos 25 socios se contactó antes
-            de que venciera su membresía. Contactarlo el mismo día del vencimiento ya no cuenta.
-          </li>
-          <li>
-            «Días de anticipación»: en promedio, cuántos días antes del vencimiento se contactó a
-            los socios.
-          </li>
-          <li>
-            «Renovación de los contactados»: de los socios contactados, qué porcentaje renovó. Como
-            en la precisión, solo cuentan los socios que ya cumplieron los 30 días.
-          </li>
-          <li>
-            «Monto retenido»: la suma de lo que se cobró en las renovaciones de los socios
-            contactados. Si una renovación no tiene cobro registrado, se usa lo facturado; las
-            renovaciones que no tienen ningún monto se cuentan aparte.
+            «¿Con cuánta anticipación?»: una línea en días que dice, en promedio, cuántos días
+            antes del vencimiento se llamó a los socios. Las marcas «30 días», «15 días» y «7 días»
+            cuentan los días que faltaban para el vencimiento, y la marca alta «Vence» es el día en
+            que vence la membresía. El punto «Promedio» señala el promedio. Debajo se lee cuántos
+            socios se llamaron antes del vencimiento y cuántos el mismo día o después, cuándo fue
+            la llamada más temprana y cuándo la más tardía, y cuántas llamadas hubo en cada tramo:
+            «15 días o más antes», «Entre 8 y 14 días antes», «Entre 1 y 7 días antes» y «El mismo
+            día o después» (con rayas). Solo cuentan como antes del vencimiento las llamadas hechas
+            antes del día en que vence la membresía.
           </li>
         </ul>
         <p>
-          Cada cifra muestra cuántos casos tiene, para saber con cuántos socios se calculó. En
-          «Renovación de los contactados» el número de casos cuenta a todos los contactados; en
-          «Monto retenido» cuenta solo a los contactados ya verificados, los que cumplieron los 30
-          días. Por eso pueden ser distintos.
+          De cada socio solo se sabe si renovó 30 días después de su vencimiento; hasta entonces
+          aparece «Por confirmar». Si son pocos socios todavía, la pantalla lo avisa: tómalo con
+          cuidado.
         </p>
-        <p>
-          Un aviso: la precisión puede salir más baja que la real, porque contactar a los socios
-          hace que algunos que se iban a ir terminen renovando.
-        </p>
-        <p>
-          Estas cifras describen lo que ocurrió y no prueban que el sistema cause la renovación.
-        </p>
+        <DefinicionesPiloto />
       </SeccionAyuda>
 
       <SeccionAyuda titulo="Qué significan las cifras">
@@ -137,5 +125,49 @@ export function AyudaDashboard() {
         </p>
       </SeccionAyuda>
     </BotonAyuda>
+  )
+}
+
+/**
+ * Definiciones exactas de los indicadores del piloto (R-021, definicion (d)); un solo contenido
+ * para la ventana "¿Cómo se calcula?" de la tarjeta y para la ayuda del dashboard. Sin dinero.
+ */
+export function DefinicionesPiloto() {
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="font-medium">Cómo se calcula cada cifra</p>
+      <p>Solo cuentan los 25 primeros socios de la última lista del mes (el top 25).</p>
+      <ul className="flex list-disc flex-col gap-1 pl-5">
+        <li>
+          Contactados antes del vencimiento: socios contactados antes de su fecha de vencimiento ÷
+          socios con datos de membresía. Contactarlo el mismo día del vencimiento ya no cuenta.
+        </li>
+        <li>
+          Días de anticipación: promedio de (fecha de vencimiento − fecha del contacto), con un
+          decimal. Puede ser cero o negativo si se llamó el mismo día o después del vencimiento.
+        </li>
+        <li>
+          La llamada más temprana es la de mayor (fecha de vencimiento − fecha del contacto) y la
+          más tardía, la de menor. Los tramos reparten esas llamadas en días enteros antes del
+          vencimiento: 15 días o más (≥ 15), entre 8 y 14 días (8–14), entre 1 y 7 días (1–7) y
+          el mismo día o después (≤ 0). Cuentan los mismos socios que el promedio: los
+          contactados con fecha de contacto.
+        </li>
+        <li>
+          Renovación de los contactados: contactados que renovaron ÷ contactados ya verificados.
+        </li>
+      </ul>
+      <p>
+        «n» es el número de socios con el que se calcula cada cifra. Los socios sin datos de
+        membresía o sin fecha de vencimiento no entran en ese número.
+      </p>
+      <p>
+        Verificación a los 30 días: de cada socio solo se sabe si renovó 30 días después del
+        vencimiento de su membresía. Hasta entonces queda «Por confirmar».
+      </p>
+      <p>
+        Estas cifras describen lo que ocurrió y no prueban que la llamada cause la renovación.
+      </p>
+    </div>
   )
 }

@@ -5,9 +5,359 @@
 
 ## ACTIVO
 
-Sin requerimientos activos.
+_(ninguno)_
 
 ## TERMINADOS RECIENTEMENTE
+
+### R-022 — "¿Con cuánta anticipación?" con más información en lenguaje simple y datos sintéticos creíbles en 8081 para grabar un demo · **DONE** 2026-11-03
+
+**Cierre:** "¿Con cuánta anticipación?" con escala 30/15/7/Vence, promedio, antes vs mismo día o después, rango y 4 tramos; contrato aditivo `dias_anticipacion.minimo|maximo|tramos`; contraste en oscuro forzado resuelto; por petición del usuario se quitó "¿La lista acertó?" (la sección queda con 2 gráficos) → [M04 §14](mejoras/M04-indicadores-del-piloto.md), [frontend/01](docs/frontend/01-arquitectura.md), [API_CONTRACT](docs/API_CONTRACT.md). Comando `preparar-8081 grabacion|e2e` → [comandos/preparar-8081.md](comandos/preparar-8081.md). Seguridad: clean. Pruebas: pass (1527 unit, 656 integración, 976 Vitest, 13/13 E2E en stack efímero; `anchos-tablas.spec.ts` endurecido con top 3). **Diferidos (low):** S1 `pip` sin hashes / imagen Python por etiqueta en `preparar-8081`; S2 `print` del mensaje de `DomainError` en `sembrar_grabacion.py:403`. T10 ejecutado por el developer (PS5 y bash); el test-engineer no lo re-ejecutó para no tocar 8081. Sin ADR (cambio aditivo de contrato y de vista). Sin commit.
+
+**Objetivo:** (A) el gráfico "¿Con cuánta anticipación?" dice, en palabras de cliente y sin dinero, cuándo se llamó (escala en días, promedio, antes / mismo día o después, la más temprana y la más tardía, reparto por tramos) con buen contraste en oscuro forzado; (B) un comando documentado deja `mtabolic-e2e` (8081) con datos inventados que parecen un gimnasio real para grabar, y otro lo devuelve al estado de la E2E.
+
+**Fuente:** petición del usuario ("¿Con cuánta anticipación? debe tener más leyendas… información adicional en el puerto 8081, prepara datos más reales para grabar un demo") · limitación de contraste anotada en R-021 · [M04](mejoras/M04-indicadores-del-piloto.md) · [API_CONTRACT §dashboard](docs/API_CONTRACT.md) · [frontend/01 §Indicadores del piloto](docs/frontend/01-arquitectura.md) · [backend/10 §Stack E2E aislado, §Stack demo](docs/backend/10-docker.md) · [comandos/ensayo-demo-e2e.md](comandos/ensayo-demo-e2e.md).
+
+**Notas de alcance del planner**
+- Se construye sobre los cambios sin commit de R-020 y R-021; no se revierte nada. Sin commit: lo lanza el usuario. `Documentation/Plan/**` no se toca. Ningún dato real: todo sale de generadores deterministas.
+- Grafo (planner sin `Bash`): `Frontend/graphify-out/GRAPH_REPORT.md` comunidades 6 "IndicadoresPiloto.tsx" y 33 "presentacion.ts"; `Backend/graphify-out/GRAPH_REPORT.md` comunidades 2 "consultar_dashboard.py", 33 "generar_dataset_demo.py", 68 "test_escenario_demostracion.py" (patrón de casos de uso con reloj inyectado). Impacto acotado a `domain/modelo/piloto.py` → `application/dashboard` → `api/routers/dashboard.py` → `features/dashboard/**`.
+- Lo que **ya** da la API sin cambios: promedio (`dias_anticipacion.valor`), llamados con fecha (`dias_anticipacion.n`) y llamados antes del vencimiento (`contactados_antes_vencimiento.numerador`, cuenta los `T − contacto > 0` de esos mismos llamados) → "el mismo día o después" = `n − numerador`. **No** da el rango ni los tramos: se añaden al backend de forma **aditiva** (justificación: no se pueden derivar del promedio; ningún campo existente cambia).
+- Frase "Lo ideal es llamar con al menos una semana de anticipación": **no** está respaldada por la documentación del proyecto (sin regla ni estudio de anticipación en `Documentation/`; `DIAS_RENOVACION_ANTICIPADA = 0`). No se escribe. Solo se usa lo documentado en [06 §9](06-como-funciona-la-lista.md): "llamar el mismo día ya no cuenta como antes del vencimiento".
+
+**Definiciones fijadas por el planner (reversibles; avisar al usuario)**
+- (a) **Campos nuevos** en `piloto.dias_anticipacion` (aditivos; mismos casos que el promedio: contactados con fecha de contacto, `d = T − fecha_contacto` en días enteros): `minimo` y `maximo` (`int | null`; `null` si `n = 0`; pueden ser ≤ 0) y `tramos` = `{quince_o_mas: d ≥ 15, de_ocho_a_catorce: 8 ≤ d ≤ 14, de_uno_a_siete: 1 ≤ d ≤ 7, mismo_dia_o_despues: d ≤ 0}` (enteros ≥ 0). Invariantes: suma de tramos = `n`; `quince_o_mas + de_ocho_a_catorce + de_uno_a_siete = contactados_antes_vencimiento.numerador`. Enteros, sin coma flotante.
+- (b) **Escala en días** con marcas fijas "30", "15", "7" días antes y "Vence" (0); si `maximo > 30` la escala llega a `maximo` (y si hay llamadas después, a `|minimo|` del otro lado del vencimiento). La marca del promedio pasa a decir "Promedio: X días antes" (con `decimalConComa`).
+- (c) **Textos nuevos** (lenguaje simple, sin `n =`, sin "promedio aritmético", sin dinero): "X socios se llamaron antes del vencimiento y Y el mismo día o después"; "La llamada más temprana fue X días antes del vencimiento y la más tardía, Y días antes / el mismo día / Y días después"; tramos con leyenda: "15 días o más antes", "Entre 8 y 14 días antes", "Entre 1 y 7 días antes", "El mismo día o después", cada uno con su número; frase de lectura documentada: "Solo cuentan como «antes del vencimiento» las llamadas hechas antes del día en que vence la membresía." Singular/plural correcto ("1 socio").
+- (d) **Contraste en oscuro forzado:** la línea base deja de ser `bg-ink/20` (opacidad que el oscuro automático de Chromium aplana) y pasa a un trazo sólido con token (`bg-ink` de 2 px o `border-current`), y la marca "Vence" se distingue por forma (barra vertical más alta y gruesa) y por etiqueta en `font-semibold`; regla `@media (forced-colors: active)` en `src/index.css` para línea, marcas y tramos con colores de sistema (`CanvasText`). Solo tokens y `currentColor`, sin colores literales.
+- (e) **Datos para grabar (B):** perfil "grabación" del generador de R-019 con otra semilla y nombres inventados **sin** la marca `Demo` (combinaciones de `NOMBRES`/`APELLIDOS` del generador), cédulas `0999NNNNNN`, celulares `0900NNNNNN`, correos `@example.com`, transacciones `GRAB-NNNNN`; salida en `datos-grabacion/` (en `.gitignore`, no se versiona; se regenera con la fecha de hoy). El perfil por defecto y `datos-demo/` quedan **byte a byte iguales**.
+- (f) **Siembra (B):** script `Backend/scripts/sembrar_grabacion.py` que corre **dentro** del contenedor `backend` de `mtabolic-e2e` (con `Backend/scripts` montado de solo lectura) y usa los **casos de uso de la app** con un reloj fijo por fecha (como `test_escenario_demostracion.py`): genera la lista del día 1 de cada uno de los 4 meses cerrados anteriores y la de hoy (top 25, horizonte 31), 4 campañas con nombres de gimnasio (p. ej. "Congela 7 días gratis", "Trimestral con descuento", "Clase de prueba con un amigo", "Llamada de bienvenida de vuelta"), y gestiones con contactos en fechas variadas (de 20 días antes al día siguiente del vencimiento), ofertas, aceptaciones y resultados variados; todas las gestiones de meses pasados quedan **cerradas** (no generan alertas). Determinista (hash de semilla, sin `random`), idempotente (si ya sembró, sale 0 sin duplicar) y en una transacción por lista.
+- (g) **Convivencia con la E2E:** los dos estados de 8081 se alternan con un solo comando `scripts/preparar-8081.{ps1,sh}` con dos subcomandos: `grabacion` (hace `down -v` **solo** de `mtabolic-e2e`, levanta con `HISTORICO_DIR=./datos-grabacion`, espera `LISTO` y siembra) y `e2e` (hace `down -v` solo de `mtabolic-e2e` y levanta con `.env.e2e` tal cual, libros de `Backend/tests/fixtures/historico`). Pide confirmación (`--si` para no interactivo) porque borra lo que hubiera en 8081. La E2E se corre siempre tras `e2e`.
+
+**Tareas**
+
+- [x] **T1** · `domain` · Rango y tramos de la anticipación en `calcular_indicadores` (TDD)
+  - Archivos: `Backend/app/domain/modelo/piloto.py` (principal; `IndicadorDias` líneas 103–107, cálculo 226–252), `Backend/tests/unit/domain/modelo/test_piloto.py`.
+  - Docs: [API_CONTRACT §dashboard `dias_anticipacion`](docs/API_CONTRACT.md); definición (a).
+  - Aceptación:
+    - Nuevo value object `TramosAnticipacion` (`frozen=True, slots=True`) e `IndicadorDias` con `minimo`, `maximo`, `tramos` (valores por defecto para no romper a quien construye `IndicadorDias` hoy).
+    - Contactos con `d = [20, 15, 14, 8, 7, 1, 0, −3]` → `minimo = −3`, `maximo = 20`, tramos `(2, 2, 2, 2)`; suma = `n` = 8; los tres primeros tramos suman `contactados_antes_vencimiento.numerador` = 6.
+    - Sin contactados con fecha → `minimo = maximo = None`, tramos en 0, `valor` y `estado` como hoy (`SIN_DATOS`).
+    - Contactado sin `fecha_contacto` o caso sin dato → fuera de rango y tramos (igual que del promedio).
+    - Los indicadores existentes no cambian (pruebas actuales de `test_piloto.py` en verde sin tocarlas); solo librería estándar; `ruff`, `mypy app`, `lint-imports` en verde.
+  - Pruebas: unitarias pytest.
+
+- [x] **T2** · `api` · Contrato aditivo de `GET /api/v1/dashboard`: `dias_anticipacion.minimo|maximo|tramos`
+  - Archivos: `Backend/app/application/dashboard/dtos.py` (principal; `IndicadorDiasDTO` línea 89; nuevo `TramosAnticipacionDTO`), `Backend/app/api/routers/dashboard.py` (ejemplos `con_piloto` ~línea 61 y `piloto_sin_datos` ~línea 114), `Backend/tests/integration/api/test_contract_dashboard.py`, `Backend/tests/unit/application/dashboard/test_consultar_dashboard.py`.
+  - Docs: [API_CONTRACT §dashboard](docs/API_CONTRACT.md); [backend/04 API REST](docs/backend/04-api-rest.md) (ejemplos en OpenAPI).
+  - Aceptación:
+    - `GET /api/v1/dashboard?mes=AAAA-MM` → `200` con `piloto.dias_anticipacion` = `{valor, n, estado, minimo, maximo, tramos: {quince_o_mas, de_ocho_a_catorce, de_uno_a_siete, mismo_dia_o_despues}}`; el resto de la respuesta, idéntico (prueba de contrato: claves anteriores intactas).
+    - Mes sin lista → `200` con `minimo: null`, `maximo: null` y tramos en 0. `mes` inválido → `400` (sin cambios).
+    - OpenAPI: ambos ejemplos de `200` incluyen los campos nuevos con cifras coherentes (suma de tramos = `n`).
+    - `pytest tests/unit/application/dashboard tests/integration/api -k dashboard`, `ruff`, `mypy app`, `lint-imports` en verde.
+  - Pruebas: unitaria (query con dobles) + integración (contrato con PG real).
+
+- [x] **T3** · `frontend` · Mapeo del contrato nuevo en `api/` y `types.ts`
+  - Archivos: `Frontend/src/features/dashboard/api/dashboard-api.ts` (principal; mapeo línea ~127–140), `Frontend/src/features/dashboard/types.ts` (`IndicadorDias` línea 55), `Frontend/src/features/dashboard/api/dashboard-api.test.ts`, `Frontend/src/features/dashboard/api/dashboard-api.handlers.ts` (casos completo, parcial 2026-09 y sin datos con tramos coherentes).
+  - Docs: [frontend/01 §Indicadores del piloto](docs/frontend/01-arquitectura.md); definición (a).
+  - Aceptación:
+    - `IndicadorDias` gana `minimo: number | null`, `maximo: number | null`, `tramos: TramosAnticipacion | null` (camelCase: `quinceOMas`, `deOchoACatorce`, `deUnoASiete`, `mismoDiaODespues`).
+    - Respuesta sin los campos nuevos (backend anterior) → `minimo/maximo/tramos = null` sin error; con ellos → mapeados tal cual (MSW).
+    - En los *handlers*, suma de tramos = `n` y los tres primeros = `contactados_antes_vencimiento.numerador`.
+    - `npm test -- dashboard-api`, `npm run lint`, `tsc` en verde.
+  - Pruebas: Vitest con MSW.
+
+- [x] **T4** · `frontend` · Funciones puras del detalle de la anticipación (TDD)
+  - Archivos: `Frontend/src/features/dashboard/hooks/presentacion.ts` (principal; `anticipacionPiloto` línea 254), `Frontend/src/features/dashboard/hooks/presentacion.test.ts` (bloque línea 389).
+  - Docs: [frontend/01 §Indicadores del piloto](docs/frontend/01-arquitectura.md); definiciones (b), (c).
+  - Aceptación:
+    - `detalleAnticipacion(piloto)` → `{marcas: [{etiqueta, posicion}] (30, 15, 7, Vence), etiquetaPromedio: "Promedio: 4,5 días antes", antes, mismoDiaODespues, fraseConteo, fraseRango | null, tramos: [{etiqueta, numero, ancho}] | null, lectura}`.
+    - `antes = contactadosAntesVencimiento.numerador`, `mismoDiaODespues = max(0, diasAnticipacion.n − antes)`; con 19 llamados y 15 antes → "15 socios se llamaron antes del vencimiento y 4 el mismo día o después"; con 1 → "1 socio…".
+    - Rango `minimo = −2, maximo = 21` → "La llamada más temprana fue 21 días antes del vencimiento y la más tardía, 2 días después"; `minimo = 0` → "…, el mismo día"; `minimo/maximo = null` → `fraseRango = null`.
+    - Escala `max(30, maximo)`; posiciones enteras 0–100 con `anchoSobre` (sin coma flotante en texto visible); anchos de tramos sobre `n` (`n = 0` → 0).
+    - Ningún texto devuelto contiene `n =`, `promedio aritmético`, `$`, `USD`, `monto` ni "al menos una semana"; `lectura` = frase de (c) literal.
+    - `anticipacionPiloto` mantiene sus pruebas actuales en verde.
+    - `npm test -- presentacion`, `npm run lint`, `tsc` en verde.
+  - Pruebas: unitarias Vitest.
+
+- [x] **T5** · `frontend` · Gráfico "¿Con cuánta anticipación?" con escala, leyendas, tramos y contraste
+  - Archivos: `Frontend/src/features/dashboard/components/IndicadoresPiloto.tsx` (principal; `LineaAnticipacion` línea 232, `Marca` línea 270), `Frontend/src/features/dashboard/components/IndicadoresPiloto.test.tsx`, `Frontend/src/index.css` (regla `forced-colors` de (d)), `Frontend/src/shared/ui/estilos.test.ts`.
+  - Docs: [frontend/01 §Indicadores del piloto, §Estilos](docs/frontend/01-arquitectura.md); definiciones (b)–(d).
+  - Aceptación:
+    - El componente no calcula cifras (usa T4). Se ven las marcas "30", "15", "7" días y "Vence", la etiqueta del promedio, la frase de conteo, la de rango (si hay) y los cuatro tramos con número y leyenda; categorías distinguibles por forma además de color.
+    - `role="img"` con `aria-label` que dice en palabras promedio, conteo antes / mismo día o después y rango (p. ej. "En promedio, llamamos 4,5 días antes del vencimiento. 15 socios se llamaron antes…"); los tramos como lista (`ul`/`li`) legible por lector de pantalla.
+    - Línea base sin opacidad (`bg-ink/20` desaparece; trazo sólido con token o `currentColor`) y marca "Vence" con forma propia y `font-semibold`; `estilos.test.ts` en verde (sin colores literales; `style=` solo `left`/`width`).
+    - Teléfono 390 px: marcas y etiquetas no se solapan ni desbordan (etiquetas cortas, tramos en lista vertical); impresión: todo visible salvo "¿Cómo se calcula?".
+    - `tramos = null` (backend anterior) o `n = 0` → sin tramos ni rango, sin romperse; `SIN_DATOS` → "Sin datos este mes".
+    - En la región: 0 coincidencias de `/n = /`, `/\$|USD|monto/i`, `/COMPLETO|PARCIAL|PENDIENTE|SIN_DATOS/`, `/al menos una semana/i`.
+    - `npm test -- dashboard`, `npm run lint`, `npm run build` en verde.
+  - Pruebas: Vitest (completo, parcial, negativo, null, sin tramos, singular/plural).
+
+- [x] **T6** · `frontend` · Ayuda y "¿Cómo se calcula?" con el rango y los tramos
+  - Archivos: `Frontend/src/features/dashboard/components/AyudaDashboard.tsx` (principal; texto línea ~108 y `DefinicionesPiloto` línea ~149), `Frontend/src/features/dashboard/components/AyudaDashboard.test.tsx`.
+  - Docs: [M04](mejoras/M04-indicadores-del-piloto.md); definiciones (a), (c).
+  - Aceptación:
+    - La ayuda explica el gráfico con las palabras de pantalla (escala, "Vence", promedio, antes / mismo día o después, más temprana y más tardía, los cuatro tramos).
+    - `DefinicionesPiloto` añade: más temprana = mayor `T − fecha del contacto`, más tardía = menor; los cuatro tramos con sus límites exactos (≥ 15, 8–14, 1–7, ≤ 0 días); mismos casos que el promedio.
+    - Sin dinero, sin `API`, `endpoint`, `null`, nombres de estado ni "al menos una semana".
+    - `npm test -- AyudaDashboard`, `npm run lint` en verde.
+  - Pruebas: Vitest.
+
+- [x] **T7** · `frontend` · Página y E2E del gráfico nuevo
+  - Archivos: `Frontend/e2e/alertas-dashboard.spec.ts` (principal; bloque del piloto ~389–597), `Frontend/e2e/piloto-telefono-oscuro.spec.ts`, `Frontend/src/features/dashboard/pages/DashboardPage.test.tsx`.
+  - Docs: [frontend/01 §Pruebas](docs/frontend/01-arquitectura.md); [backend/10 §Stack E2E aislado](docs/backend/10-docker.md).
+  - Aceptación:
+    - E2E (8081, estado `e2e`): `GET /api/v1/dashboard?mes=` → `200` con `dias_anticipacion.tramos` cuya suma = `n`; en pantalla, conteo y tramos iguales a la respuesta; sin texto de dinero; `emulateMedia('print')` con escala y tramos visibles.
+    - `piloto-telefono-oscuro.spec.ts`: a 390 px sin desborde horizontal en la tarjeta; en oscuro automático de Chromium la línea base tiene opacidad 1 y alto ≥ 2 px, y la marca "Vence" es visible; captura adjunta al reporte.
+    - `DashboardPage.test.tsx`: caso 2026-09 con frase de conteo y tramos del *handler*.
+    - `npm test`, `npm run lint`, `npm run build` y `npx playwright test` (tras `preparar-8081 e2e` o el stack E2E normal) en verde.
+  - Pruebas: Vitest + E2E Playwright.
+
+- [x] **T8** · `infra` · Perfil "grabación" del generador sintético
+  - Archivos: `Backend/scripts/generar_dataset_demo.py` (principal; `_nombre` línea 297, constantes 41–80), `Backend/tests/unit/scripts/test_generar_dataset_demo.py`, `.gitignore` (raíz: `datos-grabacion/`).
+  - Docs: [backend/10 §Stack demo](docs/backend/10-docker.md); `datos-demo/README.md`; definición (e).
+  - Aceptación:
+    - `--perfil grabacion` (por defecto `demo`): semilla propia, nombres sin `Demo`, cédulas `0999`, celulares `0900`, correos `@example.com`, transacciones `GRAB-`; mismo formato de libros que lee la migración.
+    - `--perfil demo` (por defecto) produce los mismos bytes que hoy (prueba con hash de `datos-demo/` para `--fecha-base 2026-11-02`).
+    - Con `--fecha-base 2026-11-03`: ningún nombre contiene `Demo`/`Prueba`; todas las cédulas empiezan por `0999` y todos los correos acaban en `@example.com`; hay socios con 1 a ≥ 4 ciclos y los cuatro planes; los 4 meses cerrados anteriores tienen ≥ 25 vencimientos cada uno y hay renovaciones y no renovaciones dentro de `[T, T+30]`.
+    - Determinista: dos ejecuciones con la misma fecha → mismos bytes. `ruff` en verde.
+  - Pruebas: unitarias pytest (sin BD).
+
+- [x] **T9** · `infra` · Siembra de listas, campañas y gestiones pasadas con los casos de uso de la app
+  - Archivos: `Backend/scripts/sembrar_grabacion.py` (principal), `Backend/tests/integration/scripts/test_sembrar_grabacion.py`.
+  - Docs: [backend/12 Modelo y listas](docs/backend/12-modelo-y-listas.md); [API_CONTRACT §dashboard](docs/API_CONTRACT.md); `Backend/tests/integration/api/test_escenario_demostracion.py` (patrón de reloj inyectado); definición (f).
+  - Aceptación:
+    - Usa `GenerarLista`, `GestionarCampanias`, `CrearGestion` y `RegistrarResultado` con un `Clock` fijo por fecha; no escribe SQL a mano ni salta reglas de dominio. Si la base no termina en `_e2e` → sale 1 sin escribir nada.
+    - Con PG real y los libros de T8: tras sembrar, `ConsultarDashboard` para el 4.º y 3.er mes anteriores → `piloto.estado = COMPLETO`, `n_top = 25`, `tasa_renovacion_contactados.n ≥ 12`, `precision_top25.numerador ≥ 1`, tramos con ≥ 3 tramos no vacíos; mes anterior → `PARCIAL` o `COMPLETO`; mes actual → lista con ≥ 1 socio de nivel `ALTO` y piloto `PENDIENTE`; embudo de cada mes pasado con `asignadas ≥ contactadas ≥ ofrecidas ≥ aceptadas` y todos > 0.
+    - Gestiones de meses pasados cerradas (alertas "Vencidos"/"Para hoy" = 0 por la siembra); segunda ejecución → mismos conteos (idempotente).
+    - La salida son conteos por mes, sin nombres, cédulas ni correos. `ruff`, `mypy` sobre el script en verde.
+  - Pruebas: integración pytest con PostgreSQL real.
+
+- [x] **T10** · `infra-deploy` · Comando `preparar-8081` (estados `grabacion` y `e2e`)
+  - Archivos: `scripts/preparar-8081.ps1` (principal), `scripts/preparar-8081.sh`.
+  - Docs: [backend/10 §Stack E2E aislado, §Stack demo](docs/backend/10-docker.md); [comandos/ensayo-demo-e2e.md](comandos/ensayo-demo-e2e.md) (guardas de proyecto); definición (g).
+  - Aceptación:
+    - Proyecto fijo `-p mtabolic-e2e` con `--env-file .env.e2e`; cualquier otro proyecto o argumento inválido → código 1 sin ejecutar Docker; limpia de la shell las variables que ganan a `--env-file`. Nunca toca `proyectofinal` ni `mtabolic-demo` ni otros volúmenes (`down -v` solo sobre `mtabolic-e2e`).
+    - Sin `--si` pide confirmación; con `n` sale 0 sin cambios.
+    - `grabacion`: genera `datos-grabacion/` con la fecha de hoy (contenedor Python como `levantar-demo`, sin Python en el host), levanta con `HISTORICO_DIR=./datos-grabacion`, espera `LISTO` (hasta 15 min), siembra (T9) y muestra la URL `http://localhost:8081` y los conteos.
+    - `e2e`: levanta con `.env.e2e` sin cambios, espera `LISTO`; después `npx playwright test` en verde (13+ pruebas).
+    - Probado en Windows 11 (PowerShell 5 y Git Bash). Nunca imprime contraseñas.
+  - Pruebas: ejecución manual de ambos estados por el test-engineer + E2E tras `e2e`; con `grabacion`, en 8081 el Dashboard del 4.º mes anterior muestra los tres gráficos completos.
+
+- [x] **SEC-1** · security-reviewer · Diff de R-022: ningún dato real ni lectura de `plantillas/`/libros reales en T8–T9; datos sintéticos con `0999`/`@example.com`; guardas de proyecto y de base `_e2e` en T9–T10; `down -v` imposible sobre otro proyecto; sin secretos en salida ni en archivos versionados; campos nuevos de la API solo agregados (sin datos personales); `aria-label` solo con agregados.
+
+- [x] **DOC-1** · doc-agent · [API_CONTRACT §dashboard](docs/API_CONTRACT.md) (campos aditivos) · [M04](mejoras/M04-indicadores-del-piloto.md) (rango y tramos; frase de lectura y por qué no "una semana") · [frontend/01 §Indicadores del piloto](docs/frontend/01-arquitectura.md) (R-022, contraste en oscuro forzado; quitar la limitación de R-021 si queda resuelta) · `06-como-funciona-la-lista.md` §9 · [backend/10](docs/backend/10-docker.md) y nueva `comandos/preparar-8081.md` (guion de grabación: qué mes abrir en el Dashboard, cómo volver al estado E2E) · `Frontend/README.md` (correr la E2E tras `preparar-8081 e2e`) · este board.
+
+**Dependencias**
+- Parte A: T1 → T2 → T3 → T4 → T5 → T6 → T7 (T5 y T6 comparten la región del piloto: secuenciales).
+- Parte B: T8 → T9 → T10; T9 necesita T2 solo para comprobar los tramos (puede ir tras T2). T7 se valida tras T10 `e2e` si ya existe; si no, contra el stack E2E normal.
+- SEC-1 tras T10; DOC-1 al final.
+- Externas: Docker Desktop; stack `mtabolic-e2e` reconstruido (`--build`) para que la E2E vea los campos nuevos de T2.
+
+**Riesgos**
+1. **Listas pasadas no verificables:** `GenerarLista` con reloj pasado podría filtrar socios que el histórico ya muestra renovados, o el corte (`min(hoy, max(corte del modelo, última carga))`) podría no cubrir `T+30` del mes anterior, dejando el piloto en `PENDIENTE`/`SIN_DATOS`. Mitigación: aceptación de T9 con estados esperados por mes en PG real; si falla, se ajusta el perfil de T8 (más meses cerrados), nunca la regla de dominio.
+2. **Borrado del estado de 8081:** `preparar-8081` hace `down -v` de `mtabolic-e2e`; un error de proyecto borraría el principal o el demo. Mitigación: proyecto fijo, sin argumento de proyecto, confirmación, y prueba de que otro valor sale 1 sin ejecutar Docker.
+3. **Contrato y E2E:** imágenes viejas en 8081 sin los campos nuevos harían fallar la E2E o mostrar el gráfico sin tramos. Mitigación: mapeo tolerante (`null`) en T3, `--build` en `preparar-8081` y E2E siempre tras `e2e`.
+
+### R-021 — "Indicadores del piloto" del Dashboard en gráficos que entiende un cliente sin conocimientos técnicos, sin dinero · **DONE** 2026-11-03
+
+**Cierre:** sección "¿Cómo le fue a la lista del mes?" con embudo, puntitos y línea de tiempo, sin dinero; "¿Cómo se calcula?" con las definiciones exactas → [M04 §13](mejoras/M04-indicadores-del-piloto.md#13-cambio-de-la-vista-r-021), [frontend/01](docs/frontend/01-arquitectura.md). Seguridad: clean. Pruebas: pass (946 Vitest, 13 E2E). Limitación conocida: con modo oscuro forzado, poco contraste en la línea base y la marca "Vencimiento". Sin M07 ni ADR (cambio solo de vista). Sin commit.
+
+**Objetivo:** la sección de indicadores del piloto del Dashboard (pantalla, ayuda e impresión) muestra la misma información que hoy, salvo el dinero, con tres gráficos y lenguaje simple; las definiciones exactas (precisión del top 25, `n`, verificación T+30) quedan detrás de "¿Cómo se calcula?".
+
+**Fuente:** petición del usuario ("los gráficos de indicadores del piloto no me gustan… el cliente final no sabría qué es" → "¿lo podemos definir con algún gráfico?" → "okay, hazlo, no agregues nada de dinero") · [M04](mejoras/M04-indicadores-del-piloto.md) · [frontend/01 §Indicadores del piloto, §Estilos](docs/frontend/01-arquitectura.md) · `Backend/app/domain/modelo/piloto.py` (fórmulas, solo lectura).
+
+**Notas de alcance del planner**
+- Solo Frontend + ayuda + documentación. **No** cambian backend, `GET /api/v1/dashboard`, `types.ts` (el bloque `montoRetenido` se sigue recibiendo y mapeando; simplemente no se pinta), datos ni MSW (salvo que una prueba necesite un caso que el *handler* no tenga).
+- Se construye sobre los cambios de R-020 sin commit; no se revierte nada. Sin commit: lo lanza el usuario. `Documentation/Plan/**` no se toca.
+- Grafo: `Frontend/graphify-out/GRAPH_REPORT.md` (comunidades 33 "IndicadoresPiloto.tsx" y la de `types.ts`/`dashboard-api.ts`); impacto acotado a `features/dashboard/**`, `shared/ui/estilos.test.ts`, `index.css` y `e2e/alertas-dashboard.spec.ts`. Ningún otro feature importa `IndicadoresPiloto`.
+
+**Definiciones fijadas por el planner (reversibles; avisar al usuario)**
+- (a) **De dónde sale cada cifra** (sin tocar la API; todas son enteros que ya llegan):
+  - Embudo — "Lista del mes" = `nTop`; "Los contactamos" = `tasaRenovacionContactados.n` (todos los contactados con dato: verificados + por confirmar), con el texto "N antes del vencimiento" = `contactadosAntesVencimiento.numerador`; "Renovaron" = `tasaRenovacionContactados.numerador`, y en la misma barra un tramo **gris rayado** = `tasaRenovacionContactados.pendientes` ("por confirmar"). Barras proporcionales a `nTop`; cada una ≤ la anterior. Junto a "Renovaron" se muestra el porcentaje sobre los contactados ya confirmados (`porcentajeDecimal(valor)`), como hoy.
+  - "¿La lista acertó?" — `nTop` puntitos: llenos = `precisionTop25.numerador` ("Estaba por irse": no renovó, confirmado); vacíos = `denominador − numerador` ("Se habría quedado igual": renovó); gris rayado = `precisionTop25.pendientes` ("Por confirmar"); con borde discontinuo = `sinDato` ("Sin datos de membresía"). Invariante: las cuatro cuentas suman `nTop`. Debajo, una frase: "De X socios ya confirmados, Y estaban por irse (Z %)".
+  - "¿Con cuánta anticipación?" — línea con dos marcas, "Llamada" y "Vencimiento", y el texto "En promedio, llamamos X días antes del vencimiento" (`decimalConComa(diasAnticipacion.valor)`); `valor < 0` → "X días después del vencimiento"; `valor = 0` → "el mismo día del vencimiento"; `null` → "Todavía no hay llamadas registradas". Escala 0 a `max(30, |valor|)` días. El número se convierte a `Number` **solo para la posición del dibujo**; todo texto visible sale de `decimalConComa` (sin coma flotante en lo que se lee).
+- (b) **Textos de estado** (reemplazan a los actuales): `COMPLETO` → "Resultado final"; `PARCIAL` → "Faltan X socios por confirmar: lo sabremos 30 días después de su vencimiento" (X = `pendientes`); `PENDIENTE` → "Todavía es pronto: el resultado se conoce 30 días después del vencimiento"; `SIN_DATOS` → "Sin datos este mes". Se muestran bajo "¿La lista acertó?" (estado de `precisionTop25`) y bajo el embudo (estado de `tasaRenovacionContactados`). "Pocos casos: léase con cuidado" pasa a "Son pocos socios todavía: tómalo con cuidado" (misma regla `0 < n < 10`).
+- (c) **Títulos:** `h2` "¿Cómo le fue a la lista del mes?" (nombre accesible de la región; reemplaza a "Indicadores del piloto"); `h3` de los gráficos: "¿Cuántos contactamos y cuántos renovaron?", "¿La lista acertó?", "¿Con cuánta anticipación?". Los avisos pasan a lenguaje simple: "Llamar a un socio puede hacer que se quede; por eso algunos que estaban por irse terminan renovando y la cuenta de aciertos puede quedar corta." y "Estas cifras cuentan lo que pasó; no prueban que la llamada haya causado la renovación."
+- (d) **"¿Cómo se calcula?"** = un `BotonAyuda` (sin cambiar `shared/ui/Ayuda.tsx`) dentro de la tarjeta, con `print:hidden`, que abre una ventana con las definiciones exactas: precisión del top 25 (no renovaron / verificados), contactados antes del vencimiento (contacto < T / casos con dato), días de anticipación (promedio de T − fecha de contacto, 1 decimal, puede ser ≤ 0), renovación de los contactados (renovaron / contactados verificados), qué es `n` y verificación T+30, sesgo y no causalidad. Ese contenido vive en **un solo** componente `DefinicionesPiloto` (exportado desde `AyudaDashboard.tsx`) que usan las dos ventanas: "¿Cómo se calcula?" y la sección de la ayuda del dashboard. Nada de monto ni dinero en ninguna de las dos.
+- (e) **Rayado:** una utilidad `rayado` en `src/index.css` hecha con tokens existentes (`--color-muted`/`--color-line`), nunca un color literal; impresa con `print-color-adjust: exact` (ya existe). "No depender del color": cada categoría se distingue también por forma (lleno / vacío con borde / rayado / borde discontinuo) y por su leyenda con número.
+- (f) **Modo oscuro:** la app no tiene modo oscuro ([frontend/01 §Estilos](docs/frontend/01-arquitectura.md)) y crearlo queda fuera de este requerimiento. Criterio aplicable: solo tokens y `currentColor`, sin colores literales, de modo que los gráficos siguen legibles si el navegador fuerza un tema oscuro; se revisa a ojo con el modo oscuro forzado de Chromium.
+
+**Tareas**
+
+- [x] **T1** · `frontend` · Funciones puras de presentación de los gráficos del piloto (TDD)
+  - Archivos: `Frontend/src/features/dashboard/hooks/presentacion.ts` (principal), `Frontend/src/features/dashboard/hooks/presentacion.test.ts`.
+  - Docs: [frontend/01 §Indicadores del piloto](docs/frontend/01-arquitectura.md); definiciones (a), (b).
+  - Aceptación:
+    - `embudoPiloto(piloto)` → `[{etapa: "Lista del mes", numero: nTop}, {etapa: "Los contactamos", numero, antesVencimiento}, {etapa: "Renovaron", numero, porConfirmar, porcentaje}]` con anchos enteros 0–100 sobre `nTop` (`nTop = 0` → todos 0); con `contactados = 12, antes = 9, renovaron = 4, pendientes = 3` → esos números exactos.
+    - `puntosPiloto(piloto)` → `{estabaPorIrse, seQuedaba, porConfirmar, sinDatos}` que suman `nTop` (caso parcial del *handler* de 2026-09 y caso `SIN_DATOS` → todo 0).
+    - `textoEstadoPiloto(estado, pendientes)` → los cuatro textos de (b) literalmente; `PARCIAL` con 5 → "Faltan 5 socios por confirmar: lo sabremos 30 días después de su vencimiento"; nunca devuelve `COMPLETO|PARCIAL|PENDIENTE|SIN_DATOS`.
+    - `anticipacionPiloto(dias)` → texto de (a) para `"9.5"` ("9,5 días antes"), `"-2.0"` (después), `"0.0"` (mismo día), `null`; y posición 0–100 de la marca "Llamada".
+    - Puras, sin `Date` dependiente de zona ni `parseFloat` en texto visible; `npm test -- presentacion`, `npm run lint`, `tsc` en verde.
+  - Pruebas: unitarias Vitest.
+
+- [x] **T2** · `frontend` · Gráficos en `IndicadoresPiloto` (embudo, puntitos, línea de tiempo), sin dinero
+  - Archivos: `Frontend/src/features/dashboard/components/IndicadoresPiloto.tsx` (principal), `Frontend/src/features/dashboard/components/IndicadoresPiloto.test.tsx`, `Frontend/src/index.css` (utilidad `rayado`), `Frontend/src/shared/ui/estilos.test.ts` (añadir `IndicadoresPiloto.tsx` a los archivos con `style=` permitido solo para anchos/posiciones).
+  - Docs: [frontend/01 §Indicadores del piloto, §Estilos](docs/frontend/01-arquitectura.md) (patrón de `EmbudoGestion`/`GraficoResultados`: `role="img"` + `aria-label`, sin librería de gráficos); definiciones (a)–(c), (e), (f).
+  - Aceptación:
+    - Usa las funciones de T1 (el componente no calcula cifras); `Tarjeta` con `aria-labelledby="piloto-title"`, `h2` de (c), `break-inside-avoid`, sin `print:hidden` en la tarjeta.
+    - Cada gráfico es `role="img"` con `aria-label` que dice las cifras en palabras (p. ej. "25 socios en la lista del mes, 12 contactados, 9 antes del vencimiento, 4 renovaron y 3 por confirmar") y lleva una leyenda visible con número por categoría; las categorías se distinguen por forma además de color.
+    - Con el caso parcial de 2026-09: se ven los tres `h3` de (c) y "Faltan 5 socios por confirmar: lo sabremos 30 días después de su vencimiento"; los "por confirmar" se pintan con la clase `rayado`, no con el color de fallo.
+    - En toda la región: 0 coincidencias de `/n = /`, `/precisi[oó]n/i`, `/\$|USD|monto/i`, `/COMPLETO|PARCIAL|PENDIENTE|SIN_DATOS/`; no se importa `montoUsd`.
+    - Mes sin lista (`SIN_DATOS`) → "No hay una lista generada en este mes." y los tres gráficos en estado "Sin datos este mes" sin romperse (`nTop = 0`).
+    - Ancho de teléfono: los gráficos se apilan en una columna (`grid` de una columna por defecto, varias en `lg:`), sin desbordar a 390 px; el `style=` solo lleva `width`/`left` dependientes del dato; `estilos.test.ts` en verde (sin colores literales).
+    - `npm test -- dashboard`, `npm run lint`, `npm run build` en verde.
+  - Pruebas: Vitest (estados completo, parcial, pendiente, sin datos; textos prohibidos; `aria-label`).
+
+- [x] **T3** · `frontend` · Ayuda en lenguaje simple y "¿Cómo se calcula?" con las definiciones exactas
+  - Archivos: `Frontend/src/features/dashboard/components/AyudaDashboard.tsx` (principal; exporta `DefinicionesPiloto`), `Frontend/src/features/dashboard/components/AyudaDashboard.test.tsx`, `Frontend/src/features/dashboard/components/IndicadoresPiloto.tsx` (añade el `BotonAyuda` "¿Cómo se calcula?" envuelto en `print:hidden`), `Frontend/src/features/dashboard/components/IndicadoresPiloto.test.tsx`.
+  - Docs: [frontend/01 §shared/ui (`BotonAyuda`)](docs/frontend/01-arquitectura.md); [M04 definiciones](mejoras/M04-indicadores-del-piloto.md); definición (d).
+  - Aceptación:
+    - La sección de la ayuda del dashboard se titula como el `h2` nuevo y explica los tres gráficos con las palabras de la pantalla (Lista del mes, Los contactamos, Renovaron, Estaba por irse, Se habría quedado igual, Por confirmar, anticipación) y después muestra `DefinicionesPiloto`.
+    - Botón "¿Cómo se calcula?" en la tarjeta → abre `dialog` con nombre "¿Cómo se calcula?" que contiene "precisión del top 25", qué es `n`, "30 días después del vencimiento" (T+30), las cuatro fórmulas de (d), el aviso de sesgo y el de no causalidad; "Cerrar"/`Escape` devuelven el foco al botón.
+    - Ni la ayuda ni la ventana mencionan "Monto retenido", monto, cobro, facturado, `$` ni USD; siguen sin `API`, `endpoint`, `null` ni nombres de estado.
+    - El botón no se imprime (`print:hidden`); el resto de la tarjeta sí.
+    - `npm test -- dashboard`, `npm run lint`, `tsc` en verde.
+  - Pruebas: Vitest.
+
+- [x] **T4** · `frontend` · Pruebas de página y E2E con los textos nuevos
+  - Archivos: `Frontend/src/features/dashboard/pages/DashboardPage.test.tsx` (principal; pruebas R-018 líneas ~326–378), `Frontend/e2e/alertas-dashboard.spec.ts` (bloque del piloto líneas ~389–597).
+  - Docs: [frontend/01 §Pruebas](docs/frontend/01-arquitectura.md); [backend/10 §Stack E2E aislado](docs/backend/10-docker.md).
+  - Aceptación:
+    - `DashboardPage.test.tsx`: la región se busca por el nombre nuevo; caso 2026-09 parcial con los textos de (b) y sin `$312,50` ni `n = `; mes vacío → "Sin datos este mes" en los gráficos; impresión: la tarjeta y sus avisos no están ocultos al imprimir y el único elemento `print:hidden` de la región es "¿Cómo se calcula?".
+    - E2E (solo 8081): `GET /api/v1/dashboard?mes=` → `200` sin claves personales (sin cambios); en pantalla los tres gráficos con sus `aria-label` y las cifras de la respuesta (`n_top`, contactados, renovaron, pendientes, días); estado "Todavía es pronto: el resultado se conoce 30 días después del vencimiento" para la lista del mes en curso; ningún texto de dinero; con `emulateMedia('print')` los tres gráficos visibles y "¿Cómo se calcula?" oculto; la ayuda y la ventana "¿Cómo se calcula?" con las definiciones de T3; mes 2000-01 → "Sin datos este mes".
+    - `npm test` completo, `npm run lint`, `npm run build` y `npx playwright test` contra `mtabolic-e2e` (8081, `--workers=1` si hace falta) en verde.
+  - Pruebas: Vitest + E2E Playwright.
+
+- [x] **SEC-1** · security-reviewer · Diff de R-021: sin `dangerouslySetInnerHTML`; `aria-label` y leyendas solo con agregados (nunca nombres, cédulas ni códigos de socio); sin llamadas nuevas a la API ni cambios en `api/`; `style=` solo con valores numéricos calculados.
+
+- [x] **DOC-1** · doc-agent · [frontend/01 §Indicadores del piloto](docs/frontend/01-arquitectura.md) (nueva subsección R-021: gráficos, definiciones (a)–(f), `DefinicionesPiloto`, utilidad `rayado`, `estilos.test.ts`) · [M04](mejoras/M04-indicadores-del-piloto.md) (nota: el monto se sigue calculando y enviando por la API pero la pantalla ya no lo muestra; textos de estado nuevos) · menciones a la vista del piloto en `03-casos-de-uso.md` §14, `06-como-funciona-la-lista.md` §9 y `07-cierre.md` si citan el monto o los textos viejos · si el doc-agent lo considera mejora para la tesis, `mejoras/M07-*.md` + su línea en `mejoras/README.md` (capturas en `Documentation/claude/mejoras/M07/`) · este board.
+
+**Dependencias**
+- T1 → T2 → T3 → T4 → SEC-1 → DOC-1 (T2 y T3 comparten `IndicadoresPiloto.tsx`: secuenciales).
+- Externas: stack `mtabolic-e2e` en 8081 con una lista del mes en curso (la E2E la genera si falta) para T4.
+
+**Riesgos**
+1. **Lectura equivocada de las cifras:** "Los contactamos" sale de `tasaRenovacionContactados.n` y los puntitos de `precisionTop25` + `sinDato`; si la suma no da `nTop` el gráfico miente. Mitigación: invariante probada en T1 con los casos del *handler* y la E2E comparando contra la respuesta real.
+2. **Pérdida de rigor para la tesis:** al quitar "n =" y "precisión" de la vista, el docente podría no encontrar las definiciones. Mitigación: "¿Cómo se calcula?" y la ayuda con el texto exacto en un solo componente, probado en Vitest y E2E.
+3. **Impresión y accesibilidad de rayados y puntos:** fondos que el navegador no imprime o categorías que solo se distinguen por color. Mitigación: `print-color-adjust: exact` existente, forma distinta por categoría, leyenda con número y revisión con `emulateMedia('print')`.
+
+### R-020 — Modelo adoptado: de Random Forest a Regresión Logística (notebook, app, datos de arranque y documentación) · **DONE** 2026-11-03
+
+**Cierre:** la Regresión Logística es el modelo adoptado en el notebook v3 y en la app → [M06](mejoras/M06-regresion-logistica-modelo-adoptado.md), [ADR-016](adr/ADR-016-regresion-logistica-como-modelo-adoptado.md). La definición (c) no se aplicó: el usuario mantuvo los cortes 0,70/0,50. Seguridad: clean; diferidos low S1 (códigos seudónimos con fecha/plan/monto en salidas del notebook) y S2 (`joblib.load` antes de validar el formato). Pruebas: pass (2.172 pytest, 11 E2E, `verificar_lista` 0 diferencias). T8 omitida (la ayuda ya decía 70 %/50 %). Sin commit.
+
+**Objetivo:** la Regresión Logística (la que elige la regla fijada de antemano, umbral 0,21) pasa a ser el modelo adoptado en `Prototipo_Final_Mtabolic.ipynb` y en la app, con el mismo pipeline, cortes de riesgo y motivos en los dos lados (`verificar_lista.py` con 0 diferencias); el stack principal arranca como la primera vez y entrena la v1 con RL.
+
+**Fuente:** petición del usuario ("hazlo y documéntalo") · [M05 §4–§5](mejoras/M05-correcciones-evaluacion-semana-10.md) · [backend/12](docs/backend/12-modelo-y-listas.md) · [ADR-002](adr/ADR-002-ml-en-infraestructura.md) · [ADR-005](adr/ADR-005-fidelidad-al-notebook-del-modelo-v1.md) · [ADR-011](adr/ADR-011-reglas-del-reentrenamiento.md) · [ADR-014](adr/ADR-014-modelo-m01-adopcion-y-cortes-de-riesgo.md) · [ADR-015](adr/ADR-015-motivos-con-shap-en-la-app.md) · [ADR-004](adr/ADR-004-migracion-datos-al-arrancar.md).
+
+**Notas de alcance del planner**
+- Se construye **sobre** los cambios de M05 que haya sin commit (notebook, código del modelo, `requirements.txt`, docs): no se revierte nada. Si `git status` sale limpio, M05 ya está commiteado y se parte de ahí.
+- Cambia solo el algoritmo adoptado, los cortes y el método de los motivos. **No** cambian: variables T-30 (`CONJUNTO_MODELO`), preparación (mediana/moda, `StandardScaler`, `OneHotEncoder(handle_unknown="ignore")`), partición, etiquetas, priorización, horizonte, top 25, contrato de la API ni esquema de BD (sin migración Alembic: `modelos.metadata_tecnica` ya guarda el algoritmo).
+- El RF **no se borra**: se queda en el notebook como comparación y en `random_forest.py` solo para leer artefactos antiguos (volúmenes `mtabolic-e2e`/`mtabolic-demo` con un v1 RF).
+- `Documentation/Plan/**` no se toca. Sin commit: lo lanza el usuario.
+
+**Definiciones fijadas por el planner (reversibles; avisar al usuario)**
+- (a) **Hiperparámetros RL** = los del notebook (Parte 7): `LogisticRegression(class_weight="balanced", max_iter=2000, random_state=42)`, resto por defecto (`C=1.0`, `lbfgs`, `l2`); se guardan explícitos en `metadata_tecnica.hiperparametros`, con `algoritmo = "LogisticRegression"`.
+- (b) **Motivos = SHAP lineal intervencional, calculado de forma analítica en los dos lados**: sobre la matriz preparada `X'`, `aporte_k(i) = coef_k · (X'_ik − μ_k)`, con `μ` = media por columna de `X'` del conjunto con que se entrenó el modelo (operativo: todos los evaluables). Columnas *one-hot* sumadas a su variable original en el orden de la matriz (como hoy). Unidad: **log-odds** (escala de `decision_function`); aditividad `base + Σ aportes = decision_function`, con `base = intercepto + coef·μ`. El notebook comprueba que coincide con `shap.LinearExplainer(modelo, shap.maskers.Independent(X'_ent, max_samples=len(X'_ent)))` (error < 1e-9; el `max_samples` por defecto, 100, submuestrea y no coincidiría). Misma regla de selección: hasta 3 aportes `> 0,005`, de mayor a menor, sin `mes_vencimiento`; mismo formato `"Plan: TRIMESTRAL (+0,45)"`. `metodo_factores = "shap_lineal"`. `μ` se guarda en el artefacto.
+- (c) **Cortes ALTO/MEDIO de la RL**: se fijan en el notebook **solo con validación** del RL evaluado (`modelo_adoptado`, entrenado con vencimientos hasta 31-10-2025), en una rejilla de 0,05 (0,05 … 0,95): **ALTO** = menor corte con precisión ≥ 0,90 y ≥ 10 socios por encima; **MEDIO** = menor corte con precisión ≥ 0,80 y ≥ 10 socios por encima. En prueba solo se informan (no se eligen). Se redondean a 2 decimales y quedan fijos (como ADR-014). Si ninguna banda cumple → `BLOCKED` y se consulta al usuario.
+- (d) **Artefacto RL con `formato = 2`** y clave `"algoritmo"`; el RF sigue con `formato = 1`. El predictor del composition root entrena siempre RL y, al predecir, lee el formato: 2 → RL, 1 → RF (compatibilidad de lectura). Así un volumen con v1 RF sigue generando listas hasta que se adopte la RL.
+- (e) **Stacks secundarios sin borrar volúmenes**: `mtabolic-e2e` y `mtabolic-demo` se reconstruyen con `--build` y pasan a RL con `python -m app.cli adoptar-modelo` (versión vigente + 1; la anterior se conserva). Solo el stack principal `proyectofinal` se reinicia con `reiniciar-base-historica`, tras `respaldar-base`.
+
+**Tareas** 🗄 = usa base de datos. 📓 = necesita los libros reales locales de `plantillas/` (nunca se copian ni se imprimen valores).
+
+- [x] **T1** · `infra` (notebook) · RL como modelo adoptado en el notebook oficial 📓
+  - Archivos: `Notebookes/Prototipo_Final_Mtabolic.ipynb` (principal). Salidas no versionadas en `salidas/prototipo_final/`; figuras nuevas, si las hay, en `Documentation/claude/mejoras/M06/` (el notebook solo lleva `.ipynb`).
+  - Docs: [M05 §4–§6](mejoras/M05-correcciones-evaluacion-semana-10.md); definiciones (a)–(c). Partes del notebook: 1 (`MODELO_ADOPTADO`, `UMBRAL_ALTO/MEDIO`, línea ~157–161), 7 (selección y adopción, ~1130–1160), 9 (`explicar_shap`, ~1900), 10 (`modelo_operativo`, `nivel_riesgo`, `motivos`, ~2348–2400), 11 (controles, ~2464–2501), 12 y 13 (`parametros_modelo_operativo.json`, `lista_operativa_2026-09.xlsx`, ~3110–3240).
+  - Aceptación:
+    - `MODELO_ADOPTADO = "Regresión Logística"`; `modelo_adoptado_nombre == modelo_seleccionado_nombre` y `desviacion_regla = False`; el texto de la Parte 7 deja de justificar una desviación y explica la adopción (PR-AUC validación 0,724 vs 0,707; prueba 0,820 vs 0,787; Precisión@25 1,00 vs 0,76, con el bootstrap de M05 §4.3).
+    - Nueva celda de cortes (definición (c)) en validación: tabla corte → precisión, n por encima; imprime ALTO y MEDIO elegidos; `UMBRAL_ALTO/MEDIO` salen de ahí (no escritos a mano); tabla informativa de los mismos cortes en prueba.
+    - `explicar_lineal(modelo, X, X_ent)` con la fórmula (b); comprobación de aditividad contra `decision_function` (< 1e-9) y contra `shap.LinearExplainer` con fondo completo (< 1e-9). `motivos` usa la explicación del modelo adoptado; la explicación SHAP del RF (`TreeExplainer`) se conserva solo como comparación en la Parte 9.
+    - Parte 10: `modelo_operativo = clone(modelos["Regresión Logística"])` sobre `analitico_operativo[VARIABLES_MODELO]`; lista de septiembre con probabilidad, nivel con los cortes nuevos y motivos lineales.
+    - Parte 11: controles de datos y anti-fuga **sin cambios** (2748, 1410, 1564, 1098, 721/180/277, 0, cronología); "Modelo adoptado" = "Regresión Logística", umbral 0,21, PR-AUC prueba 0,8197; nuevos valores esperados de lista (socios, ALTO/MEDIO/BAJO) y cortes, congelados como **v3** con el motivo escrito en la celda. El control "Top 25 igual a MVP.ipynb" pasa a compararse con la lista RF (que se sigue calculando como comparación) para no perder la continuidad; se añade "Top 25 RL vs top 25 RF: n en común" informativo. Termina en `TODOS LOS CONTROLES OK`.
+    - Parte 13: `parametros_modelo_operativo.json` con `algoritmo`, `hiperparametros`, `umbral_alto`, `umbral_medio`, `metodo_factores = "shap_lineal"` y el resto de claves que lee `verificar_lista.py`; `lista_operativa_2026-09.xlsx` con la lista RL; el joblib "operativo, el de la app" es la RL.
+    - Ejecución completa de arriba abajo sin errores (kernel limpio); salidas guardadas en el `.ipynb` sin nombres, cédulas ni códigos de socio (solo agregados y la lista con código anónimo, como hoy).
+  - Pruebas: ejecución del notebook + controles de la Parte 11; resultado y cifras clave (cortes, conteos de la lista) en `.harness/tests.md`.
+
+- [x] **T2** · `domain` · Cortes de riesgo de la RL (0,70/0,50 por decisión del usuario: solo docstrings)
+  - Archivos: `Backend/app/domain/modelo/umbrales.py` (principal), `Backend/tests/unit/domain/modelo/test_umbrales.py`, `Backend/app/api/routers/listas.py` (solo los ejemplos OpenAPI `umbral_alto`/`umbral_medio`, líneas ~43–44).
+  - Docs: [ADR-014 §3](adr/ADR-014-modelo-m01-adopcion-y-cortes-de-riesgo.md); [backend/12 §Lista priorizada](docs/backend/12-modelo-y-listas.md); valores de T1.
+  - Aceptación: `UMBRAL_ALTO` y `UMBRAL_MEDIO` = los de T1 como `Decimal("0.xx")`; docstring cita M06 y la regla (c); score igual al corte → nivel superior (sin cambio); `umbrales_fijos` reparte con los nuevos cortes; las listas ya guardadas no cambian (sus umbrales están en `listas`/`modelos`). Si T1 da 0,70/0,50, solo cambia el docstring.
+  - Pruebas: unitarias (TDD): corte exacto ALTO, corte exacto MEDIO, justo por debajo de cada uno, reparto de `porcentajes`.
+
+- [x] **T3** · `infra` · Adaptador `LogisticRegressionPredictor` (TDD)
+  - Archivos: `Backend/app/infrastructure/ml/regresion_logistica.py` (principal, nuevo), `Backend/tests/unit/infrastructure/ml/test_regresion_logistica.py` (nuevo), `Backend/app/infrastructure/ml/random_forest.py` (solo si hace falta reexportar ayudantes; sin cambio de comportamiento).
+  - Docs: [backend/12 §Modelo](docs/backend/12-modelo-y-listas.md); [ADR-002](adr/ADR-002-ml-en-infraestructura.md); [ADR-015](adr/ADR-015-motivos-con-shap-en-la-app.md); definiciones (a), (b), (d). Reutiliza de `random_forest.py` (importa, no copia): `_a_frame`, `_a_score`, `_calcular_referencia`, `_variable_original`, `NOMBRE_VARIABLE`, `MAX_FACTORES`, `APORTE_MINIMO`, `formatear_aporte`, `texto_valor`, `seleccionar_factores`, `CLASE_NO_RENOVO`. Puerto: `Backend/app/domain/common/predictor.py` (`PredictorModel`, sin cambios).
+  - Aceptación:
+    - Implementa `PredictorModel` (`isinstance(..., PredictorModel)` con `runtime_checkable`); `construir_pipeline` con la misma preparación que el RF y `LogisticRegression(**HIPERPARAMETROS)` de (a).
+    - `train`: mismas validaciones (una etiqueta por fila; dos clases) → `ValueError`; artefacto joblib `{"formato": 2, "algoritmo": "LogisticRegression", "pipeline", "numericas", "categoricas", "referencia", "media_fondo"}`; `metadata_tecnica` con `algoritmo = "LogisticRegression"`, `hiperparametros` (JSON ordenado), `preprocesamiento`, variables, versiones (`python`, `scikit_learn`, `numpy`, `pandas`, `joblib`, `shap`) y `metodo_factores = "shap_lineal"`.
+    - `cargar_artefacto` con formato ≠ 2 → `ValueError` con mensaje sin datos.
+    - `predict`: score = `predict_proba[:, 1]` cuantizado a 8 decimales en `Decimal`; lista vacía → `[]`. Factores por (b): para un caso construido a mano, `base + Σ aportes == decision_function` (tolerancia 1e-9) y aportes iguales a `shap.LinearExplainer` con fondo completo (1e-9); `mes_vencimiento` nunca aparece; ≤ 3 factores, todos `> 0,005`, ordenados; formato `"Plan: TRIMESTRAL (+0,45)"`.
+    - Determinista: dos entrenamientos con los mismos datos → mismas probabilidades.
+    - `Decimal → float` solo en este borde; sin `datetime.now()`; `ruff`, `mypy app`, `lint-imports` en verde.
+  - Pruebas: unitarias sin BD.
+
+- [x] **T4** · `infra` · Predictor adoptado en el composition root
+  - Archivos: `Backend/app/infrastructure/ml/predictor_adoptado.py` (principal, nuevo), `Backend/tests/unit/infrastructure/ml/test_predictor_adoptado.py` (nuevo), `Backend/app/api/dependencies.py` (`get_predictor` línea 122 y fábricas líneas 271, 321, 337), `Backend/app/application/modelo/adoptar_modelo.py` (solo `MOTIVO_ADOPCION`, línea 52).
+  - Docs: definición (d); [backend/01 §composition root](docs/backend/01-arquitectura.md); [backend/12 §Reentrenamiento](docs/backend/12-modelo-y-listas.md); [ADR-011](adr/ADR-011-reglas-del-reentrenamiento.md).
+  - Aceptación:
+    - `PredictorAdoptado.train` delega en `LogisticRegressionPredictor`; `predict` lee `formato` del artefacto: 2 → RL, 1 → `RandomForestPredictor`, otro → `ValueError`. Se deserializa una sola vez por llamada.
+    - `dependencies.py` ya no instancia `RandomForestPredictor` en ningún sitio (`grep RandomForestPredictor Backend/app/api` → 0); migración (CU-03), listas (CU-04), reentrenamiento (CU-02) y `adoptar-modelo` usan `PredictorAdoptado`.
+    - Migración inicial en BD vacía → v1 con `metadata_tecnica.algoritmo = "LogisticRegression"`.
+    - CU-02 con vigente RL → candidato RL comparado contra el vigente RL por PR-AUC (sin cambios en la regla de ADR-011); con vigente RF heredado → la comparación funciona (lee el RF) y el nuevo vigente, si se adopta, es RL.
+    - `MOTIVO_ADOPCION` deja de citar "M01" en exclusiva (p. ej. `"Adopción del modelo de Regresión Logística (M06)"`); los intentos ya guardados no cambian.
+    - `import-linter` en verde: `predictor_adoptado` solo en infraestructura; la aplicación sigue viendo solo `PredictorModel`.
+  - Pruebas: unitarias (despacho por formato con artefactos reales de los dos adaptadores; formato desconocido) y las de `tests/unit/application/modelo/test_reentrenar_modelo.py` y `test_adoptar_modelo.py` en verde.
+
+- [x] **T5** · `infra` · Pruebas de integración y ayudantes que asumían RF 🗄
+  - Archivos: `Backend/tests/integration/sistema/test_migrar_historico_pg.py` (principal), `Backend/tests/integration/sistema/migracion_sintetica.py`, `Backend/tests/integration/reentrenamiento_datos.py`, `Backend/tests/integration/api/test_arranque_migracion.py`.
+  - Docs: [backend/12](docs/backend/12-modelo-y-listas.md); definición (d).
+  - Aceptación: las cuatro usan `PredictorAdoptado` (o `LogisticRegressionPredictor` cuando el test es del adaptador); aserciones de `algoritmo` → `"LogisticRegression"`; ninguna aserción que dependa de cifras del RF queda sin revisar (si una cifra cambia, se recalcula y se anota por qué, sin relajar la comprobación); `pytest tests/integration/sistema tests/integration/test_adoptar_modelo.py tests/integration/test_cli_reentrenar.py` en verde contra PostgreSQL real.
+  - Pruebas: integración.
+
+- [x] **T6** · `infra` · Pruebas de API de listas con RL 🗄
+  - Archivos: `Backend/tests/integration/api/test_listas_api.py` (principal), `Backend/tests/integration/api/listas_datos.py`, `Backend/tests/integration/api/test_listas_api_migracion.py`.
+  - Docs: [API_CONTRACT §Listas](docs/API_CONTRACT.md); [backend/12 §Lista priorizada](docs/backend/12-modelo-y-listas.md).
+  - Aceptación: `POST /api/v1/listas` → `201` con niveles calculados con los cortes de T2 y factores con formato de (b); `GET /api/v1/listas/{id}` → `200` con `umbral_alto`/`umbral_medio` del modelo; lista guardada antes con un modelo RF (artefacto `formato 1` sembrado) se sigue consultando igual → `200` sin recalcular; `pytest tests/integration/api` en verde; suite completa `pytest` en verde.
+  - Pruebas: integración.
+
+- [x] **T7** · `infra` · `verificar_lista.py` y dataset demo con RL 📓
+  - Archivos: `Backend/scripts/verificar_lista.py` (principal), `Backend/tests/unit/scripts/test_verificar_lista.py`, `Backend/tests/unit/scripts/test_generar_dataset_demo.py`.
+  - Docs: docstring de `verificar_lista.py` (líneas 1–46, `_conciliar_modelo` ~599); [backend/12 §Conciliación](docs/backend/12-modelo-y-listas.md); definiciones (b), (c).
+  - Aceptación:
+    - Usa `LogisticRegressionPredictor`; `METODO_FACTORES = "shap_lineal"`; concilia además `algoritmo`, `hiperparametros` y cortes (`umbral_alto`, `umbral_medio`) del JSON de T1 con los de la app; docstring actualizado (RL, cortes nuevos, M06).
+    - `python scripts/verificar_lista.py <plantillas> --referencia ../salidas` → **0 diferencias** en conteos, variables, medianas, método, modelo, probabilidad (8 decimales), nivel, motivos (texto exacto) y orden por grupo de empate; código de salida `0`. Solo imprime conteos y posiciones (RN-03.5).
+    - `test_generar_dataset_demo.py` usa el predictor adoptado; con `--fecha-base 2026-11-02` sigue cumpliendo ≥ 20 socios con cédula y ≥ 2 niveles, y ≥ 10 socios cada semana hasta `vigencia.txt`. Si con la RL no se cumple → `BLOCKED` (no se regenera `datos-demo/` sin decisión del usuario).
+    - `pytest tests/unit/scripts`, `ruff`, `mypy` en verde.
+  - Pruebas: unitarias + ejecución local de `verificar_lista.py` (resultado en `.harness/tests.md`, solo conteos).
+
+- [x] **T8** · `frontend` · Ayuda de la lista con los cortes nuevos (omitida: los cortes no cambiaron)
+  - Archivos: `Frontend/src/features/lista/components/AyudaLista.tsx` (principal, líneas ~34–45), `Frontend/src/features/lista/components/AyudaLista.test.tsx` (línea ~120).
+  - Docs: [frontend/01](docs/frontend/01-arquitectura.md); valores de T1.
+  - Aceptación: el texto dice "alto si esa probabilidad es de XX % o más, medio si está entre YY % y XX %" con los cortes de T2; los motivos siguen explicados como "los datos del socio que más suben su probabilidad de no renovar, comparado con un socio promedio" (válido para SHAP lineal); `npm run test -- AyudaLista`, `npm run lint` y `tsc` en verde. Si T1 da 0,70/0,50, la tarea se omite.
+  - Pruebas: Vitest.
+
+- [x] **SEC-1** · security-reviewer · Diff de R-020. Artefactos joblib solo desde `modelos.artefacto` (ADR-003), también en el despacho por formato (sin cargar rutas ni artefactos externos); `verificar_lista.py` y el notebook sin imprimir ni guardar datos personales (salidas del `.ipynb` revisadas); sin secretos; logs sin mensajes de excepción ajenos. Ningún archivo de `salidas/` ni `plantillas/` entra al commit.
+
+- [x] **T9** · `infra-deploy` · Datos como la primera vez y stacks con RL 🗄 (respaldo `respaldos/proyectofinal-20261103-125631`; principal v1 RL; e2e v4 RL; demo RL sin ALTO)
+  - Archivos: ninguno versionado (operación). Scripts existentes: `scripts/respaldar-base.{ps1,sh}`, `scripts/reiniciar-base-historica.{ps1,sh}`, `scripts/levantar-demo.ps1`.
+  - Docs: [backend/10 §Uso, §Stack E2E aislado, §Stack demo](docs/backend/10-docker.md); [ADR-004](adr/ADR-004-migracion-datos-al-arrancar.md); definición (e).
+  - Aceptación:
+    - Stack principal `proyectofinal`: `respaldar-base` → archivo de respaldo con tamaño > 0 y su ruta anotada (sin contenido); luego `reiniciar-base-historica` (reconstruye con `--build`) → migración `COMPLETADA`, `GET /api/v1/sistema/estado` → `200` con `LISTO`; un solo modelo, v1 vigente con `algoritmo = "LogisticRegression"`; 0 listas, 0 campañas, 0 gestiones; umbrales del modelo = cortes de T2.
+    - `docker volume ls` antes y después: solo cambia `proyectofinal_*` (`mtabolic-e2e_pgdata` y `mtabolic-demo_pgdata` siguen con la misma fecha de creación). Nunca `down -v` con otro `-p`.
+    - `mtabolic-e2e` (8081): `up -d --build`; `adoptar-modelo` → nueva versión vigente RL; Playwright E2E en verde contra 8081.
+    - `mtabolic-demo` (8083): `up -d --build` con `-p mtabolic-demo --env-file .env.demo`; si el volumen existe, `adoptar-modelo`; `POST /api/v1/listas` (con `Origin: http://localhost:8083`) → `201` con ≥ 20 filas y modelo vigente RL.
+    - Resultado en `.harness/tests.md`: conteos y estados, sin datos de socios.
+  - Pruebas: manual de punta a punta + E2E.
+
+- [x] **DOC-1** · doc-agent · **ADR-016** "Regresión Logística como modelo adoptado" (contexto M05, regla de selección, cifras de validación y prueba, bootstrap, cortes (c), motivos (b), compatibilidad (d), alternativas: mantener RF; supersede la parte de modelo de ADR-014/ADR-015 sin borrarlas) · **mejoras/M06** (qué cambia para la tesis: tablas y textos a sustituir, cifras de T1, cortes, ejemplo de motivos en log-odds, lista de septiembre v3, figuras de `Documentation/claude/mejoras/M06/`) y su línea en `mejoras/README.md` · **M05** §Modelo adoptado y §5 (nota "sustituido por M06", sin reescribir la historia) · `README.md` · [backend/12](docs/backend/12-modelo-y-listas.md) (§Modelo, nueva §Decisiones de R-020) · [backend/10](docs/backend/10-docker.md) si cambia el procedimiento · menciones a RF como adoptado en `03-casos-de-uso.md`, `07-cierre.md`, `01-analisis-mvp-a-app-web.md`, `DOCUMENTACION_CONSOLIDADA_DESARROLLO.md`, ADR-002/005/015 (nota de estado) y el comentario de `requirements.txt` · este board.
+
+**Dependencias**
+- T1 → T2 → T3 → T4 → (T5 ‖ T6 ‖ T7 ‖ T8) → SEC-1 → T9 → DOC-1.
+- T3 puede empezar en paralelo con T1 (no depende de los cortes); T7 necesita las salidas de T1 y T4.
+- Externas: libros reales en `plantillas/` (T1, T7) y entorno con las versiones de `requirements.txt` (mismas que el notebook); Docker Desktop (T5, T6, T9).
+
+**Riesgos**
+1. **Paridad notebook ↔ app:** `lbfgs` y la media de fondo en `float64` deben dar los mismos 8 decimales y los mismos aportes al borde de 0,005; distinto orden de columnas, otra versión de scikit-learn o `max_samples` del masker romperían `verificar_lista.py`. Mitigación: fórmula analítica idéntica, `μ` del mismo conjunto, suma en el orden de la matriz, versiones fijadas y comprobación contra `LinearExplainer` en los dos lados.
+2. **Reinicio destructivo del stack principal:** `reiniciar-base-historica` borra listas, campañas y gestiones reales. Mitigación: respaldo verificado (tamaño > 0) antes, solo `-p proyectofinal`, inventario de volúmenes antes y después; vuelta atrás = `restaurar-base`.
+3. **Volúmenes heredados con RF y demo:** e2e/demo tienen un v1 RF; sin el despacho por formato las listas fallarían, y con la RL el dataset demo podría quedar con un solo nivel. Mitigación: definición (d), `adoptar-modelo` en vez de borrar volúmenes, y la comprobación de niveles de T7 antes de T9.
 
 ### R-019 — Levantar el proyecto en cualquier computadora con un solo comando (solo Docker Desktop) y dataset sintético versionado · **DONE** 2026-11-02
 
@@ -3514,6 +3864,9 @@ Lote B · app (backend)
 - 2026-11-02 · R-019 · Reproducir = levantar, no repetir cifras: stack propio `mtabolic-demo` (`8083`/`8003`/`5435`, solo `127.0.0.1`), comando único `scripts/levantar-demo.{ps1,sh}` y dataset inventado en `datos-demo/`; pasada `vigencia.txt`, regenera solo si no existe el volumen; con volumen, solo avisa → [backend/10 §Stack demo](docs/backend/10-docker.md).
 - 2026-11-02 · R-019 · Diferidos low: S1 ACL de `.env.demo` en Windows; S2 regeneración sin hashes → [backend/10 §Limitaciones](docs/backend/10-docker.md).
 - 2026-11-02 · R-019 · El usuario acepta dos excepciones de T6: conteos por tabla de `proyectofinal` y `mtabolic-e2e` sin medir; 3 carpetas temporales sin borrar.
+- 2026-11-03 · R-020 · Regresión Logística adoptada (sustituye la desviación de M05 §5); cortes 0,70/0,50 mantenidos por decisión del usuario (la regla por precisión no daba ALTO); motivos SHAP lineal; despacho por formato para artefactos RF; diferidos low S1/S2 → [ADR-016](adr/ADR-016-regresion-logistica-como-modelo-adoptado.md), [mejoras/M06](mejoras/M06-regresion-logistica-modelo-adoptado.md).
+- 2026-11-03 · R-021 · Vista del piloto en tres gráficos en lenguaje simple ("¿Cómo le fue a la lista del mes?"), sin monto en pantalla (la API lo sigue enviando); definiciones exactas solo en "¿Cómo se calcula?"/ayuda (`DefinicionesPiloto`); sin modo oscuro propio (limitación: bajo contraste de la línea base y "Vencimiento" con tema forzado) → [mejoras/M04 §13](mejoras/M04-indicadores-del-piloto.md#13-cambio-de-la-vista-r-021), [frontend/01](docs/frontend/01-arquitectura.md).
+- 2026-11-03 · R-022 · Piloto con dos gráficos: se quita "¿La lista acertó?" (precisión calculada, no mostrada); anticipación con rango y tramos ≥15/8–14/1–7/≤0 (límites de presentación, reversibles) por contrato aditivo; sin la frase "al menos una semana" (no respaldada); 8081 alterna `grabacion`/`e2e` con `preparar-8081` → [M04 §14](mejoras/M04-indicadores-del-piloto.md), [comandos/preparar-8081.md](comandos/preparar-8081.md).
 
 ## PRÓXIMO
 

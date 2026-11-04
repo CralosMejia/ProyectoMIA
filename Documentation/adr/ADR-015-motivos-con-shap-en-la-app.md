@@ -2,6 +2,7 @@
 
 - **Estado:** aceptada · 2026-10-16 · R-017 (mejora M03)
 - **Origen:** [mejoras/M03](../mejoras/M03-shap-prueba-y-motivos-en-la-app.md) · definición (e) de R-017 · M02 §11 punto 7
+- **Nota (2026-11-03, R-020):** con la Regresión Logística adoptada ([ADR-016](ADR-016-regresion-logistica-como-modelo-adoptado.md)) los modelos nuevos explican con SHAP lineal (`metodo_factores: "shap_lineal"`, log-odds); este ADR sigue aplicando a los artefactos Random Forest (formato 1). La regla de selección y el formato de los motivos no cambian.
 - **Sustituye:** el método de factores por sustitución de §13.3 ([ADR-005](ADR-005-fidelidad-al-notebook-del-modelo-v1.md) punto 2 y [ADR-014](ADR-014-modelo-m01-adopcion-y-cortes-de-riesgo.md) punto 6 dejan de afectar a los motivos) · **complementa:** [ADR-002](ADR-002-ml-en-infraestructura.md), [ADR-007](ADR-007-excel-igual-a-la-pantalla-y-nombre-de-lista.md)
 
 ## Contexto

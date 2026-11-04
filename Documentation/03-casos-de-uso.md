@@ -320,7 +320,7 @@ Los libros históricos no siguen la plantilla: una hoja por mes, el encabezado e
 9. Asigna la identidad del socio: cédula de al menos 9 dígitos si existe; si no, el nombre normalizado.
 10. Si falta la fecha de inicio, usa el primer día del mes de la hoja y marca `inicio_aproximado`.
 11. Reconstruye los ciclos, los clasifica (evaluable, pendiente o excluido) y calcula la etiqueta T a T+30 con las reglas del notebook.
-12. Entrena el Random Forest con el pipeline y los parámetros aprobados y calcula los umbrales (CU-05).
+12. Entrena el modelo adoptado (Regresión Logística desde R-020, [ADR-016](adr/ADR-016-regresion-logistica-como-modelo-adoptado.md); antes Random Forest) con el pipeline y los parámetros aprobados y calcula los umbrales (CU-05).
 13. En **una sola transacción** guarda socios, membresías (origen `HISTORICO`, año, hoja y fila, y valores originales de plan y forma de pago), la carga `MIGRACION_HISTORICA` con sus conteos y el **modelo v1 vigente** con sus metadatos. Los duplicados exactos del histórico se conservan, como en el notebook.
 14. Fija la próxima fecha de reentrenamiento en 6 meses después del entrenamiento del modelo v1.
 15. Registra un **informe de migración**: filas leídas, descartadas y guardadas; socios por cédula y por nombre; ciclos por estado y motivo de exclusión; prevalencia y rango de fechas.
@@ -686,6 +686,10 @@ El dashboard muestra **resultados observados, no causalidad**. Se puede decir: *
 
 **Precisiones de la implementación (R-018, mejora M04 del tutor, alcance reducido).** Se añade un cuarto bloque, **"Indicadores del piloto"**, sobre los 25 primeros socios (prioridad ≤ 25) de la **última lista generada en el mes** filtrado: precisión del top 25 y renovación de los contactados (verificadas 30 días después del vencimiento, con el corte de los datos cargados, no con "hoy"), contactados antes del vencimiento, días de anticipación y monto retenido. Cada indicador muestra su número de casos y su estado (completo, parcial, pendiente o sin datos), sin mínimo de casos (RN-11.1 se cumple) y con "Pocos casos" bajo 10. Lleva los avisos de sesgo de la precisión por la gestión y de cifras no causales; se imprime con el resto (RN-11.2). El grupo de control y la comparación con intervalos de confianza **no** se implementan: la aclaración metodológica de arriba sigue vigente. Definiciones: [mejoras/M04](mejoras/M04-indicadores-del-piloto.md).
 
+**Precisión de la vista (R-021, 2026-11-03).** El bloque se titula **"¿Cómo le fue a la lista del mes?"** y presenta los mismos indicadores en tres gráficos en lenguaje simple (embudo lista–contactados–renovaron, un puntito por socio para "¿La lista acertó?" y línea de tiempo de la anticipación), con estados en palabras ("Resultado final", "Faltan X socios por confirmar…", "Todavía es pronto…", "Sin datos este mes") y "Son pocos socios todavía" bajo 10. **El monto retenido ya no se muestra** (la API lo sigue enviando). Las fórmulas exactas, el número de casos y la verificación T+30 están en "¿Cómo se calcula?" y en la ayuda; ese botón no se imprime, el resto del bloque sí (RN-11.1 y RN-11.2 se siguen cumpliendo).
+
+**Precisión de la vista (R-022, 2026-11-03).** El bloque queda con **dos** gráficos: se elimina "¿La lista acertó?" junto con su aviso de sesgo y la definición de precisión en "¿Cómo se calcula?" (la precisión del top 25 se sigue calculando y enviando, no se muestra). "¿Con cuánta anticipación?" añade escala en días (30, 15, 7, Vence), promedio etiquetado, cuántos se llamaron antes y cuántos el mismo día o después, la llamada más temprana y la más tardía, y el reparto en cuatro tramos (≥ 15, 8–14, 1–7, ≤ 0 días). La API añade de forma aditiva `dias_anticipacion.minimo|maximo|tramos`. RN-11.1 y RN-11.2 se siguen cumpliendo.
+
 ---
 
 ## 15. CU-12 · Descargar Excel de priorización
@@ -795,7 +799,7 @@ Como el histórico no cumple la plantilla, algunos campos que la plantilla exige
 | Migración del histórico (CU-03) | Reutiliza tal cual la lectura de libros mensuales, la detección de encabezado, las equivalencias de columnas, la limpieza y la normalización (secciones 2.4 a 4.6). |
 | Carga por plantilla (CU-01) | Lectura nueva de una sola hoja con títulos fijos. Reutiliza las conversiones de fecha y monto y la normalización de identidad. |
 | Reconstrucción temporal | Reutiliza las reglas de ciclo, T−30, T+30, elegibilidad y exclusiones (Parte 5). |
-| Entrenamiento (CU-02, CU-03) | Reutiliza el Random Forest operativo y su pipeline (Secciones 9.5 y 13.8). Añade versionado, criterios de reentrenamiento y guardado en la base. |
+| Entrenamiento (CU-02, CU-03) | Reutiliza el modelo operativo y su pipeline (Secciones 9.5 y 13.8; Regresión Logística desde R-020, ADR-016). Añade versionado, criterios de reentrenamiento y guardado en la base. |
 | Predicción (CU-04) | Reutiliza la cartera futura, la exclusión de renovados, el cálculo de variables, el score y los factores principales (Sección 13.8). |
 | Nivel de riesgo (CU-05) | Reutiliza los umbrales fijos del notebook 0,70 / 0,50 (desde M01, R-015; hasta entonces se cambiaban por percentiles). |
 | Exportación (CU-12) | Reutilizaba las hojas `top_K`, `cartera_completa` y `resumen`; desde R-008 el Excel replica las tablas de la pantalla (§15). |

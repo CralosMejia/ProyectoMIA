@@ -296,6 +296,35 @@ def test_ejecutar_piloto_serializa_decimales_como_string() -> None:
     assert piloto["corte_verificacion"] == "2026-09-29"
 
 
+def test_ejecutar_piloto_publica_rango_y_tramos_de_la_anticipacion() -> None:
+    # 101: T 08-01, contacto 07-25 -> 7 dias; 102: contacto el mismo dia de T -> 0.
+    dto = ConsultarDashboard(_lector_piloto(), RelojFijo()).ejecutar("2026-08")
+
+    d = dto.model_dump(mode="json")["piloto"]["dias_anticipacion"]
+
+    assert (d["minimo"], d["maximo"], d["n"]) == (0, 7, 2)
+    assert d["tramos"] == {
+        "quince_o_mas": 0,
+        "de_ocho_a_catorce": 0,
+        "de_uno_a_siete": 1,
+        "mismo_dia_o_despues": 1,
+    }
+
+
+def test_ejecutar_piloto_mes_sin_lista_rango_nulo_y_tramos_en_cero() -> None:
+    dto = ConsultarDashboard(_lector_piloto(lista=None), RelojFijo()).ejecutar("2026-08")
+
+    d = dto.model_dump(mode="json")["piloto"]["dias_anticipacion"]
+
+    assert (d["minimo"], d["maximo"]) == (None, None)
+    assert d["tramos"] == {
+        "quince_o_mas": 0,
+        "de_ocho_a_catorce": 0,
+        "de_uno_a_siete": 0,
+        "mismo_dia_o_despues": 0,
+    }
+
+
 def test_ejecutar_piloto_proporcion_cero_en_notacion_fija() -> None:
     lista = ListaPiloto(7, "L", date(2026, 8, 20), (FilaPiloto(104, 1, False, None),))
     dto = ConsultarDashboard(_lector_piloto(lista), RelojFijo()).ejecutar("2026-08")

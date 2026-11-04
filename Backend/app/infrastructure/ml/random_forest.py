@@ -84,9 +84,11 @@ class ArtefactoRandomForest:
     referencia: Mapping[str, ValorReferencia]
 
 
-def construir_pipeline(numericas: Sequence[str], categoricas: Sequence[str]) -> Pipeline:
-    """Pipeline sin entrenar, identico al ``modelo_operativo`` del notebook."""
-    preparacion = ColumnTransformer(
+def construir_preparacion(
+    numericas: Sequence[str], categoricas: Sequence[str]
+) -> ColumnTransformer:
+    """Preparacion sin entrenar del notebook: imputar + escalar numericas; imputar + one-hot."""
+    return ColumnTransformer(
         [
             (
                 "numericas",
@@ -110,14 +112,25 @@ def construir_pipeline(numericas: Sequence[str], categoricas: Sequence[str]) -> 
             ),
         ]
     )
+
+
+def construir_pipeline(numericas: Sequence[str], categoricas: Sequence[str]) -> Pipeline:
+    """Pipeline sin entrenar, identico al Random Forest del notebook."""
     return Pipeline(
-        [("preparacion", preparacion), ("modelo", RandomForestClassifier(**HIPERPARAMETROS))]
+        [
+            ("preparacion", construir_preparacion(numericas, categoricas)),
+            ("modelo", RandomForestClassifier(**HIPERPARAMETROS)),
+        ]
     )
 
 
 def cargar_artefacto(artefacto: bytes) -> ArtefactoRandomForest:
     """Deserializa un artefacto escrito por ``RandomForestPredictor.train``."""
-    contenido = joblib.load(io.BytesIO(artefacto))
+    return artefacto_desde_contenido(joblib.load(io.BytesIO(artefacto)))
+
+
+def artefacto_desde_contenido(contenido: object) -> ArtefactoRandomForest:
+    """Valida el contenido ya deserializado (``formato`` 1) y lo convierte en el artefacto."""
     if not isinstance(contenido, dict) or contenido.get("formato") != FORMATO_ARTEFACTO:
         raise ValueError("El artefacto no tiene el formato esperado del modelo.")
     return ArtefactoRandomForest(

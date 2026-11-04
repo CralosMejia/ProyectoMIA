@@ -211,3 +211,47 @@ def test_dashboard_example_serializes_tasa_renovacion_as_string(
     assert any(isinstance(t, str) for t in tasas)
     assert dumped["piloto"]["precision_top25"]["valor"] == "0.60000000"
     assert dumped["piloto"]["monto_retenido"]["total"] == "312.50"
+
+
+# R-022: ``dias_anticipacion`` gana ``minimo``, ``maximo`` y ``tramos`` (aditivo).
+TRAMOS = {"quince_o_mas", "de_ocho_a_catorce", "de_uno_a_siete", "mismo_dia_o_despues"}
+
+
+def test_openapi_dias_anticipacion_aditivo_conserva_campos_y_publica_rango_y_tramos(
+    openapi_spec: dict[str, Any],
+) -> None:
+    esquemas = openapi_spec["components"]["schemas"]
+
+    publicados = set(esquemas["IndicadorDiasDTO"]["properties"])
+    assert publicados == {"valor", "n", "estado", "minimo", "maximo", "tramos"}
+    assert set(esquemas["TramosAnticipacionDTO"]["properties"]) == TRAMOS
+
+
+@pytest.mark.parametrize("nombre", ["con_piloto", "piloto_sin_datos"])
+def test_openapi_dashboard_ejemplos_tramos_coherentes(
+    openapi_spec: dict[str, Any], nombre: str
+) -> None:
+    piloto = _ejemplos_200(openapi_spec)[nombre]["piloto"]
+    dias = piloto["dias_anticipacion"]
+    tramos = dias["tramos"]
+
+    assert set(tramos) == TRAMOS
+    assert sum(tramos.values()) == dias["n"]
+    antes = tramos["quince_o_mas"] + tramos["de_ocho_a_catorce"] + tramos["de_uno_a_siete"]
+    assert antes == piloto["contactados_antes_vencimiento"]["numerador"]
+    if dias["n"] == 0:
+        # El OpenAPI publicado omite los ``None`` (FastAPI usa ``exclude_none``).
+        assert (dias.get("minimo"), dias.get("maximo")) == (None, None)
+    else:
+        assert dias["minimo"] <= dias["maximo"]
+
+
+def test_get_dashboard_mes_sin_lista_rango_nulo_y_tramos_en_cero(
+    migrated_engine: Engine, contract_client: TestClient
+) -> None:
+    response = contract_client.get(DASHBOARD_PATH, params={"mes": "2026-12"})
+
+    assert response.status_code == 200
+    dias = response.json()["piloto"]["dias_anticipacion"]
+    assert (dias["minimo"], dias["maximo"]) == (None, None)
+    assert dias["tramos"] == dict.fromkeys(TRAMOS, 0)

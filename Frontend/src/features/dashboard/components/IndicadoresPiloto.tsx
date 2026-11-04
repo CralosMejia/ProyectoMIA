@@ -1,119 +1,312 @@
+import type { ReactNode } from 'react'
+import { BotonAyuda } from '../../../shared/ui/Ayuda'
 import { Tarjeta } from '../../../shared/ui/Diseno'
 import {
-  decimalConComa,
+  anticipacionPiloto,
+  detalleAnticipacion,
+  embudoPiloto,
   fechaEnPalabras,
-  montoUsd,
-  porcentajeDecimal,
+  textoEstadoPiloto,
 } from '../hooks/presentacion'
-import type {
-  EstadoIndicador,
-  IndicadoresPiloto as DatosPiloto,
-  IndicadorProporcion,
-} from '../types'
+import type { IndicadoresPiloto as DatosPiloto } from '../types'
+import { DefinicionesPiloto } from './AyudaDashboard'
 
 export interface IndicadoresPilotoProps {
   piloto: DatosPiloto
 }
 
-export const AVISO_SESGO_PILOTO =
-  'Los socios del top 25 se contactan; por eso la precisión observada puede quedar por debajo de la real.'
-export const AVISO_NO_CAUSAL = 'Cifras observadas, no causales.'
-export const POCOS_CASOS = 'Pocos casos: léase con cuidado'
-/** El `n` del monto cuenta solo a los contactados que ya cumplieron los 30 días. */
-export const CASOS_MONTO = 'contactados ya verificados'
+export const TITULO_PILOTO = '¿Cómo le fue a la lista del mes?'
+export const AVISO_NO_CAUSAL =
+  'Estas cifras cuentan lo que pasó; no prueban que la llamada haya causado la renovación.'
+export const POCOS_CASOS = 'Son pocos socios todavía: tómalo con cuidado'
 
-const SIN_CIFRA = 'Sin cifra'
 /** Debajo de este numero de casos se avisa que la cifra es fragil. */
 const MINIMO_CASOS = 10
 
-/** Estado traducido para el usuario; nunca se muestra el nombre interno. */
-function textoEstado(estado: EstadoIndicador, n: number, pendientes?: number): string {
-  switch (estado) {
-    case 'COMPLETO':
-      return 'Completo'
-    case 'PARCIAL':
-      return pendientes === undefined
-        ? 'Parcial'
-        : `Parcial: faltan ${pendientes} por verificar (${n - pendientes} de ${n} verificados)`
-    case 'PENDIENTE':
-      return 'Pendiente: aún no se puede verificar (se verifica 30 días después del vencimiento)'
-    case 'SIN_DATOS':
-      return 'Sin datos'
-  }
+/** "1 socio" / "N socios" (y en general: singular solo con 1). */
+function contar(cantidad: number, singular: string, plural: string): string {
+  return `${cantidad} ${cantidad === 1 ? singular : plural}`
 }
 
-const CLASE_ESTADO: Record<EstadoIndicador, string> = {
-  COMPLETO: 'bg-ok/10',
-  PARCIAL: 'bg-degraded/10',
-  PENDIENTE: 'bg-degraded/10',
-  SIN_DATOS: 'bg-canvas',
+function socios(cantidad: number): string {
+  return contar(cantidad, 'socio', 'socios')
 }
 
-interface IndicadorProps {
-  nombre: string
-  valor: string
-  detalle?: string
-  n: number
-  /** Aclara qué cuenta el `n` cuando no es obvio (p. ej. el monto). */
-  casos?: string
-  estado: EstadoIndicador
-  pendientes?: number
-}
-
-/** Un indicador: `dt` con el nombre y sus `dd` (valor, detalle, n, estado y aviso de pocos casos). */
-function Indicador({ nombre, valor, detalle, n, casos, estado, pendientes }: IndicadorProps) {
+/** Bloque de un grafico: `h3`, dibujo y textos; no se corta entre paginas. */
+function Grafico({ id, titulo, children }: { id: string; titulo: string; children: ReactNode }) {
   return (
-    <div className="flex break-inside-avoid flex-col gap-1 rounded-card border border-line bg-canvas px-4 py-3">
-      <dt className="text-xs font-medium text-muted">{nombre}</dt>
-      <dd className="text-2xl font-semibold tabular-nums">{valor}</dd>
-      {detalle !== undefined && <dd className="text-sm text-muted tabular-nums">{detalle}</dd>}
-      <dd className="text-sm tabular-nums">{casos === undefined ? `n = ${n}` : `n = ${n} ${casos}`}</dd>
-      <dd className={`w-fit rounded-pill px-3 py-1 text-xs font-medium ${CLASE_ESTADO[estado]}`}>
-        {textoEstado(estado, n, pendientes)}
-      </dd>
-      {n > 0 && n < MINIMO_CASOS && (
-        <dd className="text-xs font-medium text-ink">{POCOS_CASOS}</dd>
-      )}
+    <section
+      aria-labelledby={id}
+      className="flex min-w-0 break-inside-avoid flex-col gap-3 rounded-card border border-line bg-canvas px-4 py-3"
+    >
+      <h3 id={id} className="text-base font-semibold">
+        {titulo}
+      </h3>
+      {children}
+    </section>
+  )
+}
+
+function Estado({ texto }: { texto: string }) {
+  return <p className="text-sm font-medium text-ink">{texto}</p>
+}
+
+function PocosCasos({ n }: { n: number }) {
+  return n > 0 && n < MINIMO_CASOS ? (
+    <p className="text-xs font-medium text-ink">{POCOS_CASOS}</p>
+  ) : null
+}
+
+/** Muestra de la leyenda con la misma forma que en el dibujo. */
+function Muestra({ forma }: { forma: string }) {
+  return <span aria-hidden="true" className={`inline-block size-3.5 shrink-0 ${forma}`} />
+}
+
+function ItemLeyenda({
+  forma,
+  etiqueta,
+  numero,
+}: {
+  forma: string
+  etiqueta: string
+  numero: number
+}) {
+  return (
+    <li className="flex items-center gap-2 text-sm">
+      <Muestra forma={forma} />
+      <span>
+        {etiqueta} <span className="font-semibold tabular-nums">{numero}</span>
+      </span>
+    </li>
+  )
+}
+
+const FORMA_RENOVARON = 'rounded-pill bg-ok'
+const FORMA_POR_CONFIRMAR = 'rounded-pill rayado'
+
+function EmbudoPiloto({ piloto }: IndicadoresPilotoProps) {
+  const [lista, contactados, renovaron] = embudoPiloto(piloto)
+  const tasa = piloto.tasaRenovacionContactados
+  const resumen = `${socios(lista.numero)} en la lista del mes, ${contar(contactados.numero, 'contactado', 'contactados')}, ${contactados.antesVencimiento} antes del vencimiento, ${contar(renovaron.numero, 'renovó', 'renovaron')} y ${renovaron.porConfirmar} por confirmar`
+
+  return (
+    <Grafico id="piloto-embudo-title" titulo="¿Cuántos contactamos y cuántos renovaron?">
+      <div role="img" aria-label={resumen} className="flex flex-col gap-3">
+        <Barra etiqueta={lista.etapa} numero={lista.numero}>
+          <div
+            data-barra="lista"
+            className="h-full rounded-pill bg-brand"
+            // Unico valor dinamico: el ancho depende del dato.
+            style={{ width: `${lista.ancho}%` }}
+          />
+        </Barra>
+        <Barra
+          etiqueta={contactados.etapa}
+          numero={contactados.numero}
+          detalle={`${contactados.antesVencimiento} antes del vencimiento`}
+        >
+          <div
+            data-barra="contactados"
+            className="h-full rounded-pill bg-brand"
+            style={{ width: `${contactados.ancho}%` }}
+          />
+        </Barra>
+        <Barra
+          etiqueta={renovaron.etapa}
+          numero={renovaron.numero}
+          detalle={
+            renovaron.porcentaje === null
+              ? undefined
+              : `${renovaron.porcentaje} de los contactados ya confirmados`
+          }
+        >
+          <div
+            data-barra="renovaron"
+            className="h-full bg-ok"
+            style={{ width: `${renovaron.ancho}%` }}
+          />
+          <div
+            data-barra="por-confirmar"
+            className="rayado h-full"
+            style={{ width: `${renovaron.anchoPorConfirmar}%` }}
+          />
+        </Barra>
+      </div>
+      <ul aria-label="Leyenda del embudo" className="flex flex-wrap gap-x-4 gap-y-1">
+        <ItemLeyenda forma={FORMA_RENOVARON} etiqueta="Renovaron" numero={renovaron.numero} />
+        <ItemLeyenda
+          forma={FORMA_POR_CONFIRMAR}
+          etiqueta="Por confirmar"
+          numero={renovaron.porConfirmar}
+        />
+      </ul>
+      <Estado texto={textoEstadoPiloto(tasa.estado, tasa.pendientes)} />
+      <PocosCasos n={tasa.n} />
+    </Grafico>
+  )
+}
+
+function Barra({
+  etiqueta,
+  numero,
+  detalle,
+  children,
+}: {
+  etiqueta: string
+  numero: number
+  detalle?: string
+  children: ReactNode
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-baseline justify-between gap-3 text-sm">
+        <span className="font-medium">{etiqueta}</span>
+        <span className="text-base font-semibold tabular-nums">{numero}</span>
+      </div>
+      <div className="flex h-3 overflow-hidden rounded-pill bg-ink/10">{children}</div>
+      {detalle !== undefined && <span className="text-xs text-muted tabular-nums">{detalle}</span>}
     </div>
   )
 }
 
-function Proporcion({ nombre, datos }: { nombre: string; datos: IndicadorProporcion }) {
+/** Forma de cada tramo: los de "antes" en color de marca y "el mismo día o después" rayado. */
+const FORMA_TRAMO = ['bg-brand', 'bg-brand', 'bg-brand', 'rayado'] as const
+
+function LineaAnticipacion({ piloto }: IndicadoresPilotoProps) {
+  const dias = piloto.diasAnticipacion
+  const linea = anticipacionPiloto(dias.valor)
+  const detalle = detalleAnticipacion(piloto)
+  const conLlamadas = dias.n > 0
+  const promedio = detalle.posicionPromedio
+
   return (
-    <Indicador
-      nombre={nombre}
-      valor={datos.valor === null ? SIN_CIFRA : porcentajeDecimal(datos.valor)}
-      detalle={datos.denominador > 0 ? `${datos.numerador} de ${datos.denominador}` : undefined}
-      n={datos.n}
-      estado={datos.estado}
-      pendientes={datos.pendientes}
-    />
+    <Grafico id="piloto-anticipacion-title" titulo="¿Con cuánta anticipación?">
+      <div role="img" aria-label={detalle.resumen} className="px-10 pt-7 pb-2">
+        <div data-linea-anticipacion className="relative border-t-2 border-current text-ink">
+          {detalle.marcas.map((marca) =>
+            marca.vence ? (
+              <Marca
+                key={marca.etiqueta}
+                id="Vencimiento"
+                etiqueta={marca.etiqueta}
+                posicion={marca.posicion}
+                forma="h-5 border-l-4 border-current"
+                negrita
+              />
+            ) : (
+              <Marca
+                key={marca.etiqueta}
+                id={marca.etiqueta}
+                etiqueta={marca.etiqueta}
+                posicion={marca.posicion}
+                forma="h-2.5 border-l-2 border-current"
+              />
+            ),
+          )}
+          {promedio !== null && detalle.etiquetaPromedio !== null && (
+            <Marca
+              id="Llamada"
+              etiqueta={detalle.etiquetaPromedio}
+              posicion={promedio}
+              forma="size-3.5 rounded-pill bg-brand"
+              arriba
+              alinear={promedio < 50 ? 'inicio' : 'fin'}
+            />
+          )}
+        </div>
+        <div className="h-5" />
+      </div>
+      <p className="text-sm tabular-nums">{linea.frase}</p>
+      {detalle.fraseConteo !== null && (
+        <p className="text-sm tabular-nums">{`${detalle.fraseConteo}.`}</p>
+      )}
+      {detalle.fraseRango !== null && (
+        <p className="text-sm tabular-nums">{`${detalle.fraseRango}.`}</p>
+      )}
+      {conLlamadas && detalle.tramos !== null && (
+        <ul aria-label="Llamadas según los días antes del vencimiento" className="flex flex-col gap-2">
+          {detalle.tramos.map((tramo, i) => (
+            <li key={tramo.etiqueta}>
+              <Barra etiqueta={tramo.etiqueta} numero={tramo.numero}>
+                <div
+                  data-tramo
+                  className={`h-full rounded-pill ${FORMA_TRAMO[i] ?? 'bg-brand'}`}
+                  style={{ width: `${tramo.ancho}%` }}
+                />
+              </Barra>
+            </li>
+          ))}
+        </ul>
+      )}
+      {conLlamadas && <p className="text-xs text-muted">{detalle.lectura}</p>}
+      {dias.estado === 'SIN_DATOS' ? (
+        <Estado texto={textoEstadoPiloto(dias.estado, 0)} />
+      ) : (
+        conLlamadas && (
+          <p className="text-xs text-muted">{`Promedio de ${contar(dias.n, 'socio llamado', 'socios llamados')}.`}</p>
+        )
+      )}
+      <PocosCasos n={dias.n} />
+    </Grafico>
   )
 }
 
-function plural(cantidad: number, singular: string, varios: string): string {
-  return `${cantidad} ${cantidad === 1 ? singular : varios}`
+const ALINEACION = {
+  centro: 'left-1/2 -translate-x-1/2',
+  inicio: 'left-0',
+  fin: 'right-0',
+} as const
+
+/**
+ * Marca sobre la escala en dias; `posicion` 0..100 (solo para dibujar). La etiqueta va debajo
+ * (o arriba, la del promedio) y se alinea hacia dentro para no salirse de la tarjeta.
+ */
+function Marca({
+  id,
+  etiqueta,
+  posicion,
+  forma,
+  arriba = false,
+  negrita = false,
+  alinear = 'centro',
+}: {
+  id: string
+  etiqueta: string
+  posicion: number
+  forma: string
+  arriba?: boolean
+  negrita?: boolean
+  alinear?: keyof typeof ALINEACION
+}) {
+  return (
+    <span
+      data-marca={id}
+      className="absolute top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center"
+      // Unico valor dinamico: la posicion depende del dato.
+      style={{ left: `${posicion}%` }}
+    >
+      <span aria-hidden="true" data-forma-anticipacion className={forma} />
+      <span
+        className={`absolute whitespace-nowrap text-xs ${negrita ? 'font-semibold' : 'font-medium'} ${ALINEACION[alinear]} ${arriba ? 'bottom-full mb-1' : 'top-full mt-1'}`}
+      >
+        {etiqueta}
+      </span>
+    </span>
+  )
 }
 
 /**
- * Presentacional (R-018 / M04): indicadores del top 25 de la ultima lista del mes. Se imprime con
- * el PDF del dashboard (no lleva la clase que oculta al imprimir) y no se corta entre paginas.
+ * Presentacional (R-018 / R-021 / R-022): como le fue a la ultima lista del mes, en dos graficos en
+ * lenguaje simple y sin dinero. Las cifras salen de `hooks/presentacion`; se imprime con el PDF
+ * del dashboard y no se corta entre paginas.
  */
 export function IndicadoresPiloto({ piloto }: IndicadoresPilotoProps) {
-  const { lista, montoRetenido: monto, diasAnticipacion: dias } = piloto
-  const detalleMonto =
-    monto.total === null
-      ? undefined
-      : `${plural(monto.renovaciones, 'renovación', 'renovaciones')}${
-          monto.renovacionesSinMonto > 0
-            ? `; ${monto.renovacionesSinMonto} sin monto registrado`
-            : ''
-        }`
+  const { lista } = piloto
 
   return (
     <Tarjeta aria-labelledby="piloto-title" className="break-inside-avoid">
       <h2 id="piloto-title" className="text-lg font-semibold">
-        Indicadores del piloto
+        {TITULO_PILOTO}
       </h2>
       <div className="flex flex-col gap-1 text-sm text-muted">
         {lista === null ? (
@@ -123,50 +316,27 @@ export function IndicadoresPiloto({ piloto }: IndicadoresPilotoProps) {
             <p>{`Lista del mes: ${lista.nombre}, generada el ${fechaEnPalabras(lista.fechaGeneracion)}.`}</p>
             <p>
               {piloto.corteVerificacion === null
-                ? 'Aún no hay fecha de corte para verificar: todo queda pendiente.'
-                : `Verificado con datos hasta el ${fechaEnPalabras(piloto.corteVerificacion)}.`}
+                ? 'Todavía no hay datos para confirmar resultados.'
+                : `Resultados confirmados con datos hasta el ${fechaEnPalabras(piloto.corteVerificacion)}.`}
             </p>
           </>
         )}
-        {piloto.sinDato > 0 && (
-          <p>
-            {piloto.sinDato === 1
-              ? '1 socio del top 25 sin datos de membresía: no cuenta en los casos.'
-              : `${piloto.sinDato} socios del top 25 sin datos de membresía: no cuentan en los casos.`}
-          </p>
-        )}
       </div>
 
-      <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <Proporcion nombre="Precisión del top 25" datos={piloto.precisionTop25} />
-        <Proporcion
-          nombre="Contactados antes del vencimiento"
-          datos={piloto.contactadosAntesVencimiento}
-        />
-        <Indicador
-          nombre="Días de anticipación"
-          valor={dias.valor === null ? SIN_CIFRA : `${decimalConComa(dias.valor)} días`}
-          n={dias.n}
-          estado={dias.estado}
-        />
-        <Proporcion
-          nombre="Renovación de los contactados"
-          datos={piloto.tasaRenovacionContactados}
-        />
-        <Indicador
-          nombre="Monto retenido"
-          valor={monto.total === null ? SIN_CIFRA : montoUsd(monto.total)}
-          detalle={detalleMonto}
-          n={monto.n}
-          casos={CASOS_MONTO}
-          estado={monto.estado}
-          pendientes={monto.pendientes}
-        />
-      </dl>
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <EmbudoPiloto piloto={piloto} />
+        <LineaAnticipacion piloto={piloto} />
+      </div>
 
       <div className="flex flex-col gap-1 rounded-card bg-degraded/10 px-4 py-3 text-sm text-ink">
-        <p>{AVISO_SESGO_PILOTO}</p>
         <p>{AVISO_NO_CAUSAL}</p>
+      </div>
+
+      {/* Las definiciones exactas no van al papel; el resto de la tarjeta si. */}
+      <div className="flex print:hidden">
+        <BotonAyuda titulo="¿Cómo se calcula?">
+          <DefinicionesPiloto />
+        </BotonAyuda>
       </div>
     </Tarjeta>
   )

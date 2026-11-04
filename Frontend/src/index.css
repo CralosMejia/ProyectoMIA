@@ -33,6 +33,42 @@
   --radius-pill: 9999px;
 }
 
+/* Rayado (R-021): "por confirmar" en los graficos del piloto. Solo tokens; se distingue por la
+   forma (rayas) y no solo por el color. Al imprimir se conserva por print-color-adjust: exact. */
+@utility rayado {
+  background-color: var(--color-line);
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--color-muted) 0 1.5px,
+    transparent 1.5px 5px
+  );
+}
+
+/* Colores forzados (R-022): en alto contraste el navegador anula los fondos y la escala de
+   "¿Con cuánta anticipación?" desapareceria. Linea, marcas y tramos se pintan con colores de
+   sistema; el promedio con Highlight y "el mismo día o después" conserva su forma rayada. */
+@media (forced-colors: active) {
+  [data-linea-anticipacion],
+  [data-forma-anticipacion],
+  [data-tramo] {
+    forced-color-adjust: none;
+    border-color: CanvasText;
+  }
+
+  [data-tramo] {
+    background-color: CanvasText;
+  }
+
+  [data-marca='Llamada'] [data-forma-anticipacion] {
+    background-color: Highlight;
+  }
+
+  [data-tramo].rayado {
+    background-color: Canvas;
+    background-image: repeating-linear-gradient(45deg, CanvasText 0 1.5px, transparent 1.5px 5px);
+  }
+}
+
 /* Impresion (R-012): "Imprimir / Guardar PDF" del dashboard usa la impresion del navegador. */
 @media print {
   @page {

@@ -1,4 +1,4 @@
-"""Verificacion local de la lista de septiembre frente al notebook oficial (R-015, R-017, M05).
+"""Verificacion local de la lista de septiembre frente al notebook oficial (R-015, R-017, M06).
 
 Fuera de la suite. Uso (desde ``Backend/``, con el entorno virtual activo)::
 
@@ -6,30 +6,35 @@ Fuera de la suite. Uso (desde ``Backend/``, con el entorno virtual activo)::
         [--referencia ../salidas] [--fecha 2026-08-31] [--horizonte 30] [--top-k 25]
 
 Compone **en memoria y sin base de datos** el mismo camino que la app: ``LectorLibrosExcel``
-+ ``ProcesarHistorico`` -> ``EntrenarModeloInicial`` (``RandomForestPredictor``, conjunto
-``CONJUNTO_MODELO``) -> las membresias como las guarda la migracion -> ``GenerarLista`` sobre
-una unidad de trabajo en memoria. Lo compara con las salidas del notebook oficial
-``Notebookes/Prototipo_Final_Mtabolic.ipynb`` (Parte 13; M05), que se leen en tiempo de
-ejecucion de la carpeta git-ignorada ``salidas/`` (nunca se copian a un archivo versionado):
++ ``ProcesarHistorico`` -> ``EntrenarModeloInicial`` (``LogisticRegressionPredictor``, el
+modelo adoptado en M06, conjunto ``CONJUNTO_MODELO``) -> las membresias como las guarda la
+migracion -> ``GenerarLista`` sobre una unidad de trabajo en memoria. Lo compara con las
+salidas del notebook oficial ``Notebookes/Prototipo_Final_Mtabolic.ipynb`` (v3, Parte 13; M06),
+que se leen en tiempo de ejecucion de la carpeta git-ignorada ``salidas/`` (nunca se copian a
+un archivo versionado):
 
 - ``prototipo_final/parametros_modelo_operativo.json``: conteos de la cartera, ciclos de
-  entrenamiento, variables del modelo, medianas de monto, metodo de los motivos
-  (``metodo_factores``) y referencia de los factores;
+  entrenamiento, variables del modelo, medianas de monto, algoritmo e hiperparametros,
+  cortes ``umbral_alto``/``umbral_medio``, metodo de los motivos (``metodo_factores``) y
+  referencia de los factores;
 - ``prototipo_final/lista_operativa_2026-09.xlsx`` (hoja ``cartera_completa``): la lista
   completa con la probabilidad sin redondear, el nivel y los motivos de cada socio.
 
-Las salidas anteriores de ``Notebookes/MVP.ipynb`` (``m01/despues`` y ``mvp/``, version
-historica) tienen el mismo formato: se pueden seguir comparando copiandolas a otra carpeta con
-esa estructura y pasandola con ``--referencia``.
+Las salidas anteriores (``Notebookes/MVP.ipynb`` y el notebook v2, con el Random Forest) tienen
+el mismo formato pero otro algoritmo y otro metodo de motivos: compararlas da diferencias en
+``algoritmo`` y ``metodo_factores`` por diseno.
 
 Se comparan **todas** las filas de la lista: probabilidad a 8 decimales (la precision que
-guarda la app), nivel (cortes fijos 0,70 / 0,50 en ambos), motivos (texto exacto) y orden.
+guarda la app), nivel (cortes fijos 0,70 / 0,50 en ambos, tambien para la Regresion Logistica
+por decision del usuario en M06), motivos (texto exacto) y orden. El algoritmo
+(``LogisticRegression``), los hiperparametros y los cortes del JSON deben ser los de la app.
 
-M03 (R-017): los motivos ("factores principales") salen de SHAP en los dos lados, asi que su
-texto exacto (variable, valor y aporte SHAP a 2 decimales) cuenta como diferencia, y el metodo
-de los motivos del notebook y de la app debe ser ``shap``. La referencia de los factores (socio
-"tipico" del metodo anterior por sustitucion) ya no interviene en los motivos: se sigue
-mostrando, pero es informativa y no cuenta como diferencia.
+M03 (R-017) y M06 (R-020): los motivos ("factores principales") salen del SHAP lineal de la
+Regresion Logistica en los dos lados (``coef * (X' - media del entrenamiento)``, en log-odds),
+asi que su texto exacto (variable, valor y aporte a 2 decimales) cuenta como diferencia, y el
+metodo de los motivos del notebook y de la app debe ser ``shap_lineal``. La referencia de los
+factores (socio "tipico" del metodo anterior por sustitucion) ya no interviene en los motivos:
+se sigue mostrando, pero es informativa y no cuenta como diferencia.
 Los socios con la misma probabilidad forman un grupo de empate: el notebook los ordena con un
 ``sort_values`` no estable (orden arbitrario) y la app por vencimiento y ``membresia_id``, asi
 que el orden se compara por grupo (mismo conjunto de socios en las mismas posiciones).
@@ -80,12 +85,12 @@ from app.application.modelo.entrenar_modelo import EntrenarModeloInicial
 from app.application.modelo.mapeo import ciclo_modelo_desde
 from app.application.modelo.ports import EstadoSistema, ModeloGuardado, NuevoModelo
 from app.domain.common.enums import EstadoMigracion
-from app.domain.common.predictor import FeatureRow, Prediction, TrainedModel
+from app.domain.common.predictor import FeatureRow, Prediction, PredictorModel, TrainedModel
 from app.domain.historico.registro import RegistroHistorico
 from app.domain.modelo.cartera import seleccionar_cartera, ya_renovo
 from app.domain.modelo.variables import CicloModelo
 from app.infrastructure.historico.lector_libros import LectorLibrosExcel
-from app.infrastructure.ml.random_forest import RandomForestPredictor
+from app.infrastructure.ml.regresion_logistica import LogisticRegressionPredictor
 
 FECHA_GENERACION = date(2026, 8, 31)
 HORIZONTE_DIAS = 30
@@ -100,11 +105,12 @@ VARIABLE_SAL = "MTABOLIC_SAL_CODIGOS"
 ARCHIVO_SAL = Path(".sal_codigos")
 SEPARADOR_FACTORES = "; "
 SIN_FACTORES = "Sin factores de riesgo destacados"
-METODO_FACTORES = "shap"
+METODO_FACTORES = "shap_lineal"
+ALGORITMO = "LogisticRegression"
 _OCHO_DECIMALES = Decimal("0.00000001")
 
 # Las salidas del notebook oficial se generan con scikit-learn 1.8.0 (la version fijada en la
-# app); con otra version el bosque cambia y las probabilidades no coinciden.
+# app); con otra version el modelo puede cambiar y las probabilidades no coincidir.
 SKLEARN_NOTEBOOK = "1.8.0"
 
 # Claves de ``cartera_septiembre`` en el JSON del notebook (texto de la tabla 13.8).
@@ -144,6 +150,10 @@ class Referencia:
     referencia_factores: Mapping[str, float | str | None]
     lista: tuple[FilaReferencia, ...]
     metodo_factores: str | None = None
+    algoritmo: str | None = None
+    hiperparametros: Mapping[str, object] | None = None
+    umbral_alto: Decimal | None = None
+    umbral_medio: Decimal | None = None
 
 
 def codigo_anonimo(identidad: str, sal: bytes) -> str:
@@ -245,6 +255,10 @@ def cargar_referencia(carpeta: Path) -> Referencia:
         )
         referencia_factores = dict(parametros["referencia_factores"])
         metodo = parametros.get("metodo_factores")
+        algoritmo = parametros.get("algoritmo")
+        hiperparametros = parametros.get("hiperparametros")
+        cortes = [parametros.get(clave) for clave in ("umbral_alto", "umbral_medio")]
+        umbral_alto, umbral_medio = (None if v is None else Decimal(str(v)) for v in cortes)
     except (KeyError, TypeError, ValueError) as exc:
         raise ReferenciaNoDisponibleError(
             "Los parametros del notebook no tienen la forma."
@@ -256,6 +270,10 @@ def cargar_referencia(carpeta: Path) -> Referencia:
         referencia_factores=referencia_factores,
         lista=_leer_lista(lista_ruta),
         metodo_factores=str(metodo) if metodo is not None else None,
+        algoritmo=str(algoritmo) if algoritmo is not None else None,
+        hiperparametros=dict(hiperparametros) if isinstance(hiperparametros, dict) else None,
+        umbral_alto=umbral_alto,
+        umbral_medio=umbral_medio,
     )
 
 
@@ -273,7 +291,7 @@ class _RelojFijo:
 class _PredictorContador:
     """Delega en el adaptador real y cuenta las filas que ``GenerarLista`` manda a predecir."""
 
-    def __init__(self, predictor: RandomForestPredictor) -> None:
+    def __init__(self, predictor: PredictorModel) -> None:
         self._predictor = predictor
         self.filas_predichas = 0
 
@@ -434,6 +452,8 @@ class ResultadoApp:
     medianas: Mapping[str, Decimal] = field(default_factory=dict)
     referencia_factores: Mapping[str, float | str | None] = field(default_factory=dict)
     metodo_factores: str | None = None
+    algoritmo: str | None = None
+    hiperparametros: Mapping[str, object] = field(default_factory=dict)
 
 
 def _membresias(registros: Sequence[RegistroHistorico]) -> list[MembresiaParaPrediccion]:
@@ -484,7 +504,7 @@ def ejecutar_en_memoria(
         warnings.simplefilter("ignore", UserWarning)
         procesado = ProcesarHistorico(LectorLibrosExcel()).ejecutar(rutas)
 
-    predictor = RandomForestPredictor()
+    predictor = LogisticRegressionPredictor()
     entrenado = EntrenarModeloInicial(predictor).ejecutar(procesado.ciclos, procesado.fecha_corte)
     instante = datetime(fecha.year, fecha.month, fecha.day, tzinfo=UTC)
     modelo = ModeloGuardado(
@@ -544,6 +564,7 @@ def ejecutar_en_memoria(
     numericas = _texto_json(metadata, "variables_numericas")
     categoricas = _texto_json(metadata, "variables_categoricas")
     referencia = _texto_json(metadata, "referencia_factores")
+    hiperparametros = _texto_json(metadata, "hiperparametros")
     return ResultadoApp(
         conteos={
             "cartera": en_cartera,
@@ -562,6 +583,8 @@ def ejecutar_en_memoria(
         medianas=medianas,
         referencia_factores=dict(referencia) if isinstance(referencia, dict) else {},
         metodo_factores=str(metadata["metodo_factores"]) if "metodo_factores" in metadata else None,
+        algoritmo=str(metadata["algoritmo"]) if "algoritmo" in metadata else None,
+        hiperparametros=dict(hiperparametros) if isinstance(hiperparametros, dict) else {},
     )
 
 
@@ -629,6 +652,26 @@ def _conciliar_modelo(app: ResultadoApp, ref: Referencia, c: Conciliacion) -> No
     c.lineas.append(
         f"metodo de los motivos: notebook {ref.metodo_factores} | app {app.metodo_factores}: "
         + ("ok" if metodo_ok else f"DIFIERE (se espera {METODO_FACTORES} en ambos)")
+    )
+    algoritmo_ok = app.algoritmo == ref.algoritmo == ALGORITMO
+    c.contar("algoritmo", 0 if algoritmo_ok else 1)
+    c.lineas.append(
+        f"algoritmo: notebook {ref.algoritmo} | app {app.algoritmo}: "
+        + ("ok" if algoritmo_ok else f"DIFIERE (se espera {ALGORITMO} en ambos)")
+    )
+    hiperparametros_ok = ref.hiperparametros is not None and dict(ref.hiperparametros) == dict(
+        app.hiperparametros
+    )
+    c.contar("hiperparametros", 0 if hiperparametros_ok else 1)
+    c.lineas.append(
+        f"hiperparametros ({len(app.hiperparametros)}): "
+        + ("ok" if hiperparametros_ok else "DIFIEREN")
+    )
+    cortes_ok = (ref.umbral_alto, ref.umbral_medio) == (app.umbral_alto, app.umbral_medio)
+    c.contar("cortes", 0 if cortes_ok else 1)
+    c.lineas.append(
+        f"cortes ALTO / MEDIO: notebook {ref.umbral_alto} / {ref.umbral_medio} | app "
+        f"{app.umbral_alto} / {app.umbral_medio}: " + ("ok" if cortes_ok else "DIFIEREN")
     )
 
 
@@ -798,7 +841,7 @@ def _verificar(
     if sklearn.__version__ != SKLEARN_NOTEBOOK:
         imprimir(
             f"aviso: scikit-learn {sklearn.__version__} instalado; las salidas del notebook se "
-            f"generaron con {SKLEARN_NOTEBOOK} (el bosque cambia entre versiones)"
+            f"generaron con {SKLEARN_NOTEBOOK} (el modelo puede cambiar entre versiones)"
         )
     return 0 if conciliacion.total == 0 else 1
 

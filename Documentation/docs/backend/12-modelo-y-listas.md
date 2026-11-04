@@ -14,12 +14,24 @@ R-004 (día 3). CU-03 completo, CU-04, CU-05 y CU-12. Réplica del notebook `Not
 | application | `modelo/adoptar_modelo.py` | `AdoptarModelo` (R-015): comando `adoptar-modelo`, ver §Reentrenamiento. |
 | application | `sistema/{ports,migrar_historico,consultar_estado}.py` | `MigrarHistorico` (CU-03) y estado del sistema. |
 | application | `listas/{generar_lista,consultar_listas,ports,dtos}.py` | `GenerarLista` (CU-04) y consultas (CU-05). |
-| infrastructure | `ml/random_forest.py` | Único punto con scikit-learn, shap y `Decimal ↔ float`. Pipeline §9.5, factores §13.3 con SHAP (`aportes_shap`, R-017), artefacto joblib y `metadata_tecnica` con parámetros y versiones. |
+| infrastructure | `ml/regresion_logistica.py` | Adaptador del modelo adoptado (R-020, [ADR-016](../../adr/ADR-016-regresion-logistica-como-modelo-adoptado.md)): `LogisticRegressionPredictor`, pipeline, SHAP lineal (`aportes_lineales`), artefacto `formato` 2. |
+| infrastructure | `ml/predictor_adoptado.py` | `PredictorAdoptado`, el que usa el composition root: entrena RL; predice según el `formato` del artefacto (2 → RL, 1 → RF). |
+| infrastructure | `ml/random_forest.py` | Adaptador RF (artefactos `formato` 1 heredados) y ayudantes compartidos (`_a_frame`, `seleccionar_factores`, `formatear_aporte`, `NOMBRE_VARIABLE`…). Con `regresion_logistica.py`, únicos puntos con scikit-learn, shap y `Decimal ↔ float`. |
 | infrastructure | `exportacion/excel_lista.py` | Excel en memoria (CU-12). |
 | infrastructure | `persistence/{unit_of_work,unit_of_work_listas}.py`, `repositories/{modelo,listas,sistema}.py`, `historico/localizador_libros.py` | Unidades de trabajo, repositorios, bloqueo consultivo y localizador `*Control*Gym*.xlsx`. |
 | api | `routers/sistema.py`, `routers/listas.py`, `main.py` | Estado real, endpoints de listas y lanzamiento de la migración en un hilo al arrancar. |
 
-## Modelo (adaptador `RandomForestPredictor`)
+## Modelo adoptado (adaptador `LogisticRegressionPredictor`, R-020)
+
+Desde R-020 ([mejoras/M06](../../mejoras/M06-regresion-logistica-modelo-adoptado.md), [ADR-016](../../adr/ADR-016-regresion-logistica-como-modelo-adoptado.md)) el modelo adoptado es la **Regresión Logística**, la que elige la regla de selección del notebook oficial v3. Sustituye al Random Forest como modelo que se entrena; el RF se sigue leyendo (abajo).
+
+- Misma preparación y variables que el RF; `LogisticRegression(class_weight="balanced", max_iter=2000, random_state=42)` (resto por defecto), entrenada con todos los evaluables.
+- Artefacto joblib `{"formato": 2, "algoritmo": "LogisticRegression", "pipeline", "numericas", "categoricas", "referencia", "media_fondo"}`; `metadata_tecnica` con `algoritmo`, `hiperparametros`, preprocesamiento, versiones y `metodo_factores: "shap_lineal"`. `cargar_artefacto` con otro formato → `ValueError` sin datos.
+- **Motivos con SHAP lineal:** `aporte_k = coef_k · (X'_k − μ_k)` sobre la matriz preparada, `μ` = media de esa matriz en el conjunto de entrenamiento (`media_fondo`); *one-hot* sumadas a su variable en el orden de la matriz; log-odds, `base + Σ = decision_function`; igual a `shap.LinearExplainer` con fondo completo. Misma selección y formato que el RF (hasta 3, > 0,005, nunca `mes_vencimiento`).
+- Cortes fijos 0,70/0,50 sin cambio (ADR-014).
+- **`PredictorAdoptado`:** el composition root (`app/api/dependencies.py`) lo usa en migración, listas, reentrenamiento y `adoptar-modelo`. Deserializa una vez y despacha por `formato`; así un vigente RF heredado sigue generando listas y CU-02 puede comparar un candidato RL contra él (el nuevo vigente, si se adopta, es RL).
+
+## Modelo Random Forest (adaptador `RandomForestPredictor`, artefactos heredados)
 
 - `SimpleImputer(median)` + `StandardScaler` para las numéricas; `SimpleImputer(most_frequent)` + `OneHotEncoder(handle_unknown="ignore")` para las categóricas; `RandomForestClassifier(n_estimators=300, max_depth=6, min_samples_leaf=20, class_weight="balanced", random_state=42)`, entrenado con **todos** los evaluables (1.564 con los libros reales).
 - **scikit-learn 1.8.0** (la del notebook): con 1.9.1 el bosque cambia (24/25 del top iguales, probabilidades ±0,001–0,016). Ver `Backend/README.md`.
@@ -95,7 +107,7 @@ Decisiones y motivos: [ADR-011](../../adr/ADR-011-reglas-del-reentrenamiento.md)
 
 ## Conciliación con el notebook (T19)
 
-**Desde R-015 (M01); referencia actualizada en M05:** `python scripts/verificar_lista.py <carpeta> [--referencia ../salidas]` (en memoria, sin BD, scikit-learn 1.8.0) lee las referencias **en tiempo de ejecución** de la carpeta git-ignorada `salidas/` que genera el notebook oficial `Notebookes/Prototipo_Final_Mtabolic.ipynb` (Parte 13: `prototipo_final/parametros_modelo_operativo.json` y la hoja `cartera_completa` de `prototipo_final/lista_operativa_2026-09.xlsx`; hasta M05 eran `m01/despues/` y `mvp/` de `MVP.ipynb`, con el mismo formato; nunca se copian a archivos versionados) y compara **todas** las filas de la cartera: probabilidad a 8 decimales, nivel (0,70/0,50 en ambos), factores (texto exacto) y orden por grupo de empate. Los códigos de socio son HMAC-SHA256 con sal secreta (`MTABOLIC_SAL_CODIGOS` o `salidas/.sal_codigos`); la sal nunca se imprime. Ante un error no controlado solo imprime el tipo. Salidas: `0` sin diferencias, `1` alguna, `2` faltan libros, salidas o sal. Resultado: `0`, 0 diferencias en 57 filas (ALTO 2, MEDIO 39, BAJO 16), cartera 59, ya renovaron 2, 1.564 ciclos de entrenamiento. Repetido el 2026-11-02 frente al notebook oficial (M05): `0`, 0 diferencias de conteos, variables, medianas, probabilidades, niveles, motivos y orden, y referencia de los factores igual (periodo de referencia `PERIODO_REFERENCIA_FACTORES` = vencimientos hasta el 2025-10-31, el entrenamiento de la partición M05).
+**Desde R-015 (M01); referencia actualizada en M05:** `python scripts/verificar_lista.py <carpeta> [--referencia ../salidas]` (en memoria, sin BD, scikit-learn 1.8.0) lee las referencias **en tiempo de ejecución** de la carpeta git-ignorada `salidas/` que genera el notebook oficial `Notebookes/Prototipo_Final_Mtabolic.ipynb` (Parte 13: `prototipo_final/parametros_modelo_operativo.json` y la hoja `cartera_completa` de `prototipo_final/lista_operativa_2026-09.xlsx`; hasta M05 eran `m01/despues/` y `mvp/` de `MVP.ipynb`, con el mismo formato; nunca se copian a archivos versionados) y compara **todas** las filas de la cartera: probabilidad a 8 decimales, nivel (0,70/0,50 en ambos), factores (texto exacto) y orden por grupo de empate. Los códigos de socio son HMAC-SHA256 con sal secreta (`MTABOLIC_SAL_CODIGOS` o `salidas/.sal_codigos`); la sal nunca se imprime. Ante un error no controlado solo imprime el tipo. Salidas: `0` sin diferencias, `1` alguna, `2` faltan libros, salidas o sal. Resultado: `0`, 0 diferencias en 57 filas (ALTO 2, MEDIO 39, BAJO 16), cartera 59, ya renovaron 2, 1.564 ciclos de entrenamiento. Repetido el 2026-11-02 frente al notebook oficial (M05): `0`, 0 diferencias de conteos, variables, medianas, probabilidades, niveles, motivos y orden, y referencia de los factores igual (periodo de referencia `PERIODO_REFERENCIA_FACTORES` = vencimientos hasta el 2025-10-31, el entrenamiento de la partición M05). **Desde R-020 (M06):** usa `LogisticRegressionPredictor`, `metodo_factores = "shap_lineal"` y concilia también algoritmo, hiperparámetros y cortes; resultado 2026-11-03: `0`, 0 diferencias en 12 apartados, 57 filas (ALTO 9, MEDIO 33, BAJO 15). Las cifras de niveles anteriores son del RF.
 
 **Desde R-017 (M03):** los factores comparados son los **motivos SHAP** (texto exacto, aporte a 2 decimales) y se comprueba también `metodo_factores`; la comparación de `referencia_factores` pasa a informativa (no cuenta como diferencia). La línea de resultado informa "motivos (SHAP) distintos: N". Resultado con scikit-learn 1.8.0 y shap 0.54.1: `0`, 0 diferencias en 57 filas, incluidos los 146 motivos.
 
@@ -148,6 +160,19 @@ Detalle: [mejoras/M03](../../mejoras/M03-shap-prueba-y-motivos-en-la-app.md). De
 | (e) | Motivos con SHAP, misma regla que el notebook (hasta 3, > 0,005, sin `mes_vencimiento`, formato sin cambios). Sustituye a (a) de R-004 y (g) de R-015 en lo que toca a los motivos. |
 | (f) | Pantalla y Excel siguen sin mostrar el número (ADR-007). |
 | — | Sin reentrenar ni adoptar; sin migraciones, endpoints ni cambio de contrato. Puesto en uso en el principal el 2026-10-16 (v2, conteos idénticos, sin generar listas). |
+
+## Decisiones de R-020 (mejora M06)
+
+Detalle: [mejoras/M06](../../mejoras/M06-regresion-logistica-modelo-adoptado.md). Decisión de arquitectura: [ADR-016](../../adr/ADR-016-regresion-logistica-como-modelo-adoptado.md).
+
+| | Decisión |
+|---|---|
+| (a) | Regresión Logística con los hiperparámetros del notebook, explícitos en `metadata_tecnica`. |
+| (b) | Motivos con SHAP lineal analítico en log-odds; `metodo_factores = "shap_lineal"`. |
+| (c) | ~~Cortes por precisión en validación~~: no se cumplían; se mantienen 0,70/0,50 (decisión del usuario). |
+| (d) | Artefacto RL `formato` 2; despacho por formato en `PredictorAdoptado` (RF `formato` 1 solo lectura). |
+| (e) | Principal reiniciado (v1 RL); e2e y demo a RL con `adoptar-modelo`, sin borrar volúmenes. |
+| — | `verificar_lista.py` concilia además algoritmo, hiperparámetros y cortes: 0 diferencias, 57 filas (ALTO 9 / MEDIO 33 / BAJO 15). Sin cambio de contrato ni de esquema. |
 
 ## Pendientes
 

@@ -44,7 +44,7 @@ El proyecto estima el riesgo **30 días antes del vencimiento (T−30)** y defin
 | Desarrollo y pruebas del Backend | Python 3.12, `pip install -e ".[dev]"` en `Backend/` y un PostgreSQL 16 (el de `compose.yaml`) |
 | Desarrollo y pruebas del Frontend | Node 22 LTS |
 
-Las versiones de datos y ML son las mismas en el notebook y en la app: pandas 3.0.6, numpy 2.5.3, **scikit-learn 1.8.0**, **shap 0.54.1**, openpyxl 3.1.5, joblib 1.6.0. Con otra versión de scikit-learn el Random Forest cambia y las cifras dejan de coincidir.
+Las versiones de datos y ML son las mismas en el notebook y en la app: pandas 3.0.6, numpy 2.5.3, **scikit-learn 1.8.0**, **shap 0.54.1**, openpyxl 3.1.5, joblib 1.6.0. Con otra versión de scikit-learn los modelos cambian y las cifras dejan de coincidir.
 
 ## 4. Datos
 
@@ -77,7 +77,7 @@ pip install -r requirements.txt
 
 ### 5.3 Qué se debe obtener
 
-La **Parte 11 · Controles** termina con `TODOS LOS CONTROLES OK`. Valores de la versión congelada v2:
+La **Parte 11 · Controles** termina con `TODOS LOS CONTROLES OK`. Valores de la versión congelada v3 ([M06](Documentation/mejoras/M06-regresion-logistica-modelo-adoptado.md)):
 
 | Control | Valor esperado |
 |---|---|
@@ -86,12 +86,13 @@ La **Parte 11 · Controles** termina con `TODOS LOS CONTROLES OK`. Valores de la
 | Entrenamiento / validación / prueba | 721 / 180 / 277 |
 | Cronología: cada etiqueta se conoce antes de la siguiente predicción | Sí (2 días de holgura en ambas transiciones) |
 | Prueba anti-fuga (variables que cambian al borrar el futuro) | 0 |
-| Modelo adoptado / umbral | **Random Forest** / 0,32 |
-| Modelo que elige la regla (desviación informada, §10) | Regresión Logística (umbral 0,21) |
-| PR-AUC en prueba: Random Forest / Regresión Logística / sin modelo | 0,787 / 0,820 / 0,668 |
-| Precisión@25 en prueba: Random Forest / Regresión Logística | 0,76 (19 de 25) / 1,00 (25 de 25) |
-| Matriz de confusión del Random Forest en prueba (VN, FP, FN, VP) | 5, 87, 3, 182 |
-| Lista de septiembre | 57 socios: ALTO 2, MEDIO 39, BAJO 16, igual a la app |
+| Modelo adoptado / umbral (= el que elige la regla, §10) | **Regresión Logística** / 0,21 |
+| PR-AUC en prueba: Regresión Logística / Random Forest (comparación) / sin modelo | 0,820 / 0,787 / 0,668 |
+| Precisión@25 en prueba: Regresión Logística / Random Forest | 1,00 (25 de 25) / 0,76 (19 de 25) |
+| Matriz de confusión de la Regresión Logística en prueba (VN, FP, FN, VP) | 22, 70, 15, 170 |
+| SHAP lineal: aditividad y coincidencia con `shap.LinearExplainer` | < 1e-9 |
+| Lista de septiembre | 57 socios: ALTO 9, MEDIO 33, BAJO 15, igual a la app |
+| Top 25 del Random Forest igual a `MVP.ipynb` (continuidad) | Sí |
 
 Si un control falla, **no** se cambian los valores esperados para que coincidan: se revisan los datos (huellas), las versiones de las librerías y el código, y se documenta el motivo.
 
@@ -104,10 +105,11 @@ La **Parte 13** guarda en `salidas/prototipo_final/` (solo cifras agregadas y mo
 | `particiones.csv`, `cronologia.csv` | Tamaño de cada conjunto y control de cronología |
 | `comparacion_validacion.csv`, `comparacion_prueba.csv` | Métricas de la referencia, la Regresión Logística y el Random Forest |
 | `bootstrap_validacion.csv`, `bootstrap_prueba.csv` | Diferencias con intervalo bootstrap por socio (1.000 réplicas, semilla 42) |
-| `importancias_validacion.csv`, `coeficientes_regresion_logistica.csv`, `shap_medio.csv` | Permutación, coeficientes y SHAP |
-| `tabla_11_top25_por_mes.csv`, `uso_operativo_prueba.csv`, `matriz_confusion_prueba.csv` | Aciertos y errores con el top 25 por mes y con el umbral |
+| `importancias_validacion.csv`, `coeficientes_regresion_logistica.csv`, `shap_medio.csv` | Permutación, coeficientes y SHAP (lineal de la RL, en log-odds; TreeExplainer del RF como comparación) |
+| `tabla_11_top25_por_mes.csv`, `uso_operativo_prueba.csv`, `matriz_confusion_prueba.csv`, `matriz_confusion_prueba_rf.csv` | Aciertos y errores con el top 25 por mes y con el umbral |
+| `bandas_riesgo.csv` | Membresías y precisión por nivel (0,70/0,50) en validación y prueba, solo descriptivo |
 | `medianas_por_plan.csv` | Medianas de monto (entrenamiento y modelo operativo) |
-| `modelo_evaluado.joblib`, `modelo_regla_evaluado.joblib`, `modelo_operativo.joblib` | Random Forest adoptado y Regresión Logística (entrenados hasta el 31-10-2025) y Random Forest operativo (el de la app) |
+| `modelo_evaluado.joblib`, `modelo_rf_evaluado.joblib`, `modelo_operativo.joblib` | Regresión Logística adoptada y Random Forest de comparación (entrenados hasta el 31-10-2025) y Regresión Logística operativa (la de la app) |
 | `parametros_modelo_operativo.json`, `lista_operativa_2026-09.xlsx` | Referencia con que `verificar_lista.py` compara la app (§7); la lista lleva códigos seudónimos |
 | `controles.csv`, `ejecucion.json` | Resultado de los controles, versiones, huellas de los libros y de los modelos y cifras para el informe |
 
@@ -130,7 +132,7 @@ Con la base vacía, el backend migra el histórico y entrena el modelo al arranc
 
 ## 7. Comprobar que la app y el notebook dan la misma lista
 
-`Backend/scripts/verificar_lista.py` recompone en memoria (sin base de datos ni Docker) la lógica de la app y compara la lista de septiembre con la del notebook oficial, que lee de `salidas/prototipo_final/` (por eso hay que ejecutar antes el notebook): conteos, variables, medianas, probabilidades a 8 decimales, niveles, motivos SHAP y orden.
+`Backend/scripts/verificar_lista.py` recompone en memoria (sin base de datos ni Docker) la lógica de la app y compara la lista de septiembre con la del notebook oficial, que lee de `salidas/prototipo_final/` (por eso hay que ejecutar antes el notebook): conteos, variables, medianas, probabilidades a 8 decimales, niveles, motivos (SHAP lineal), algoritmo, hiperparámetros, cortes y orden.
 
 ```bash
 cd Backend
@@ -138,7 +140,7 @@ pip install -e .              # o usar el entorno del Backend
 python scripts/verificar_lista.py ../plantillas
 ```
 
-Resultado esperado: `diferencias: ... | total 0` y código de salida `0`. Resultado registrado el 2026-11-02: 57 filas, 0 diferencias de conteos, variables, medianas, probabilidad, nivel, motivo u orden, y referencia de los factores igual.
+Resultado esperado: `diferencias: ... | total 0` y código de salida `0`. Resultado registrado el 2026-11-03 (v3, Regresión Logística): 57 filas, 0 diferencias en los 12 apartados.
 
 ## 8. Pruebas automáticas
 
@@ -166,9 +168,9 @@ Para dejar evidencia de una ejecución limpia, guardar los reportes con fecha, p
 4. **Variables en T−30:** solo con información registrada hasta T−30; una prueba anti-fuga lo comprueba. Ocho variables: `ciclos_previos`, `antiguedad_dias`, `duracion_modelo`, `monto_actual`, `monto_historico`, `dias_desde_ultima_membresia`, `plan`, `mes_vencimiento`. Los identificadores nunca entran al modelo.
 5. **Partición temporal:** entrenamiento (vencimientos hasta el 31-10-2025), validación (01-01 a 01-03-2026) y prueba (desde el 01-05-2026), con márgenes descartados para que la última etiqueta de un conjunto (T+30) se conozca antes de la primera predicción del siguiente (T−30).
 6. **Preparación:** imputación por mediana o moda, estandarización y one-hot, ajustados solo con entrenamiento; medianas de monto por plan solo de entrenamiento.
-7. **Selección (regla fijada de antemano):** el modelo debe superar a la referencia sin modelo en F1, PR-AUC y Brier en validación; si varios cumplen, gana el de mayor PR-AUC. Con la partición v2 cumplen los dos y la regla elige la Regresión Logística por 0,017 de PR-AUC. **Se adopta el Random Forest** como desviación explícita: la diferencia no es distinguible con el bootstrap por socio y el Random Forest es el modelo integrado y verificado en la app. Se reportan siempre los dos ([M05](Documentation/mejoras/M05-correcciones-evaluacion-semana-10.md)).
+7. **Selección (regla fijada de antemano):** el modelo debe superar a la referencia sin modelo en F1, PR-AUC y Brier en validación; si varios cumplen, gana el de mayor PR-AUC. Cumplen los dos y la regla elige la **Regresión Logística** (PR-AUC 0,724 frente a 0,707), que es el modelo adoptado; el Random Forest se reporta como comparación ([M06](Documentation/mejoras/M06-regresion-logistica-modelo-adoptado.md), [ADR-016](Documentation/adr/ADR-016-regresion-logistica-como-modelo-adoptado.md)).
 8. **Comprobación final:** en prueba, una sola vez, con bootstrap por socio para la incertidumbre.
-9. **Producto:** el Random Forest operativo se reentrena con las 1.564 membresías evaluables y genera la lista con niveles (ALTO ≥ 0,70, MEDIO ≥ 0,50) y hasta tres motivos SHAP, igual en el notebook y en la app.
+9. **Producto:** la Regresión Logística operativa se reentrena con las 1.564 membresías evaluables y genera la lista con niveles (ALTO ≥ 0,70, MEDIO ≥ 0,50) y hasta tres motivos SHAP lineal (en log-odds), igual en el notebook y en la app.
 10. **Reentrenamiento en la app (CU-02):** cada seis meses o a pedido; el candidato se entrena sin los ciclos de comparación ni los que vencen en los 60 días previos a ella, la misma regla de cronología del notebook.
 
 ## 11. Limitaciones
@@ -177,7 +179,7 @@ Para dejar evidencia de una ejecución limpia, guardar los reportes con fecha, p
 - Las probabilidades no están calibradas (el Brier no mejora a la referencia en prueba): sirven para **ordenar**, no como porcentajes.
 - Los conjuntos de evaluación son pequeños (180 y 277 membresías); los intervalos bootstrap describen la incertidumbre con estos datos, no garantizan el resultado en otros períodos.
 - `mes_vencimiento` se codifica como año-mes: los meses futuros no se vieron en entrenamiento y la variable no aporta en ellos. Recodificarla como mes del año (1–12) es trabajo futuro.
-- El modelo adoptado (Random Forest) no es el que elige la regla de selección (Regresión Logística); la desviación está justificada y documentada, y en prueba la Regresión Logística acertó más en el top 25 (25 frente a 19): queda como alternativa para la siguiente versión.
+- Con los cortes fijos 0,70/0,50, en validación el nivel ALTO no ordena mejor que el MEDIO (precisión 0,656 frente a 0,712; en prueba 0,889 frente a 0,707): los niveles son orientativos.
 - El sistema prioriza; no mide el efecto causal de una campaña.
 
 ## 12. Lista de verificación antes de entregar

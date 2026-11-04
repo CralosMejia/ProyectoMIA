@@ -14,6 +14,7 @@ from app.main import create_app
 from tests.integration.api.listas_datos import (  # noqa: F401 - fixtures de las pruebas de listas
     base_limpia,
     base_migrada,
+    base_migrada_rf,
 )
 
 

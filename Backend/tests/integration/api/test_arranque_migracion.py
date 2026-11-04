@@ -19,7 +19,7 @@ from sqlalchemy.engine import URL
 from app.application.sistema.ports import RegistroMigracion, ResultadoMigracion
 from app.core.config import Settings
 from app.domain.common.predictor import FeatureRow, TrainedModel
-from app.infrastructure.ml.random_forest import RandomForestPredictor
+from app.infrastructure.ml.predictor_adoptado import PredictorAdoptado
 from app.main import NOMBRE_HILO_MIGRACION, create_app, ejecutar_migracion_segura
 from tests.integration.sistema.migracion_sintetica import CARPETA_LIBROS, limpiar_base
 
@@ -30,7 +30,7 @@ ESTADO = "/api/v1/sistema/estado"
 HEALTH = "/api/v1/health"
 
 
-class PredictorRetenido(RandomForestPredictor):
+class PredictorRetenido(PredictorAdoptado):
     """Retiene el entrenamiento hasta que ``soltar`` se activa."""
 
     def __init__(self, soltar: threading.Event) -> None:
@@ -49,7 +49,7 @@ class PredictorRetenido(RandomForestPredictor):
         return super().train(features, labels, numericas, categoricas, referencia)
 
 
-class PredictorConDatoPersonal(RandomForestPredictor):
+class PredictorConDatoPersonal(PredictorAdoptado):
     def train(
         self,
         features: Sequence[FeatureRow],

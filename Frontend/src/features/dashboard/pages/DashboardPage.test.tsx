@@ -69,6 +69,19 @@ function ocultoAlImprimir(elemento: Element): boolean {
   return elemento.closest(OCULTO_AL_IMPRIMIR) !== null
 }
 
+/** Nombre accesible de la region de los indicadores del piloto (R-021). */
+const PILOTO = '¿Cómo le fue a la lista del mes?'
+const GRAFICOS_PILOTO = [
+  '¿Cuántos contactamos y cuántos renovaron?',
+  '¿Con cuánta anticipación?',
+]
+
+/** Imagenes (graficos) de la pagina fuera de los indicadores del piloto. */
+function graficosFueraDelPiloto(): HTMLElement[] {
+  const region = screen.queryByRole('region', { name: PILOTO })
+  return screen.queryAllByRole('img').filter((img) => !region?.contains(img))
+}
+
 describe('DashboardPage', () => {
   afterEach(() => {
     cleanup()
@@ -235,7 +248,8 @@ describe('DashboardPage', () => {
     render(<DashboardPage />)
 
     expect(await screen.findByText('No hay gestiones asignadas en este mes')).toBeInTheDocument()
-    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+    // Los graficos del piloto (R-021) siguen en su estado "Sin datos este mes"; los demas no.
+    expect(graficosFueraDelPiloto()).toHaveLength(0)
     expect(
       screen.queryByRole('heading', { name: 'Resultado de las gestiones del mes' }),
     ).not.toBeInTheDocument()
@@ -305,7 +319,9 @@ describe('DashboardPage', () => {
         'Las cifras son resultados observados; no demuestran que la campaña causó la renovación.',
       ),
     ]
-    expect(screen.getAllByRole('img')).toHaveLength(2)
+    // Embudo y dona, mas los dos graficos del piloto (sin «¿La lista acertó?»).
+    expect(graficosFueraDelPiloto()).toHaveLength(2)
+    expect(screen.getAllByRole('img')).toHaveLength(4)
     expect(screen.getAllByRole('table')).toHaveLength(3)
     for (const elemento of visibles) {
       expect(ocultoAlImprimir(elemento)).toBe(false)
@@ -323,30 +339,81 @@ describe('DashboardPage', () => {
     expect(pageSource).toMatch(/window\.print\(\)/)
   })
 
-  it('R-018: "Indicadores del piloto" del mes (parcial) con lista, n y estados traducidos', async () => {
+  it('R-021: indicadores del piloto del mes parcial (2026-09) en lenguaje simple y sin dinero', async () => {
     render(<DashboardPage />)
     await screen.findByRole('table', { name: 'Resultados por campaña' })
 
     fireEvent.change(screen.getByLabelText('Mes'), { target: { value: '2026-09' } })
 
-    const region = await screen.findByRole('region', { name: 'Indicadores del piloto' })
+    const region = await screen.findByRole('region', { name: PILOTO })
     expect(
       await within(region).findByText(
         'Lista del mes: Ejemplo: Lista septiembre, generada el 1 de septiembre de 2026.',
       ),
     ).toBeInTheDocument()
-    expect(within(region).getByText('60,0 %')).toBeInTheDocument()
-    expect(within(region).getByText('$312,50')).toBeInTheDocument()
     expect(
-      within(region).getByText('Parcial: faltan 5 por verificar (20 de 25 verificados)'),
+      within(region)
+        .getAllByRole('heading', { level: 3 })
+        .map((h) => h.textContent),
+    ).toEqual(GRAFICOS_PILOTO)
+    expect(
+      within(region).getByRole('img', {
+        name: '25 socios en la lista del mes, 21 contactados, 18 antes del vencimiento, 7 renovaron y 4 por confirmar',
+      }),
     ).toBeInTheDocument()
-    // Cuatro n sin aclarar y el del monto, que cuenta solo a los contactados ya verificados.
-    expect(within(region).getAllByText(/^n = \d+$/)).toHaveLength(4)
-    expect(within(region).getAllByText(/^n = \d+ contactados ya verificados$/)).toHaveLength(1)
-    expect(within(region).queryByText(/PARCIAL|COMPLETO|PENDIENTE|SIN_DATOS/)).not.toBeInTheDocument()
+    expect(
+      within(region).getByRole('img', {
+        name: 'En promedio, llamamos 4,5 días antes del vencimiento. 18 socios se llamaron antes del vencimiento y 1 el mismo día o después. La llamada más temprana fue 16 días antes del vencimiento y la más tardía, 1 día después.',
+      }),
+    ).toBeInTheDocument()
+    expect(within(region).queryByRole('region', { name: '¿La lista acertó?' })).toBeNull()
+    expect(
+      within(region).getByText(
+        'Faltan 4 socios por confirmar: lo sabremos 30 días después de su vencimiento',
+      ),
+    ).toBeInTheDocument()
+
+    const texto = region.textContent ?? ''
+    expect(texto).not.toContain('$312,50')
+    expect(texto).not.toMatch(/n = /)
+    expect(texto).not.toMatch(/\$|USD|monto/i)
+    expect(texto).not.toMatch(/PARCIAL|COMPLETO|PENDIENTE|SIN_DATOS/)
   })
 
-  it('R-018: mes sin gestiones ni lista → indicadores del piloto "Sin datos" visibles', async () => {
+  it('R-022: 2026-09 → conteo, rango y los cuatro tramos del handler en "¿Con cuánta anticipación?"', async () => {
+    render(<DashboardPage />)
+    await screen.findByRole('table', { name: 'Resultados por campaña' })
+
+    fireEvent.change(screen.getByLabelText('Mes'), { target: { value: '2026-09' } })
+
+    const region = await screen.findByRole('region', { name: '¿Con cuánta anticipación?' })
+    expect(
+      await within(region).findByText(
+        '18 socios se llamaron antes del vencimiento y 1 el mismo día o después.',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      within(region).getByText(
+        'La llamada más temprana fue 16 días antes del vencimiento y la más tardía, 1 día después.',
+      ),
+    ).toBeInTheDocument()
+    const tramos = within(region).getByRole('list', {
+      name: 'Llamadas según los días antes del vencimiento',
+    })
+    expect(
+      within(tramos)
+        .getAllByRole('listitem')
+        .map((li) => [...li.querySelectorAll('span')].map((e) => e.textContent)),
+    ).toEqual([
+      ['15 días o más antes', '1'],
+      ['Entre 8 y 14 días antes', '4'],
+      ['Entre 1 y 7 días antes', '13'],
+      ['El mismo día o después', '1'],
+    ])
+    expect(region.textContent ?? '').not.toMatch(/al menos una semana|\$|USD|monto/i)
+  })
+
+  it('R-021: mes sin gestiones ni lista → los dos graficos del piloto en "Sin datos este mes"', async () => {
     server.use(
       http.get(DASHBOARD_PATH, ({ request }) =>
         HttpResponse.json({ mes: new URL(request.url).searchParams.get('mes'), ...VACIO }),
@@ -356,25 +423,35 @@ describe('DashboardPage', () => {
     render(<DashboardPage />)
 
     expect(await screen.findByText('No hay gestiones asignadas en este mes')).toBeInTheDocument()
-    const region = screen.getByRole('region', { name: 'Indicadores del piloto' })
+    const region = screen.getByRole('region', { name: PILOTO })
     expect(within(region).getByText('No hay una lista generada en este mes.')).toBeInTheDocument()
-    expect(within(region).getAllByText('Sin datos')).toHaveLength(5)
+    for (const titulo of GRAFICOS_PILOTO) {
+      const grafico = within(region).getByRole('region', { name: titulo })
+      expect(within(grafico).getByText('Sin datos este mes')).toBeInTheDocument()
+    }
   })
 
-  it('R-018: los indicadores del piloto se imprimen, con sus avisos, y no se cortan', async () => {
+  it('R-021: el piloto se imprime con sus avisos; solo "¿Cómo se calcula?" queda fuera del papel', async () => {
     render(<DashboardPage />)
     await screen.findByRole('table', { name: 'Resultados por campaña' })
 
-    const region = screen.getByRole('region', { name: 'Indicadores del piloto' })
+    const region = screen.getByRole('region', { name: PILOTO })
     expect(ocultoAlImprimir(region)).toBe(false)
-    expect(region.querySelector(OCULTO_AL_IMPRIMIR)).toBeNull()
     expect(region.className).toMatch(/\bbreak-inside-avoid\b/)
     for (const aviso of [
-      'Los socios del top 25 se contactan; por eso la precisión observada puede quedar por debajo de la real.',
-      'Cifras observadas, no causales.',
+      'Estas cifras cuentan lo que pasó; no prueban que la llamada haya causado la renovación.',
     ]) {
       expect(ocultoAlImprimir(within(region).getByText(aviso))).toBe(false)
     }
+    for (const grafico of within(region).getAllByRole('img')) {
+      expect(ocultoAlImprimir(grafico)).toBe(false)
+    }
+    const ocultos = [...region.querySelectorAll(OCULTO_AL_IMPRIMIR)]
+    expect(ocultos).toHaveLength(1)
+    expect(ocultos[0]?.textContent).toBe('¿Cómo se calcula?')
+    expect(
+      ocultoAlImprimir(within(region).getByRole('button', { name: '¿Cómo se calcula?' })),
+    ).toBe(true)
   })
 
   it('arquitectura: la pagina no importa api/ ni core/http ni usa fetch', () => {

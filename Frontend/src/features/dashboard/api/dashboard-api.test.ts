@@ -206,7 +206,14 @@ describe('dashboard-api (contra MSW)', () => {
         pendientes: 0,
         estado: 'COMPLETO',
       },
-      diasAnticipacion: { valor: '4.5', n: 19, estado: 'COMPLETO' },
+      diasAnticipacion: {
+        valor: '4.5',
+        n: 19,
+        estado: 'COMPLETO',
+        minimo: -1,
+        maximo: 16,
+        tramos: { quinceOMas: 1, deOchoACatorce: 4, deUnoASiete: 13, mismoDiaODespues: 1 },
+      },
       tasaRenovacionContactados: {
         valor: '0.41176471',
         numerador: 7,
@@ -296,6 +303,98 @@ describe('dashboard-api (contra MSW)', () => {
     const { piloto } = await obtenerDashboard('2026-09')
     expect(piloto).toMatchObject({ estado: 'SIN_DATOS', lista: null, nTop: 0 })
     expect(piloto.tasaRenovacionContactados.estado).toBe('SIN_DATOS')
+  })
+
+  it('R-022: rango y tramos de la anticipacion mapeados a camelCase', async () => {
+    server.use(
+      http.get('*/api/v1/dashboard', () =>
+        HttpResponse.json({
+          mes: '2026-09',
+          embudo: { asignadas: 0, contactadas: 0, ofrecidas: 0, aceptadas: 0, renovaron: 0 },
+          por_campania: [],
+          estado_modelo: null,
+          piloto: {
+            estado: 'COMPLETO',
+            lista: { id: 1, nombre: 'L', fecha_generacion: '2026-09-01' },
+            corte_verificacion: '2026-10-28',
+            n_top: 8,
+            sin_dato: 0,
+            precision_top25: { valor: '0.50000000', numerador: 4, denominador: 8, n: 8, pendientes: 0, estado: 'COMPLETO' },
+            contactados_antes_vencimiento: { valor: '0.75000000', numerador: 6, denominador: 8, n: 8, pendientes: 0, estado: 'COMPLETO' },
+            dias_anticipacion: {
+              valor: '7.8',
+              n: 8,
+              estado: 'COMPLETO',
+              minimo: -3,
+              maximo: 20,
+              tramos: { quince_o_mas: 2, de_ocho_a_catorce: 2, de_uno_a_siete: 2, mismo_dia_o_despues: 2 },
+            },
+            tasa_renovacion_contactados: { valor: '0.50000000', numerador: 4, denominador: 8, n: 8, pendientes: 0, estado: 'COMPLETO' },
+            monto_retenido: { total: '10.00', renovaciones: 4, renovaciones_sin_monto: 0, n: 8, pendientes: 0, estado: 'COMPLETO' },
+          },
+        }),
+      ),
+    )
+
+    const { piloto } = await obtenerDashboard('2026-09')
+    expect(piloto.diasAnticipacion).toEqual({
+      valor: '7.8',
+      n: 8,
+      estado: 'COMPLETO',
+      minimo: -3,
+      maximo: 20,
+      tramos: { quinceOMas: 2, deOchoACatorce: 2, deUnoASiete: 2, mismoDiaODespues: 2 },
+    })
+  })
+
+  it('R-022: respuesta sin rango ni tramos (backend anterior) → minimo, maximo y tramos null', async () => {
+    server.use(
+      http.get('*/api/v1/dashboard', () =>
+        HttpResponse.json({
+          mes: '2026-09',
+          embudo: { asignadas: 0, contactadas: 0, ofrecidas: 0, aceptadas: 0, renovaron: 0 },
+          por_campania: [],
+          estado_modelo: null,
+          piloto: {
+            estado: 'COMPLETO',
+            lista: { id: 1, nombre: 'L', fecha_generacion: '2026-09-01' },
+            corte_verificacion: '2026-10-28',
+            n_top: 2,
+            sin_dato: 0,
+            precision_top25: { valor: '0.50000000', numerador: 1, denominador: 2, n: 2, pendientes: 0, estado: 'COMPLETO' },
+            contactados_antes_vencimiento: { valor: '0.50000000', numerador: 1, denominador: 2, n: 2, pendientes: 0, estado: 'COMPLETO' },
+            dias_anticipacion: { valor: '2.0', n: 2, estado: 'COMPLETO' },
+            tasa_renovacion_contactados: { valor: '0.50000000', numerador: 1, denominador: 2, n: 2, pendientes: 0, estado: 'COMPLETO' },
+            monto_retenido: { total: '10.00', renovaciones: 1, renovaciones_sin_monto: 0, n: 2, pendientes: 0, estado: 'COMPLETO' },
+          },
+        }),
+      ),
+    )
+
+    const { piloto } = await obtenerDashboard('2026-09')
+    expect(piloto.diasAnticipacion).toEqual({
+      valor: '2.0',
+      n: 2,
+      estado: 'COMPLETO',
+      minimo: null,
+      maximo: null,
+      tramos: null,
+    })
+  })
+
+  it('R-022: en el mock la suma de tramos es n y los tres primeros son los llamados antes', async () => {
+    for (const mes of ['2026-08', '2026-09', '2026-10', '2026-12']) {
+      const { piloto } = await obtenerDashboard(mes)
+      const { tramos, n, minimo, maximo } = piloto.diasAnticipacion
+      expect(tramos, mes).not.toBeNull()
+      const t = tramos!
+      expect(t.quinceOMas + t.deOchoACatorce + t.deUnoASiete + t.mismoDiaODespues, mes).toBe(n)
+      expect(t.quinceOMas + t.deOchoACatorce + t.deUnoASiete, mes).toBe(
+        piloto.contactadosAntesVencimiento.numerador,
+      )
+      if (n === 0) expect([minimo, maximo], mes).toEqual([null, null])
+      else expect(minimo!, mes).toBeLessThanOrEqual(maximo!)
+    }
   })
 
   it('no usa fetch directo ni convierte decimales a number', () => {

@@ -2,7 +2,7 @@
 
 Registro del paso del notebook `MVP.ipynb` a una aplicación web. Sirve de insumo para el reporte final.
 
-> **Notebook oficial de la entrega final:** [`Notebookes/Prototipo_Final_Mtabolic.ipynb`](../Notebookes/Prototipo_Final_Mtabolic.ipynb) (versión v2, 2026-11-02). `MVP.ipynb` se conserva como registro histórico. Cambios de la versión v2: [mejoras/M05](mejoras/M05-correcciones-evaluacion-semana-10.md). Cómo reproducir el proyecto: [README de la raíz](../README.md).
+> **Notebook oficial de la entrega final:** [`Notebookes/Prototipo_Final_Mtabolic.ipynb`](../Notebookes/Prototipo_Final_Mtabolic.ipynb) (versión v3, 2026-11-03). `MVP.ipynb` se conserva como registro histórico. Cambios de la versión v2: [mejoras/M05](mejoras/M05-correcciones-evaluacion-semana-10.md); de la v3 (Regresión Logística adoptada): [mejoras/M06](mejoras/M06-regresion-logistica-modelo-adoptado.md). Cómo reproducir el proyecto: [README de la raíz](../README.md).
 
 | # | Documento | Contenido | Fecha |
 |---|---|---|---|
@@ -38,6 +38,7 @@ Registro del paso del notebook `MVP.ipynb` a una aplicación web. Sirve de insum
 | [comandos/reiniciar-base-historica.md](comandos/reiniciar-base-historica.md) | Reiniciar la base principal a solo datos históricos (borra cargas mensuales, listas y predicciones; no toca `mtabolic-e2e`) |
 | [comandos/respaldo-y-restauracion.md](comandos/respaldo-y-restauracion.md) | Respaldo de solo lectura y restauración en una base nueva con comparación de conteos (R-013) |
 | [comandos/ensayo-demo-e2e.md](comandos/ensayo-demo-e2e.md) | Ensayo de la demostración (03 §21) en el stack aislado: adelantar seguimientos y perder la fecha de reentrenamiento (R-013) |
+| [comandos/preparar-8081.md](comandos/preparar-8081.md) | Alternar 8081 entre el estado `grabacion` (datos inventados creíbles, 4 meses sembrados, para grabar el demo) y el estado `e2e` (R-022) |
 
 ## Decisiones de arquitectura (ADR)
 
@@ -49,5 +50,7 @@ Registro del paso del notebook `MVP.ipynb` a una aplicación web. Sirve de insum
 | [ADR-012](adr/ADR-012-rol-de-aplicacion-sin-superusuario.md) | La app se conecta con un rol sin superusuario ni `DELETE`; migraciones con el propietario (S23, R-013) |
 | [ADR-013](adr/ADR-013-proteccion-host-y-origin.md) | Filtro de `Host` y `Origin` contra DNS rebinding y CSRF (S1, R-013) |
 | [ADR-014](adr/ADR-014-modelo-m01-adopcion-y-cortes-de-riesgo.md) | Modelo M01: variante sin `forma_pago`/`inicio_aproximado`, cortes 0,70/0,50, corte de los datos y `adoptar-modelo` (R-015) · mejoras del tutor en [mejoras/](mejoras/README.md) |
+| [ADR-015](adr/ADR-015-motivos-con-shap-en-la-app.md) | Motivos principales con SHAP en la app (R-017); aplica a artefactos Random Forest |
+| [ADR-016](adr/ADR-016-regresion-logistica-como-modelo-adoptado.md) | Regresión Logística como modelo adoptado, cortes 0,70/0,50, motivos SHAP lineal y lectura de artefactos RF (R-020, [M06](mejoras/M06-regresion-logistica-modelo-adoptado.md)) |
 
 Cómo levantar el stack: [README.md de la raíz](../README.md). Para probar la aplicación con un solo comando, solo con Docker Desktop y datos inventados: [Guía rápida](../GUIA-RAPIDA.md).

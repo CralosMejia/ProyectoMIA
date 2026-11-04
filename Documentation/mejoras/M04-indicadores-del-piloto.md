@@ -18,6 +18,8 @@ El tutor recomendó **medir el piloto**: comprobar con datos reales si la lista 
 
 **Qué se implementó.** Una sección fija **"Indicadores del piloto"** en el Dashboard con cinco indicadores descriptivos por mes, calculados sobre los 25 primeros socios de la lista del mes: precisión del top 25, contactados antes del vencimiento, días de anticipación, renovación de los contactados y monto retenido. Cada uno con su número de casos (`n`) y su estado (completo, parcial, pendiente o sin datos). La sección se imprime con el PDF del dashboard y tiene su apartado en la ayuda.
 
+> **Vista actualizada (R-021, 2026-11-03):** la pantalla descrita aquí se sustituyó por tres gráficos en lenguaje simple, titulados "¿Cómo le fue a la lista del mes?", y **el monto retenido ya no se muestra** (se sigue calculando y enviando en la API). Las definiciones de §2–§6 no cambian. Ver §13.
+
 **Qué no se implementó y por qué.** El grupo de control y el reporte A/B con IC. El planner devolvió el requerimiento bloqueado porque "pruebas A/B o inferencia causal" está fuera del proyecto ([DEVELOPMENT_GUIDELINES §Fuera del proyecto](../DEVELOPMENT_GUIDELINES.md)) y dejaba decisiones abiertas de diseño del experimento. El usuario eligió la **opción b**: reducir el alcance a los indicadores descriptivos y dejar el grupo de control como trabajo futuro, con su diseño documentado (§9). Así, las cifras de M04 son **observadas, no causales**.
 
 ## 2. Población: el top 25 de la lista del mes
@@ -102,6 +104,8 @@ Comprobación manual en el stack de pruebas (datos sembrados, calculado a mano y
 
 ## 8. Cómo leer la sección y cómo imprimirla
 
+> Describe la vista original de R-018. La vista actual (R-021) se lee como se explica en §13.
+
 1. Elegir el mes en el filtro del Dashboard. La sección indica "Lista del mes: <nombre>, generada el <fecha>" y "Verificado con datos hasta el <fecha de corte>".
 2. Cada tarjeta muestra el valor, "X de N" cuando es una proporción, el `n` y el estado. Leer primero el estado: una cifra **Parcial** puede cambiar al cargar más datos; una **Pendiente** aún no existe.
 3. Si aparece "Pocos casos: léase con cuidado", no sacar conclusiones de esa cifra sola.
@@ -148,4 +152,46 @@ Para pasar de cifras observadas a una **estimación causal** del efecto del sist
 3. **Discusión:** añadir el sesgo de la precisión por la gestión, el tamaño de muestra y la naturaleza descriptiva de las cifras (§6). Sustituir cualquier frase que hable de "efecto" o "impacto" del sistema por "resultado observado".
 4. **Limitaciones:** añadir las de §10.
 5. **Trabajo futuro:** describir el diseño del grupo de control (§9) con el cálculo de tamaño de muestra y el IC de Newcombe, y explicar por qué no se implementó en esta versión (fuera de alcance, decisión de reducir a indicadores descriptivos).
-6. **Descripción de la aplicación (CU-11):** añadir la sección "Indicadores del piloto" al contenido del dashboard y a lo que se imprime.
+6. **Descripción de la aplicación (CU-11):** añadir la sección "¿Cómo le fue a la lista del mes?" (antes "Indicadores del piloto") al contenido del dashboard y a lo que se imprime, con la vista de §13.
+
+## 13. Cambio de la vista (R-021)
+
+**Motivo.** El usuario pidió que la sección la entienda un cliente sin conocimientos técnicos y que no muestre dinero. Solo cambia el Frontend: backend, `GET /api/v1/dashboard` y las fórmulas de §4 siguen igual.
+
+**Vista actual.** `h2` "¿Cómo le fue a la lista del mes?" con tres gráficos:
+
+| Gráfico | Qué dibuja | De qué indicador sale |
+|---|---|---|
+| ¿Cuántos contactamos y cuántos renovaron? | Barras "Lista del mes" (`n_top`), "Los contactamos" (con cuántos antes del vencimiento) y "Renovaron" (con % y tramo rayado "por confirmar") | 2 y 4 |
+| ¿La lista acertó? | Un puntito por socio: lleno = estaba por irse (no renovó), vacío = se habría quedado igual, rayado = por confirmar, borde punteado = sin datos de membresía | 1 y `sin_dato` |
+| ¿Con cuánta anticipación? | Línea de tiempo "Llamada"–"Vencimiento" con el promedio de días | 3 |
+
+- **Estados en palabras:** Completo → "Resultado final"; Parcial → "Faltan X socios por confirmar: lo sabremos 30 días después de su vencimiento" (singular con 1); Pendiente → "Todavía es pronto: el resultado se conoce 30 días después del vencimiento"; Sin datos → "Sin datos este mes". "Pocos casos" pasa a "Son pocos socios todavía: tómalo con cuidado" (misma regla `0 < n < 10`).
+- **Sin "n =", sin "precisión" y sin dinero en la vista.** El indicador 5 (monto retenido) se sigue calculando y enviando, pero no se pinta.
+- **Rigor:** el botón "¿Cómo se calcula?" (no se imprime) y la ayuda muestran el mismo texto (`DefinicionesPiloto`): las fórmulas exactas de §4, qué es `n`, la verificación en T+30, el sesgo de §6 y la no causalidad.
+- **Impresión:** la sección sale entera con sus tres gráficos; los rayados se imprimen.
+- **Accesibilidad:** cada gráfico tiene `aria-label` con las cifras en palabras y una leyenda con número; las categorías se distinguen por forma, no solo por color. A 390 px se apilan en una columna.
+- **Limitación:** la app no tiene modo oscuro propio; con el modo oscuro forzado del navegador, la línea base de la línea de tiempo y la marca "Vencimiento" tienen poco contraste.
+- **Verificación:** 946 pruebas Vitest y 13 E2E (incluida `piloto-telefono-oscuro.spec.ts`); seguridad limpia.
+
+**Para la tesis:** en la descripción de CU-11 y en las figuras del dashboard, usar la vista de §14 (que sustituye a esta donde la contradice); la tabla de §4 sigue siendo la definición formal, y cualquier mención al monto retenido pasa a "calculado, no mostrado en pantalla".
+
+## 14. Anticipación ampliada y dos gráficos (R-022)
+
+**Motivo.** El usuario pidió que "¿Con cuánta anticipación?" diga más en lenguaje simple y que se quite "¿La lista acertó?". La limitación de contraste de §13 queda resuelta.
+
+**Vista actual.** La sección tiene **dos** gráficos: "¿Cuántos contactamos y cuántos renovaron?" (sin cambios) y "¿Con cuánta anticipación?":
+
+- Escala en días con marcas "30", "15", "7" días antes y "Vence"; marca "Promedio: X días antes".
+- "X socios se llamaron antes del vencimiento y Y el mismo día o después".
+- Rango: "La llamada más temprana fue X días antes del vencimiento y la más tardía, Y días antes / el mismo día / Y días después".
+- Cuatro tramos con su número: "15 días o más antes" (d ≥ 15), "Entre 8 y 14 días antes", "Entre 1 y 7 días antes", "El mismo día o después" (d ≤ 0), con `d = T − fecha del contacto` en días enteros sobre los mismos casos que el indicador 3. Los límites son una decisión de presentación (reversible), no una regla del negocio.
+- Lectura: "Solo cuentan como «antes del vencimiento» las llamadas hechas antes del día en que vence la membresía" ([06 §9](../06-como-funciona-la-lista.md)). No se afirma que "lo ideal es llamar con al menos una semana": la documentación no lo respalda.
+
+**Eliminado de la vista:** "¿La lista acertó?" (puntitos), el aviso de sesgo de la precisión y la definición de precisión en "¿Cómo se calcula?". El indicador 1 (precisión del top 25) se sigue calculando y enviando por la API, como el monto: **calculado, no mostrado en pantalla**. Se mantiene el aviso de no causalidad.
+
+**API (aditivo).** `dias_anticipacion` gana `minimo`, `maximo` y `tramos` ([API_CONTRACT](../docs/API_CONTRACT.md)); ningún campo anterior cambia.
+
+**Contraste.** Línea base con trazo sólido, "Vence" con barra propia más gruesa y en negrita, y regla `forced-colors` con colores del sistema.
+
+**Para la tesis:** en CU-11 y en las figuras, describir el dashboard con estos dos gráficos; la precisión del top 25 (§4, §6) pasa a métrica interna del piloto, calculada pero no mostrada; en Resultados, el reparto por tramos sirve para describir la oportunidad del contacto. Para grabar o capturar figuras con datos sintéticos creíbles: [comandos/preparar-8081.md](../comandos/preparar-8081.md). Verificación: 976 Vitest, 13 E2E, 1527 unitarias y 656 de integración del backend; seguridad limpia.

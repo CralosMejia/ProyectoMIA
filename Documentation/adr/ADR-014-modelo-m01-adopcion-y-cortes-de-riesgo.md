@@ -2,6 +2,7 @@
 
 - **Estado:** aceptada · 2026-10-15 · R-015 (mejora M01 del tutor)
 - **Origen:** recomendaciones del tutor ([mejoras/M01](../mejoras/M01-modelo-sin-fuga-temporal.md)) · decisiones (a)–(g) de R-015 · decisión del usuario sobre los niveles
+- **Nota (2026-11-03, R-020):** el modelo adoptado pasa a ser la Regresión Logística ([ADR-016](ADR-016-regresion-logistica-como-modelo-adoptado.md)); los cortes fijos 0,70/0,50 del punto 3, las variables y `adoptar-modelo` se mantienen sin cambios para la RL. El motivo que registra `adoptar-modelo` es ahora "Adopción del modelo de Regresión Logística (M06)".
 - **Sustituye en parte:** [ADR-005](ADR-005-fidelidad-al-notebook-del-modelo-v1.md) punto 3 (percentiles) y la decisión (d) de R-004 · **complementa:** [ADR-011](ADR-011-reglas-del-reentrenamiento.md), [ADR-003](ADR-003-reentrenamiento-y-versionado.md)
 
 ## Contexto

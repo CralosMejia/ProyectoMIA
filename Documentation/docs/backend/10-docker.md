@@ -118,6 +118,7 @@ docker compose -p mtabolic-e2e --env-file .env.e2e down -v   # -v borra solo el 
 - Operar desde una shell **sin** el `.env` principal cargado: las variables exportadas en la shell ganan a `--env-file`.
 - Los E2E (carga → lista → Excel y los posteriores; desde R-011 también alertas → Seguimiento → Dashboard; desde R-013 el escenario principal carga → lista → gestión → resultado → dashboard, 5 en total) se ejecutan contra este stack: [Frontend/README](../../../Frontend/README.md).
 - Ensayo de la demostración (R-013): `scripts/ensayo-demo-e2e.{sh,ps1}` desplaza fechas solo en este stack → [comandos/ensayo-demo-e2e.md](../../comandos/ensayo-demo-e2e.md).
+- Dos estados (R-022): `scripts/preparar-8081.{ps1,sh} grabacion|e2e` hace `down -v` solo de `mtabolic-e2e` (con confirmación) y lo deja con datos inventados sembrados (`HISTORICO_DIR=./datos-grabacion`, no versionado) o en el estado de la E2E → [comandos/preparar-8081.md](../../comandos/preparar-8081.md). La E2E se corre tras `preparar-8081 e2e`.
 - `.env.e2e.example` incluye desde R-013 las variables de S23 con marcadores.
 - El `OMITIDO` del reentrenamiento y el comando manual se prueban solo aquí (`docker compose -p mtabolic-e2e --env-file .env.e2e exec backend python -m app.cli reentrenar`); en el stack principal no se ejecuta `reentrenar` sin decisión del usuario.
 

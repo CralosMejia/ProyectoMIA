@@ -10,10 +10,11 @@ from collections.abc import Iterator
 from datetime import date
 
 import pytest
-from sqlalchemy import Engine
+from sqlalchemy import Engine, text
 from sqlalchemy.engine import URL
 
 from app.cli import main
+from app.infrastructure.ml.random_forest import RandomForestPredictor
 from app.infrastructure.persistence.unit_of_work_reentrenamiento import (
     AbridorBloqueoReentrenamiento,
 )
@@ -70,6 +71,32 @@ def test_reentrenar_con_datos_suficientes_entrena_v2_y_conserva_v1(
         == 1
     )
     assert proxima_fecha(base) == date(2027, 3, 30)
+    assert _algoritmos(base) == [(1, "LogisticRegression"), (2, "LogisticRegression")]
+
+
+def _algoritmos(engine: Engine) -> list[tuple[int, str]]:
+    with engine.connect() as conexion:
+        filas = conexion.execute(
+            text("SELECT version, metadata_tecnica->>'algoritmo' FROM modelos ORDER BY version")
+        )
+        return [(int(v), str(a)) for v, a in filas]
+
+
+def test_reentrenar_con_vigente_rf_heredado_lo_compara_y_el_nuevo_vigente_es_rl(
+    base: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # R-020 (d): una base con un v1 Random Forest (artefacto formato 1) se sigue leyendo para
+    # la comparacion por PR-AUC y la version nueva sale con la Regresion Logistica.
+    sembrar(base, programada=PROGRAMADA, predictor_v1=RandomForestPredictor())
+
+    codigo = main(["reentrenar"], clock=Reloj())
+
+    salida = capsys.readouterr()
+    assert codigo == 0
+    assert "ENTRENADO" in salida.out
+    _sin_datos_personales(salida.out + salida.err)
+    assert contar(base, "SELECT version FROM modelos WHERE vigente") == 2
+    assert _algoritmos(base) == [(1, "RandomForestClassifier"), (2, "LogisticRegression")]
 
 
 def test_reentrenar_sin_datos_nuevos_criterios_no_cumplidos_sin_version_nueva(

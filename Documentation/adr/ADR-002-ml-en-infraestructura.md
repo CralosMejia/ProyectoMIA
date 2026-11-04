@@ -5,6 +5,8 @@
 
 ## Contexto
 
+> Nota (2026-11-03, R-020): el modelo adoptado es ahora la Regresión Logística ([ADR-016](ADR-016-regresion-logistica-como-modelo-adoptado.md)); la decisión de este ADR (ML solo en infraestructura) no cambia.
+
 La lógica de `Notebookes/MVP.ipynb` (limpieza, reconstrucción de ciclos, variables, Random Forest, score y factores principales) se adapta tal cual ([03 §18](../03-casos-de-uso.md)). Depende de pandas y scikit-learn. `.claude/rules/backend.md` exige capas con dependencias hacia dentro, verificadas con import-linter: `domain` y `application` no pueden depender de librerías técnicas y se prueban sin BD ni frameworks.
 
 ## Decisión
